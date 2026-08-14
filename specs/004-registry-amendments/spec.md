@@ -154,3 +154,4 @@ The Arbiter performs Genesis, Clerk, Narrator, Timekeeper, Enforcer, Oracle, Esc
 - `reopenForRatification` does not re-apply on pass. Fail on a ratification ballot reverts the provisional.
 - Missing `path` is a schema fail. Layer 0 paths are rejected. Max 16 effects; closed vocabulary of seven names.
 - GAME.md float YAML is stored as integers: `weight_decay_rate` percent, `participation_quorum` / `threshold_l1` / `threshold_l2` percent, `fame_decay` percent, `notoriety_decay` per-mille, `speak_fame_scaling` milli. Seed `space.op` records `lastAmendment` on the axis. `space.op` also accepts `reclassify`, `create_anchor`, and `destroy_anchor` (Layer 1; `007`).
+- `text.set` writes existing keys plus open lore paths: `text.world_lore`, `text.anchors.<live>.name|lore`, `text.epithets.id_<hex>`, `text.types.<type>.lore`. Values cap at 2000 characters. Arbitrary `text.*` keys still fail. Cell inscriptions stay `act` `mark`.

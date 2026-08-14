@@ -236,9 +236,13 @@ export function applyAnchorLegislation(registry: Registry, anchors: Anchor[]): v
 
 export function installAnchorText(registry: Registry, anchors: readonly Anchor[]): void {
   for (const anchor of anchors) {
-    const key = `anchors.${anchor.designation}.name`;
-    if (!(key in registry.text)) {
-      registry.text[key] = null;
+    const name = `anchors.${anchor.designation}.name`;
+    if (!(name in registry.text)) {
+      registry.text[name] = null;
+    }
+    const lore = `anchors.${anchor.designation}.lore`;
+    if (!(lore in registry.text)) {
+      registry.text[lore] = null;
     }
   }
 }

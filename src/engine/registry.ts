@@ -134,6 +134,7 @@ export function seedRegistry(): Registry {
     },
     text: {
       world_name: null,
+      world_lore: null,
       "narrate.empty": "An unmarked lattice.",
       "narrate.mark": "A mark is inscribed here.",
       "narrate.occupied": "Others occupy this cell.",

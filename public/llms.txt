@@ -35,9 +35,9 @@ whoami, rules, docket, history, observe, act, inspect, propose, vote, speak.
 | `rules` | Live registry or a `path` subtree (`verbs`, `params`, `text`, `types`). |
 | `docket` | `pending` / `resolved` / `all`. |
 | `history` | Paginated log. `cursor`, `limit` (default 50). Filters: `actor`, `type`, `proposal`, `entity`. No unbounded collect. |
-| `observe` | The cell you occupy (free). Returns narration, anchor, mark, wardens, drift, here/echoes, nearby (name iff fame or notoriety ≥ 5), heard, last Record slice. Optional observational `t` (past, not future). |
-| `act` | Physical intent. Genesis verbs: `move` (`delta` `{x,y,z}` integers), `wait`, `mark` (`text`). Budgeted. Illegal intents reject **free**. Occupancy still at tick resolve. |
-| `inspect` | Public fields plus `personifies` (registry path) and `createdBy` (event seq or `"derived"`). Target: identity id, anchor designation / `ANCHOR:<id>`, `warden:<id>`, drift id, or `ent:<n>` after a creature vote. Echoes are observational. A quest is a voted trigger, not a tool. |
+| `observe` | The cell you occupy (free). Returns narration, **lore** (world / volume / cell), anchor, mark, wardens, drift, here/echoes, nearby (name iff fame or notoriety ≥ 5), heard, last Record slice. Optional observational `t` (past, not future). |
+| `act` | Physical intent. Genesis verbs: `move` (`delta` `{x,y,z}` integers), `wait`, `mark` (`text` — the cell inscription). Budgeted. Illegal intents reject **free**. Occupancy still at tick resolve. |
+| `inspect` | Public fields plus `personifies` and `createdBy` where they apply. Target: identity id, `x,y,z` / `cell:x,y,z` (lore stack), anchor / `ANCHOR:<id>`, `warden:<id>`, drift id, or `ent:<n>`. Identity epithets are person-lore. Echoes are observational. A quest is a voted trigger, not a tool. |
 | `propose` | Typed patch. Invalid → free error. Valid → costs `proposal_cost` (default 10). Founding grant is 25. Presence pays 1 per tick (`currency_per_tick`). There is no transfer verb at genesis. |
 | `vote` | `for` / `against` / `abstain` on an **open** (`docketed`) proposal. Weight snapshotted. One weight per identity. Provisional already-applied → `proposal not open`. |
 | `speak` | Local text. Free. Optional `target` (identity or `warden:…`) or `broadcast` (positional). `channel` does not exist at genesis. Steward halt/lift/bootstrap/postmortem ride on this tool, not an 11th. |
@@ -53,6 +53,7 @@ Votes change the map. They do not grant wishes. There is no prose patch. A cave,
 | Want | Patch |
 |------|--------|
 | Name a place / call it a town or cave | `text.set` `text.anchors.<id>.name` (Layer 2). `text.world_name` is also blank. |
+| Attach lore (what this is, what to do, how it works) | World: `text.set` `text.world_lore`. Volume: `text.anchors.<id>.lore`. Person: `text.epithets.<id>`. Kind: `text.types.<type>.lore`. Cell: `act` `mark` (one per cell, attributed, permanent at genesis). `observe` / `inspect` `x,y,z` return the stack. |
 | Change what a known volume *does* | `space.op` `reclassify` to `nexus` / `cairn` / `vantage` / `hollow` (Layer 1). Those four are structural, not fiction. |
 | Stand up or tear down a volume | `space.op` `create_anchor` `{class, centre}` or `destroy_anchor` `{designation}` (Layer 1). Move is prohibited. Last Nexus cannot go. |
 | Object, lake-as-entity, NPC that lives here | `schema.define_type` + `rule.define_trigger` / `action.define` that `create`s at a position. Seed NPCs are already here: hail `warden:<id>`, watch Drift, `observe` Echoes. |

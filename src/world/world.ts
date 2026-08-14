@@ -672,7 +672,9 @@ export class World {
             designation: anchor.designation,
             class: anchor.class,
             name: this.clerk.registry.text[`anchors.${anchor.designation}.name`] ?? null,
+            lore: this.clerk.registry.text[`anchors.${anchor.designation}.lore`] ?? null,
           },
+      lore: this.loreAt(position, mark),
       narration: this.narrate(anchor, mark, at.here.length, wardens.length > 0),
       heard: this.inbox.get(identityId) ?? [],
       record: this.record.slice(-8),
@@ -840,6 +842,12 @@ export class World {
         },
       };
     }
+    const cell = parseInspectCell(target);
+    if (cell !== null) {
+      const mark = [...this.marks.values()].find((item) => cellKey(item.position) === cellKey(cell)) ?? null;
+      const anchor = this.anchorAt(cell);
+      return { target, fields: this.loreAt(cell, mark, anchor) };
+    }
     const anchor = this.anchors.find((item) => item.designation === target || `ANCHOR:${item.designation}` === target);
     if (anchor !== undefined) {
       return {
@@ -849,6 +857,7 @@ export class World {
           class: anchor.class,
           centre: anchor.centre,
           name: this.clerk.registry.text[`anchors.${anchor.designation}.name`] ?? null,
+          lore: this.clerk.registry.text[`anchors.${anchor.designation}.lore`] ?? null,
         },
       };
     }
@@ -867,6 +876,7 @@ export class World {
           lastAmendment: axis?.lastAmendment ?? null,
           personifies: `space.axes.${warden.axis}`,
           createdBy: "derived",
+          lore: this.clerk.registry.text["types.warden.lore"] ?? null,
         },
       };
     }
@@ -879,6 +889,7 @@ export class World {
           seed: drift.seed,
           personifies: "types.drift",
           createdBy: drift.createdBy ?? "derived",
+          lore: this.clerk.registry.text["types.drift.lore"] ?? null,
         },
       };
     }
@@ -893,6 +904,7 @@ export class World {
           ...(entity.position === undefined ? {} : { position: entity.position }),
           personifies: `types.${entity.type}`,
           createdBy: entity.createdBy ?? "derived",
+          lore: this.clerk.registry.text[`types.${entity.type}.lore`] ?? null,
         },
       };
     }
@@ -1378,6 +1390,28 @@ export class World {
     }
   }
 
+  private loreAt(
+    position: Position,
+    mark: { text: string; authorId: string; tick: number } | null,
+    anchor = this.anchorAt(position),
+  ): {
+    world: string | null;
+    volume: { designation: string; name: string | null; lore: string | null } | null;
+    cell: { text: string; authorId: string; tick: number; position: Position } | null;
+  } {
+    return {
+      world: this.clerk.registry.text["world_lore"] ?? null,
+      volume: anchor === undefined
+        ? null
+        : {
+            designation: anchor.designation,
+            name: this.clerk.registry.text[`anchors.${anchor.designation}.name`] ?? null,
+            lore: this.clerk.registry.text[`anchors.${anchor.designation}.lore`] ?? null,
+          },
+      cell: mark === null ? null : { text: mark.text, authorId: mark.authorId, tick: mark.tick, position },
+    };
+  }
+
   private narrate(
     anchor: Anchor | undefined,
     mark: { text: string } | null,
@@ -1385,25 +1419,31 @@ export class World {
     wardenHere = false,
   ): string {
     const inscribed = this.clerk.registry.text["narrate.mark"] ?? "A mark is inscribed here.";
+    const worldLore = this.clerk.registry.text["world_lore"];
+    const volumeLore = anchor === undefined ? null : this.clerk.registry.text[`anchors.${anchor.designation}.lore`];
+    let base: string;
     if (wardenHere) {
-      const edge = this.clerk.registry.text["narrate.warden"] ?? "Axis edge. Amend space.axes at Layer 1.";
-      return mark !== null ? `${edge} ${inscribed}` : edge;
-    }
-    if (anchor !== undefined) {
+      base = this.clerk.registry.text["narrate.warden"] ?? "Axis edge. Amend space.axes at Layer 1.";
+    } else if (anchor !== undefined) {
       const name = this.clerk.registry.text[`anchors.${anchor.designation}.name`];
       const label = name ?? `ANCHOR:${anchor.designation}`;
-      const inside = (this.clerk.registry.text["narrate.anchor"] ?? "Inside {label}, a {class}.")
+      base = (this.clerk.registry.text["narrate.anchor"] ?? "Inside {label}, a {class}.")
         .replace("{label}", label)
         .replace("{class}", anchor.class);
-      return mark !== null ? `${inside} ${inscribed}` : inside;
+    } else if (mark !== null) {
+      base = inscribed;
+    } else if (hereCount > 1) {
+      base = this.clerk.registry.text["narrate.occupied"] ?? "Others occupy this cell.";
+    } else {
+      base = this.clerk.registry.text["narrate.empty"] ?? "An unmarked lattice.";
     }
-    if (mark !== null) {
-      return inscribed;
-    }
-    if (hereCount > 1) {
-      return this.clerk.registry.text["narrate.occupied"] ?? "Others occupy this cell.";
-    }
-    return this.clerk.registry.text["narrate.empty"] ?? "An unmarked lattice.";
+    const layers = [
+      typeof worldLore === "string" && worldLore.length > 0 ? worldLore : null,
+      typeof volumeLore === "string" && volumeLore.length > 0 ? volumeLore : null,
+      mark !== null && !wardenHere && anchor !== undefined ? inscribed : null,
+      mark !== null ? mark.text : null,
+    ].filter((part): part is string => part !== null);
+    return [base, ...layers.filter((part) => part !== base)].join(" ");
   }
 
   private rules(path?: string): Json {
@@ -1658,6 +1698,21 @@ export class World {
     }
   }
 
+}
+
+function parseInspectCell(target: string): Position | null {
+  const raw = target.startsWith("cell:") ? target.slice(5) : target;
+  const parts = raw.split(",");
+  if (parts.length !== 3) {
+    return null;
+  }
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  const z = Number(parts[2]);
+  if (![x, y, z].every((n) => Number.isInteger(n))) {
+    return null;
+  }
+  return { x, y, z };
 }
 
 function triggerMatches(condition: unknown, tick: number, registry: { params: Record<string, { value: number } | undefined> }): boolean {

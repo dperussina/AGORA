@@ -270,6 +270,71 @@ describe("seed geography", () => {
     expect(world.anchors.some((anchor) => anchor.designation === voted!.designation)).toBe(false);
   });
 
+  it("persists voted lore on the world, a volume, a person, and a cell", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const identity = world.clerk.identities.get(ada.identityId);
+    if (identity !== undefined) {
+      identity.currency = 40;
+    }
+    const nexus = world.anchors.find((anchor) => anchor.class === "nexus");
+    expect(nexus).toBeDefined();
+    world.bodies.set(ada.identityId, { ...nexus!.centre });
+    call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "text.set", path: "text.world_lore", value: "The lattice is a commons." } },
+      }),
+      ada.sessionToken,
+    );
+    call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: {
+          patch: {
+            kind: "text.set",
+            path: `text.anchors.${nexus!.designation}.lore`,
+            value: "Arrive. Read the mark. Hail whoever stands on the face.",
+          },
+        },
+      }),
+      ada.sessionToken,
+    );
+    call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "text.set", path: `text.epithets.${ada.identityId}`, value: "The Cartographer" } },
+      }),
+      ada.sessionToken,
+    );
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mark", text: "first waymark" } }), ada.sessionToken);
+    world.advanceTick();
+    const seen = call(world, req("tools/call", { name: "observe", arguments: {} }), ada.sessionToken).result as {
+      narration: string;
+      lore: { world: string; volume: { lore: string }; cell: { text: string } };
+    };
+    expect(seen.lore.world).toBe("The lattice is a commons.");
+    expect(seen.lore.volume.lore).toContain("Hail");
+    expect(seen.lore.cell.text).toBe("first waymark");
+    expect(seen.narration).toContain("first waymark");
+    const place = call(
+      world,
+      req("tools/call", { name: "inspect", arguments: { target: `${nexus!.centre.x},${nexus!.centre.y},${nexus!.centre.z}` } }),
+      ada.sessionToken,
+    ).result as { fields: { world: string; cell: { text: string } } };
+    expect(place.fields.world).toBe("The lattice is a commons.");
+    expect(place.fields.cell.text).toBe("first waymark");
+    const person = call(
+      world,
+      req("tools/call", { name: "inspect", arguments: { target: ada.identityId } }),
+      ada.sessionToken,
+    ).result as { fields: { epithets: string } };
+    expect(person.fields.epithets).toBe("The Cartographer");
+  });
+
   it("spawns Drift from the seed trigger at the interval", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");

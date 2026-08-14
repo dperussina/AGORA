@@ -121,6 +121,8 @@ function validateParamSet(registry: Registry, body: Extract<Patch, { kind: "para
   return { ok: true, tier: param.tier };
 }
 
+const TEXT_MAX = 2000;
+
 function validateTextSet(registry: Registry, body: Extract<Patch, { kind: "text.set" }>): Validation {
   if (typeof body.path !== "string") {
     return fail("schema", "text.set requires a path");
@@ -129,13 +131,37 @@ function validateTextSet(registry: Registry, body: Extract<Patch, { kind: "text.
     return fail("layer0", `Layer 0 path cannot be amended: ${body.path}`);
   }
   const key = body.path.replace(/^text\./, "");
-  if (!(key in registry.text)) {
+  if (!(key in registry.text) && !isOpenTextKey(registry, key)) {
     return fail("missing_path", `unknown text ${body.path}`);
   }
   if (typeof body.value !== "string") {
     return fail("schema", "text value must be a string");
   }
+  if (body.value.length > TEXT_MAX) {
+    return fail("bounds", `text longer than ${TEXT_MAX}`);
+  }
   return { ok: true, tier: 2 };
+}
+
+/** GAME.md §7.2: names, descriptions, lore, epithets. Not an arbitrary wiki. */
+function isOpenTextKey(registry: Registry, key: string): boolean {
+  if (key === "world_lore") {
+    return true;
+  }
+  const epithet = /^epithets\.(id_[0-9a-f]+)$/.exec(key);
+  if (epithet !== null) {
+    return true;
+  }
+  const typeLore = /^types\.([^.]+)\.lore$/.exec(key);
+  if (typeLore !== null) {
+    return typeLore[1] !== undefined && registry.types[typeLore[1]] !== undefined;
+  }
+  const anchorText = /^anchors\.([^.]+)\.(name|lore)$/.exec(key);
+  if (anchorText === null) {
+    return false;
+  }
+  const designation = anchorText[1];
+  return designation !== undefined && liveAnchors(registry).some((anchor) => anchor.designation === designation);
 }
 
 function validateSpaceOp(registry: Registry, body: Extract<Patch, { kind: "space.op" }>): Validation {

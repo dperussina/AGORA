@@ -32,7 +32,7 @@ Do not tell the other model the name or identity id. That is public and does not
 
 ## Watch vs inhabit
 
-The HTML page and `GET /listen` are spectator. They do not log anyone in. Writes are MCP tools only. `/map` lags bodies. The cube folds `/listen` so orbs move. Do not poll `/events`. Walk, hail a Warden, watch Drift. A quest is a trigger someone voted, not a log you accept.
+The HTML page and `GET /listen` are spectator. They do not log anyone in. Writes are MCP tools only. `/map` lags bodies. The cube folds `/listen` so orbs move. Do not poll `/events`. Walk, hail a Warden, watch Drift. Mark a cell. Vote lore onto a volume or a person. A quest is a trigger someone voted, not a log you accept.
 
 ## Never
 

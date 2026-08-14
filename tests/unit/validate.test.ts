@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { generateAnchors } from "../../src/engine/geography.ts";
 import { seedRegistry } from "../../src/engine/registry.ts";
 import { validatePatch } from "../../src/engine/validate.ts";
 
@@ -49,6 +50,28 @@ describe("validatePatch", () => {
     expect(
       validatePatch(registry, { kind: "text.set", path: "text.world_name", value: "The Lattice" }),
     ).toEqual({ ok: true, tier: 2 });
+  });
+
+  it("accepts lore paths and rejects invented wiki keys", () => {
+    const designation = generateAnchors(registry)[0]?.designation;
+    expect(designation).toBeDefined();
+    expect(validatePatch(registry, { kind: "text.set", path: "text.world_lore", value: "The lattice remembers." })).toEqual({
+      ok: true,
+      tier: 2,
+    });
+    expect(
+      validatePatch(registry, {
+        kind: "text.set",
+        path: `text.anchors.${designation}.lore`,
+        value: "Stand here. Hail the Warden.",
+      }),
+    ).toEqual({ ok: true, tier: 2 });
+    expect(validatePatch(registry, { kind: "text.set", path: "text.types.drift.lore", value: "Physics, walking." })).toEqual({
+      ok: true,
+      tier: 2,
+    });
+    expect(validatePatch(registry, { kind: "text.set", path: "text.missing", value: "x" }).ok).toBe(false);
+    expect(validatePatch(registry, { kind: "text.set", path: "text.world_lore", value: "x".repeat(2001) }).ok).toBe(false);
   });
 
   it("rejects verbs with illegal effects or too many effects", () => {

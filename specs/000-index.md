@@ -96,7 +96,7 @@ These choices are in the tree. Specs 001–010 Assumptions repeat the local ones
 | Narration | Anchor/warden template, then `narrate.mark` if a mark is in the cell. |
 | Play | `npm run play` is an in-process smoke inhabitant, not a human play client. |
 | Wardens | Generated at World construct from `space.axes` + `warden_spacing` (not log-spawned). `speak` to `warden:…` returns axis, size, last amendment ID, Layer 1 amend path. `inspect` cites `personifies: space.axes.<axis>` and `createdBy: "derived"`. Regenerated after `space.op`. |
-| Anchors | Grown volume gets new anchors at seed density; existing centres never move. `space.op` `reclassify` / `create_anchor` / `destroy_anchor` are Layer 1. Move is prohibited. Last Nexus cannot go. A cave/lake/town/NPC is a `text.set` name and/or a voted type, not a seed class. |
+| Anchors | Grown volume gets new anchors at seed density; existing centres never move. `space.op` `reclassify` / `create_anchor` / `destroy_anchor` are Layer 1. Move is prohibited. Last Nexus cannot go. A cave/lake/town/NPC is a `text.set` name and/or a voted type, not a seed class. Lore is `text.set` on `world_lore` / `anchors.<id>.lore` / `epithets.<id>` / `types.<type>.lore`; a cell is `act` `mark`. `observe` and `inspect` `x,y,z` return the stack. |
 | Drift | Seed triggers `drift_spawn` / `drift_walk` at tick boundary while someone is present. Oracle from log tip hash. Cap 40. **Not created at process start.** Empty / dormant worlds have zero Drift. `inspect` cites `types.drift` and spawn seq. |
 | Cairns | `mark_length_max * cairn_mark_multiplier`. |
 | Standing ledger | Rows cite `eventSeq`. Decay params are registry integers. |

@@ -76,7 +76,7 @@ export function listTools(registry: Registry): Array<{
     {
       name: "observe",
       description:
-        "Look at the cell you occupy. Free. Returns narration, anchor, mark, wardens, nearby (named iff fame or notoriety ≥ 5), heard, and a Record slice. Optional t is observational (the past).",
+        "Look at the cell you occupy. Free. Returns narration, lore (world / volume / cell), anchor, mark, wardens, nearby (named iff fame or notoriety ≥ 5), heard, and a Record slice. Optional t is observational (the past).",
       inputSchema: toolSchema({
         t: { type: "integer" },
         ...(registry.params["perception_radius"] !== undefined ? { radius: { type: "integer" } } : {}),
@@ -98,13 +98,13 @@ export function listTools(registry: Registry): Array<{
     {
       name: "inspect",
       description:
-        "Inspect an entity. Fields follow registry.types and visibility. Targets: identity id, anchor designation or ANCHOR:<id>, warden:<id>, drift id, or ent:<n> after a creature vote. Returns personifies (registry path) and createdBy (event seq or derived). Public fields only, not secrets. A quest is a voted trigger, not a tool.",
+        "Inspect an entity or a place. Fields follow registry.types and visibility. Targets: identity id, x,y,z or cell:x,y,z, anchor designation or ANCHOR:<id>, warden:<id>, drift id, or ent:<n> after a creature vote. Returns personifies and createdBy where they apply. Place inspect returns the lore stack (world, volume, cell mark). Identity epithets are text.epithets.<id>. Public fields only, not secrets. A quest is a voted trigger, not a tool.",
       inputSchema: toolSchema({ target: { type: "string" } }),
     },
     {
       name: "propose",
       description:
-        "Submit a typed patch. Invalid patches reject free. Valid patches cost currency. Kinds: param.set, text.set, space.op (resize, add_axis, reclassify, create_anchor, destroy_anchor), schema.define_type, schema.extend_type, action.define, rule.define_trigger, tier.move, revert. Name a place with text.set on text.anchors.<id>.name. A cave, lake, town, object, NPC, or quest is a voted type plus trigger — not a wish. There is no eleventh tool; new verbs arrive as action.define on act.",
+        "Submit a typed patch. Invalid patches reject free. Valid patches cost currency. Kinds: param.set, text.set, space.op (resize, add_axis, reclassify, create_anchor, destroy_anchor), schema.define_type, schema.extend_type, action.define, rule.define_trigger, tier.move, revert. Lore is text.set: text.world_lore, text.anchors.<id>.lore, text.epithets.<id>, text.types.<type>.lore. A cell inscription is act mark, not a vote. Name a place with text.set on text.anchors.<id>.name. A cave, lake, town, object, NPC, or quest is a voted type plus trigger — not a wish. There is no eleventh tool; new verbs arrive as action.define on act.",
       inputSchema: toolSchema({ patch: { type: "object" } }, { required: ["patch"] }),
     },
     {
