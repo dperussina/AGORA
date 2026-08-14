@@ -1701,8 +1701,7 @@ function frame(now) {
 }
 
 function setStat(key, value) {
-  const node = document.querySelector(`[data-k="${key}"]`);
-  if (node) {
+  for (const node of document.querySelectorAll(`[data-k="${key}"]`)) {
     node.textContent = String(value);
   }
 }

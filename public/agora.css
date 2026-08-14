@@ -1070,7 +1070,843 @@ code {
   }
 }
 
+/* Civic observatory */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    linear-gradient(90deg, transparent 0, transparent calc(50% - 0.5px), rgba(20, 27, 34, 0.055) 50%, transparent calc(50% + 0.5px)),
+    var(--paper);
+}
+
+.stage .bar {
+  display: flex;
+  align-items: center;
+  min-height: 3.6rem;
+  border-bottom: 1px solid rgba(20, 27, 34, 0.14);
+}
+
+.stage .tag {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  color: var(--mute);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stage nav {
+  gap: 1rem;
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.stage nav a.btn {
+  padding: 0.38rem 0.8rem;
+}
+
+main {
+  position: relative;
+  max-width: 88rem;
+  padding: 0 4.5rem 8rem;
+}
+
+main::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2rem;
+  width: 1px;
+  background: var(--rule);
+  content: "";
+}
+
+.threshold {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.48fr) minmax(24rem, 1.1fr) minmax(12rem, 0.42fr);
+  gap: clamp(2rem, 5vw, 6rem);
+  align-items: end;
+  padding: clamp(5rem, 11vw, 9rem) 0 5rem;
+}
+
+.threshold-mark {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  max-width: 13rem;
+  color: var(--brass);
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: clamp(3.2rem, 7vw, 6.8rem);
+  font-weight: 600;
+  letter-spacing: -0.08em;
+  line-height: 0.62;
+}
+
+.threshold-mark span:nth-child(even) {
+  padding-left: 0.3em;
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.15em;
+  letter-spacing: 0;
+}
+
+.threshold-copy h1 {
+  max-width: 13ch;
+  margin: 0 0 1.5rem;
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: clamp(3.5rem, 8vw, 7.2rem);
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  line-height: 0.82;
+  text-transform: uppercase;
+}
+
+.threshold-copy .lede {
+  max-width: 42rem;
+  color: var(--ink);
+  font-size: clamp(1.1rem, 1.8vw, 1.35rem);
+  line-height: 1.48;
+}
+
+.threshold-actions,
+.operation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.8rem;
+}
+
+.threshold-facts {
+  margin: 0;
+  border-top: 3px solid var(--ink);
+}
+
+.threshold-facts div {
+  display: grid;
+  grid-template-columns: 0.7fr 1fr;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.threshold-facts dt,
+.threshold-facts dd {
+  margin: 0;
+}
+
+.threshold-facts dt {
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.threshold-facts dd {
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.principles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 calc(50% - 50vw);
+  padding: 0 max(4.5rem, calc(50vw - 44rem));
+  background: var(--well);
+  color: var(--foam);
+}
+
+.principles article {
+  min-height: 19rem;
+  padding: 3rem 2rem 3rem 0;
+  border-right: 1px solid #2a343c;
+}
+
+.principles article + article {
+  padding-left: 2rem;
+}
+
+.principles article:last-child {
+  border-right: 0;
+}
+
+.principle-code,
+.operation-number {
+  color: #9a7844;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+}
+
+.principles h2 {
+  max-width: 11ch;
+  margin: 2rem 0 1rem;
+  color: var(--foam);
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: clamp(2rem, 3.4vw, 3.2rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+  text-transform: uppercase;
+}
+
+.principles p {
+  max-width: 25rem;
+  margin: 0;
+  color: #9aa8b2;
+}
+
+.instrument,
+.record-instrument {
+  margin-top: 8rem;
+  border-top: 4px solid var(--ink);
+}
+
+.instrument-head {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto;
+  gap: 1.5rem;
+  align-items: start;
+  padding: 1.2rem 0 2.5rem;
+}
+
+.instrument-index {
+  margin: 0;
+  color: var(--brass);
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: 3rem;
+  font-weight: 600;
+  line-height: 0.82;
+}
+
+.instrument-title h2,
+.record-instrument .instrument-title h2,
+.operations-head h2 {
+  max-width: 13ch;
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: clamp(3.2rem, 7vw, 6.2rem);
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 0.84;
+  text-transform: uppercase;
+}
+
+.instrument-deck {
+  max-width: 42rem;
+  margin: 1rem 0 0;
+  color: var(--mute);
+  font-size: 1rem;
+}
+
+.instrument-census {
+  margin: 0;
+  padding-top: 0.15rem;
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.gazetteer {
+  position: relative;
+}
+
+.gazetteer::after {
+  position: absolute;
+  top: 7rem;
+  right: 0;
+  width: 6rem;
+  height: 6rem;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.25rem var(--paper), inset 0 0 0 calc(1.25rem + 1px) var(--rule);
+  content: "";
+  pointer-events: none;
+}
+
+.gazetteer-preface {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.5fr) minmax(0, 1fr);
+  gap: 3rem;
+  margin: 0;
+  padding: 3rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.gazetteer-preface .kicker {
+  grid-column: 1;
+}
+
+.gazetteer-preface h3 {
+  grid-column: 1;
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.8rem, 6vw, 5.2rem);
+  font-weight: 480;
+  letter-spacing: -0.05em;
+  line-height: 0.88;
+  text-transform: none;
+}
+
+.gazetteer-preface .folio-preface-body {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+}
+
+.instrument-body {
+  display: grid;
+  grid-template-columns: minmax(19rem, 0.72fr) minmax(0, 1.28fr);
+  margin-top: 2rem;
+}
+
+.folio-cat {
+  border-top: 1px solid var(--rule);
+}
+
+.folio-regs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-top: 0.25rem;
+  background: var(--paper);
+}
+
+.folio-index {
+  max-height: 36rem;
+}
+
+.folio-index li {
+  grid-template-columns: 5.6rem 8rem minmax(0, 1fr);
+  padding: 0.85rem 1rem 0.85rem 0;
+}
+
+.folio-index strong {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.02rem;
+}
+
+.reading-plate {
+  min-height: 36rem;
+  padding: clamp(2rem, 5vw, 4.5rem);
+}
+
+.lore-plate {
+  position: relative;
+  overflow: hidden;
+  background: #10161c;
+  color: var(--foam);
+}
+
+.lore-plate::after {
+  position: absolute;
+  right: -5rem;
+  bottom: -5rem;
+  width: 13rem;
+  height: 13rem;
+  border: 1px solid rgba(196, 165, 116, 0.32);
+  border-radius: 50%;
+  content: "";
+}
+
+.reading-plate h3 {
+  max-width: 12ch;
+  margin: 0;
+  color: var(--foam);
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.8rem, 5vw, 5rem);
+  font-weight: 480;
+  letter-spacing: -0.055em;
+  line-height: 0.88;
+  text-transform: none;
+}
+
+.statute {
+  margin-right: calc(50% - 50vw);
+  margin-left: calc(50% - 50vw);
+  padding: 0 max(4.5rem, calc(50vw - 44rem)) 6rem;
+  border-top-color: #9a7844;
+  background: #10161c;
+  color: var(--foam);
+}
+
+.statute .instrument-head {
+  border-bottom: 1px solid #2a343c;
+}
+
+.statute .instrument-title h2 {
+  color: var(--foam);
+}
+
+.statute .instrument-deck,
+.statute .instrument-census {
+  color: #8b99a3;
+}
+
+.statute-preface {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1fr);
+  gap: 3rem;
+  padding: 2.5rem 0;
+  border-bottom: 1px solid #2a343c;
+  cursor: pointer;
+}
+
+.statute-preface h3 {
+  grid-column: 1;
+  margin: 0;
+  color: #c4a574;
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: clamp(2.8rem, 6vw, 5rem);
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 0.88;
+  text-transform: uppercase;
+}
+
+.statute-preface .folio-preface-body {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+  color: #9aa8b2;
+}
+
+.statute .folio-cat {
+  border-top-color: #2a343c;
+}
+
+.statute .folio-regs {
+  border-bottom-color: #2a343c;
+  background: #10161c;
+}
+
+.statute .folio-reg {
+  color: #8b99a3;
+}
+
+.statute .folio-reg:hover,
+.statute .folio-reg:focus-visible {
+  color: var(--foam);
+}
+
+.statute .folio-reg.on,
+.statute .folio-reg[aria-selected="true"] {
+  color: #c4a574;
+  border-bottom-color: #c4a574;
+}
+
+.statute .folio-index li {
+  border-top-color: #2a343c;
+}
+
+.statute .folio-index .idx-class,
+.statute .folio-index .idx-at {
+  color: #71808a;
+}
+
+.statute .folio-index strong {
+  color: var(--foam);
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.law-plate {
+  border-left: 1px solid #2a343c;
+  background:
+    linear-gradient(rgba(196, 165, 116, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196, 165, 116, 0.055) 1px, transparent 1px),
+    #0c1116;
+  background-size: 2rem 2rem;
+}
+
+.law-plate h3 {
+  color: #c4a574;
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.record-instrument {
+  border-top-color: var(--brass);
+}
+
+.record-live {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  margin: 0;
+  color: var(--signal);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.record-live span {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.record-instrument .ledger {
+  margin-top: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.record-instrument .well {
+  padding: 1.5rem 1.5rem 0 0;
+}
+
+.record-instrument .well + .well {
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--rule);
+}
+
+.record-well {
+  min-height: 24rem;
+}
+
+.record-instrument .record {
+  max-height: 30rem;
+}
+
+.record-instrument .record li {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.25fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.operations {
+  margin-top: 8rem;
+  padding-top: 2rem;
+  border-top: 4px solid var(--ink);
+}
+
+.operations-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
+  gap: 3rem;
+  align-items: end;
+}
+
+.operations-head .kicker,
+.operations-head h2 {
+  grid-column: 1;
+}
+
+.operations-head p:last-child {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+  margin: 0;
+  color: var(--mute);
+}
+
+.operations-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  margin-top: 3rem;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.operation {
+  min-width: 0;
+  padding: 2rem;
+  border-left: 1px solid var(--rule);
+}
+
+.operation:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.operation h3 {
+  max-width: 12ch;
+  margin: 1.5rem 0 1rem;
+  color: var(--ink);
+  font-family: "Archivo Narrow", "Arial Narrow", sans-serif;
+  font-size: clamp(2rem, 3vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.operation > p:not(.operation-number, .operation-links) {
+  color: var(--mute);
+}
+
+.operation details {
+  border-top: 1px solid var(--rule);
+}
+
+.operation details:first-of-type {
+  margin-top: 1.5rem;
+}
+
+.operation summary {
+  padding: 0.8rem 0;
+  color: var(--ink);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.operation .sheet {
+  max-height: 18rem;
+  min-height: 0;
+  margin-bottom: 1rem;
+  font-size: 0.68rem;
+}
+
+.operation-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.operation-links a {
+  color: var(--brass);
+}
+
+.foot {
+  max-width: 88rem;
+  margin: 0 auto;
+  padding: 3rem 4.5rem;
+  border-top: 1px solid var(--rule);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.foot p:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.folio-at,
+.folio-plate-meta,
+.folio-plate-body {
+  position: relative;
+  z-index: 1;
+}
+
+.reading-plate .folio-plate-body {
+  max-width: 38rem;
+}
+
+@media (max-width: 1050px) {
+  .threshold {
+    grid-template-columns: 0.35fr 1fr;
+  }
+
+  .threshold-facts {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .threshold-facts div {
+    display: block;
+    padding-right: 1rem;
+  }
+
+  .threshold-facts dd {
+    margin-top: 0.35rem;
+  }
+
+  .operations-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .primary-operation {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--rule);
+  }
+}
+
+@media (max-width: 800px) {
+  body {
+    background: var(--paper);
+  }
+
+  .stage .bar {
+    align-items: center;
+    padding: 0.7rem;
+  }
+
+  .stage .bar nav a:not(.btn) {
+    display: none;
+  }
+
+  .stage .bar nav {
+    margin-left: auto;
+  }
+
+  .stage .tag {
+    display: block;
+  }
+
+  .tape {
+    top: 4.2rem;
+    right: 0.7rem;
+    width: min(11rem, 46vw);
+    max-height: 38vh;
+  }
+
+  .dock {
+    max-height: 42vh;
+    overflow: auto;
+  }
+
+  main,
+  .foot {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  main::before {
+    display: none;
+  }
+
+  .threshold {
+    display: block;
+    padding: 4.5rem 0 3.5rem;
+  }
+
+  .threshold-mark {
+    display: none;
+  }
+
+  .threshold-facts {
+    grid-template-columns: 1fr 1fr;
+    margin-top: 3rem;
+  }
+
+  .principles {
+    display: block;
+    padding: 0 1rem;
+  }
+
+  .principles article {
+    min-height: 0;
+    padding: 2.5rem 0;
+    border-right: 0;
+    border-bottom: 1px solid #2a343c;
+  }
+
+  .principles article + article {
+    padding-left: 0;
+  }
+
+  .instrument,
+  .record-instrument,
+  .operations {
+    margin-top: 5rem;
+  }
+
+  .instrument-head {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+  }
+
+  .instrument-index {
+    font-size: 2rem;
+  }
+
+  .instrument-census,
+  .record-live {
+    grid-column: 2;
+  }
+
+  .gazetteer::after {
+    display: none;
+  }
+
+  .gazetteer-preface,
+  .statute-preface,
+  .instrument-body,
+  .operations-head,
+  .operations-grid {
+    display: block;
+  }
+
+  .gazetteer-preface .folio-preface-body,
+  .statute-preface .folio-preface-body {
+    margin-top: 2rem;
+  }
+
+  .reading-plate {
+    min-height: 26rem;
+  }
+
+  .folio-index {
+    max-height: 22rem;
+  }
+
+  .folio-index li {
+    grid-template-columns: 4.5rem 5.5rem minmax(0, 1fr);
+  }
+
+  .statute {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .law-plate {
+    border-top: 1px solid #2a343c;
+    border-left: 0;
+  }
+
+  .record-instrument .well + .well {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .operations-head p:last-child {
+    margin-top: 1.2rem;
+  }
+
+  .operation,
+  .operation:first-child {
+    padding: 2rem 0;
+    border-left: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .foot {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   * {
     animation: none !important;
     transition: none !important;
