@@ -841,6 +841,7 @@ export class World {
       this.append(`act.${intent.verb}`, intent.identityId, {
         identityId: intent.identityId,
         verb: intent.verb,
+        target: intent.target,
         text: intent.text,
       });
     }
@@ -1610,6 +1611,10 @@ export class World {
 
   get onlineCount(): number {
     return this.present.size;
+  }
+
+  get onlineIdentityIds(): string[] {
+    return [...this.present].sort();
   }
 
   persist(): void {

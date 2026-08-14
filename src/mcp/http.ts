@@ -156,11 +156,17 @@ function attachListen(world: World, req: IncomingMessage, res: ServerResponse): 
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
-  const bodies = [...world.bodies.entries()].map(([id, position]) => ({ id, position }));
+  const online = new Set(world.onlineIdentityIds);
+  const bodies = [...world.bodies.entries()]
+    .filter(([id]) => online.has(id))
+    .map(([id, position]) => ({ id, position }));
   res.write(presenceFrame(bodies));
   for (const item of world.listenLog.slice(-40)) {
     res.write(recordFrame(item));
   }
+  // Replay may contain movement from identities that are no longer present.
+  // Reassert the authoritative set before the connection becomes live.
+  res.write(presenceFrame(bodies));
   const unsub = world.recordHub.subscribe((frame) => {
     if (res.writableEnded) {
       return false;

@@ -135,6 +135,9 @@ describe("public API and Steward", () => {
     expect(publicRead(world, "/rules")).toHaveProperty("registry");
     expect(publicRead(world, "/fold")).toMatchObject({ hash: "sha256" });
     expect(publicRead(world, "/registry/history")).toHaveProperty("applied");
+    expect(publicRead(world, "/identities")).toMatchObject({
+      identities: [expect.objectContaining({ id: ada.identityId, online: true })],
+    });
     const history = publicRead(world, "/registry/history") as { applied: Array<{ id: number; kind: string; patch: { kind: string } }> };
     expect(Array.isArray(history.applied)).toBe(true);
     if (history.applied.length > 0) {

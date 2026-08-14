@@ -7,7 +7,7 @@ const HALF = (SIZE - 1) / 2;
 const MAX_BODIES = 256;
 const MAX_MARKS = 512;
 const MAX_WARDENS = 256;
-const AGENT_HEIGHT = 2.35;
+const AGENT_HEIGHT = 2.75;
 
 function pbr(color, extra = {}) {
   return new THREE.MeshStandardMaterial({
@@ -20,13 +20,14 @@ function pbr(color, extra = {}) {
 }
 
 const MAT = {
-  stone: pbr(0x8a7350, { roughness: 0.72, metalness: 0.04 }),
-  brass: pbr(0xb8924a, { roughness: 0.32, metalness: 0.72 }),
-  iron: pbr(0x3d5248, { roughness: 0.38, metalness: 0.55 }),
-  rock: pbr(0xc5cdd3, { roughness: 0.88, metalness: 0 }),
-  slate: pbr(0x243038, { roughness: 0.55, metalness: 0.18 }),
-  deck: pbr(0x4a7a68, { roughness: 0.4, metalness: 0.28 }),
-  rim: pbr(0x9aa8b2, { roughness: 0.35, metalness: 0.4 }),
+  stone: pbr(0x806d4f, { roughness: 0.72, metalness: 0.04, flatShading: true }),
+  stoneDark: pbr(0x504c43, { roughness: 0.82, metalness: 0.08, flatShading: true }),
+  brass: pbr(0xb8924a, { roughness: 0.28, metalness: 0.78, emissive: 0x2c1f0c, emissiveIntensity: 0.16 }),
+  iron: pbr(0x334740, { roughness: 0.38, metalness: 0.62 }),
+  rock: pbr(0xb8c2c9, { roughness: 0.86, metalness: 0.02, flatShading: true }),
+  slate: pbr(0x202c34, { roughness: 0.48, metalness: 0.28 }),
+  deck: pbr(0x426f64, { roughness: 0.34, metalness: 0.38, emissive: 0x10241f, emissiveIntensity: 0.18 }),
+  rim: pbr(0x8f9da6, { roughness: 0.3, metalness: 0.52 }),
   voidWall: pbr(0x151c22, {
     roughness: 0.92,
     metalness: 0,
@@ -34,19 +35,29 @@ const MAT = {
     opacity: 0.88,
     side: THREE.DoubleSide,
   }),
-  drift: pbr(0x5e9a92, { roughness: 0.18, metalness: 0.62, emissive: 0x1a3330, emissiveIntensity: 0.35 }),
-  entity: pbr(0xa07d3a, { roughness: 0.28, metalness: 0.45 }),
-  agent: pbr(0x3d5c58, { roughness: 0.34, metalness: 0.22 }),
-  lamp: pbr(0xffe4a8, { roughness: 0.2, metalness: 0.05, emissive: 0xe0c089, emissiveIntensity: 1.1 }),
-  echo: new THREE.MeshStandardMaterial({
-    color: 0x5a6873,
-    roughness: 0.85,
-    metalness: 0,
+  drift: pbr(0x5e9a92, { roughness: 0.12, metalness: 0.68, emissive: 0x214d47, emissiveIntensity: 0.72 }),
+  entity: pbr(0xa07d3a, { roughness: 0.22, metalness: 0.58, emissive: 0x352408, emissiveIntensity: 0.28 }),
+  agent: pbr(0x334f4b, { roughness: 0.3, metalness: 0.3, emissive: 0x102622, emissiveIntensity: 0.3 }),
+  agentTrim: pbr(0x9fb5b0, { roughness: 0.24, metalness: 0.72 }),
+  lamp: pbr(0xffe4a8, { roughness: 0.14, metalness: 0.02, emissive: 0xe0c089, emissiveIntensity: 1.8 }),
+  energy: new THREE.MeshBasicMaterial({
+    color: 0xe0c089,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
   }),
-  markFlag: pbr(0xc4a574, { roughness: 0.45, metalness: 0.35 }),
+  echo: new THREE.MeshStandardMaterial({
+    color: 0x718692,
+    emissive: 0x30434d,
+    emissiveIntensity: 0.45,
+    roughness: 0.5,
+    metalness: 0.08,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+  }),
+  markFlag: pbr(0xc4a574, { roughness: 0.38, metalness: 0.48, emissive: 0x34270e, emissiveIntensity: 0.22 }),
 };
 
 function mesh(geometry, material, x = 0, y = 0, z = 0) {
@@ -73,15 +84,26 @@ function identityTitle(id) {
 
 function cityArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(2.05, 2.15, 0.28, 24), MAT.stone, 0, -0.28, 0));
-  const datum = mesh(new THREE.TorusGeometry(1.62, 0.055, 8, 40), MAT.brass, 0, -0.1, 0);
+  g.add(mesh(new THREE.CylinderGeometry(2.1, 2.32, 0.34, 12), MAT.stoneDark, 0, -0.3, 0));
+  g.add(mesh(new THREE.CylinderGeometry(1.72, 1.95, 0.18, 24), MAT.stone, 0, -0.04, 0));
+  const datum = mesh(new THREE.TorusGeometry(1.66, 0.065, 8, 48), MAT.brass, 0, 0.04, 0);
   datum.rotation.x = Math.PI / 2;
   g.add(datum);
-  g.add(mesh(new THREE.BoxGeometry(3.4, 0.16, 0.34), MAT.stone, 0, 0.02, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.34, 0.16, 3.4), MAT.stone, 0, 0.02, 0));
-  const pillar = mesh(new THREE.CylinderGeometry(0.2, 0.3, 2.55, 8), MAT.stone, 0, 1.35, 0);
+  g.add(mesh(new THREE.BoxGeometry(3.5, 0.12, 0.24), MAT.brass, 0, 0.16, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.24, 0.12, 3.5), MAT.brass, 0, 0.16, 0));
+  for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    const pylon = mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.82, 6), MAT.iron);
+    pylon.position.set(Math.cos(angle) * 1.25, 0.52, Math.sin(angle) * 1.25);
+    g.add(pylon);
+  }
+  const pillar = mesh(new THREE.CylinderGeometry(0.16, 0.34, 2.55, 8), MAT.stone, 0, 1.42, 0);
   g.add(pillar);
-  g.add(mesh(new THREE.ConeGeometry(0.28, 0.42, 4), MAT.brass, 0, 2.78, 0));
+  const core = mesh(new THREE.OctahedronGeometry(0.28, 0), MAT.lamp, 0, 2.86, 0);
+  g.add(core);
+  const crown = mesh(new THREE.TorusGeometry(0.54, 0.035, 6, 32), MAT.energy, 0, 2.86, 0);
+  crown.rotation.x = Math.PI / 2;
+  crown.userData.motion = "orbit";
+  g.add(crown);
   return g;
 }
 
@@ -99,45 +121,95 @@ function cairnArtifact() {
     rock.scale.set(1.15, 0.72, 0.95);
     g.add(rock);
   }
+  const binding = mesh(new THREE.TorusGeometry(0.72, 0.035, 6, 32), MAT.brass, 0, 0.48, 0);
+  binding.rotation.x = Math.PI / 2;
+  binding.rotation.z = 0.18;
+  binding.userData.motion = "orbit";
+  g.add(binding);
+  g.add(mesh(new THREE.TetrahedronGeometry(0.16, 0), MAT.lamp, 0.02, 1.34, 0));
   return g;
 }
 
 function vantageArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.16, 4.1, 10), MAT.iron, 0, 1.85, 0));
-  const ring = mesh(new THREE.TorusGeometry(0.78, 0.045, 10, 28), MAT.deck, 0, 3.55, 0);
+  g.add(mesh(new THREE.CylinderGeometry(0.12, 0.34, 4.1, 10), MAT.iron, 0, 1.82, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.75, 0.92, 0.18, 12), MAT.stoneDark, 0, -0.18, 0));
+  const ring = mesh(new THREE.TorusGeometry(0.86, 0.055, 10, 36), MAT.deck, 0, 3.55, 0);
   ring.rotation.x = Math.PI / 2;
   g.add(ring);
-  const sight = mesh(new THREE.TorusGeometry(0.22, 0.035, 8, 16), MAT.brass, 0, 3.55, 0.62);
+  const meridian = mesh(new THREE.TorusGeometry(0.64, 0.035, 8, 32), MAT.brass, 0, 3.55, 0);
+  meridian.rotation.y = Math.PI / 2;
+  meridian.userData.motion = "gimbal";
+  g.add(meridian);
+  const sight = mesh(new THREE.TorusGeometry(0.25, 0.03, 8, 20), MAT.energy, 0, 3.55, 0.72);
   sight.rotation.y = Math.PI / 2;
   g.add(sight);
-  g.add(mesh(new THREE.SphereGeometry(0.11, 12, 10), MAT.lamp, 0, 3.55, 0));
+  g.add(mesh(new THREE.IcosahedronGeometry(0.16, 1), MAT.lamp, 0, 3.55, 0));
   return g;
 }
 
 function hollowArtifact() {
   const g = new THREE.Group();
-  const well = mesh(new THREE.CylinderGeometry(1.55, 0.45, 2.1, 24, 1, true), MAT.voidWall, 0, -0.2, 0);
+  g.add(mesh(new THREE.CylinderGeometry(1.82, 1.98, 0.24, 16), MAT.stoneDark, 0, -0.25, 0));
+  const well = mesh(new THREE.CylinderGeometry(1.58, 0.42, 2.15, 24, 1, true), MAT.voidWall, 0, -0.12, 0);
   g.add(well);
-  const lip = mesh(new THREE.TorusGeometry(1.55, 0.1, 10, 32), MAT.rim, 0, 0.82, 0);
+  const lip = mesh(new THREE.TorusGeometry(1.58, 0.11, 10, 40), MAT.rim, 0, 0.9, 0);
   lip.rotation.x = Math.PI / 2;
   g.add(lip);
+  const inner = mesh(new THREE.TorusGeometry(0.72, 0.025, 6, 32), MAT.energy, 0, -0.52, 0);
+  inner.rotation.x = Math.PI / 2;
+  inner.userData.motion = "pulse";
+  g.add(inner);
+  for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+    const tooth = mesh(new THREE.TetrahedronGeometry(0.22, 0), MAT.rock);
+    tooth.position.set(Math.cos(angle) * 1.58, 1.08, Math.sin(angle) * 1.58);
+    tooth.rotation.y = -angle;
+    g.add(tooth);
+  }
   return g;
 }
 
 function driftArtifact() {
   const g = new THREE.Group();
-  const crystal = mesh(new THREE.IcosahedronGeometry(0.72, 0), MAT.drift);
-  crystal.scale.set(1, 1.25, 0.85);
+  const crystal = mesh(new THREE.IcosahedronGeometry(0.72, 1), MAT.drift);
+  crystal.scale.set(0.82, 1.45, 0.72);
   g.add(crystal);
+  const cageGeometry = new THREE.IcosahedronGeometry(1.05, 0);
+  g.add(
+    new THREE.LineSegments(
+      new THREE.EdgesGeometry(cageGeometry),
+      new THREE.LineBasicMaterial({ color: 0x7ec8c4, transparent: true, opacity: 0.48 }),
+    ),
+  );
+  const orbit = mesh(new THREE.TorusGeometry(1.15, 0.025, 5, 40), MAT.energy);
+  orbit.rotation.x = Math.PI / 2.5;
+  orbit.rotation.y = Math.PI / 5;
+  orbit.userData.motion = "gimbal";
+  g.add(orbit);
+  for (const angle of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) {
+    const shard = mesh(new THREE.TetrahedronGeometry(0.2, 0), MAT.drift);
+    shard.position.set(Math.cos(angle) * 1.12, Math.sin(angle * 2) * 0.4, Math.sin(angle) * 1.12);
+    g.add(shard);
+  }
   return g;
 }
 
 function entityArtifact() {
   const g = new THREE.Group();
-  const core = mesh(new THREE.OctahedronGeometry(0.55, 0), MAT.entity);
+  const core = mesh(new THREE.OctahedronGeometry(0.52, 1), MAT.entity);
   g.add(core);
-  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(core.geometry), new THREE.LineBasicMaterial({ color: 0xe0c089 })));
+  const cage = new THREE.IcosahedronGeometry(0.86, 0);
+  g.add(
+    new THREE.LineSegments(
+      new THREE.EdgesGeometry(cage),
+      new THREE.LineBasicMaterial({ color: 0xe0c089, transparent: true, opacity: 0.72 }),
+    ),
+  );
+  const ring = mesh(new THREE.TorusGeometry(0.98, 0.035, 6, 40), MAT.brass);
+  ring.rotation.x = Math.PI / 2.6;
+  ring.userData.motion = "gimbal";
+  g.add(ring);
+  g.add(mesh(new THREE.SphereGeometry(0.12, 10, 8), MAT.lamp, 0.98, 0, 0));
   return g;
 }
 
@@ -241,6 +313,7 @@ Stats
   GET  ${origin}/docket
   GET  ${origin}/standing?sort=fame
   GET  ${origin}/identities
+       registered identities with current online presence
   GET  ${origin}/identities/<id>
   GET  ${origin}/proposals/<id>
 
@@ -328,6 +401,11 @@ const world = {
   events: [],
   names: new Map(),
   founders: new Set(),
+  onlineIds: new Set(),
+  identityRows: [],
+  standingRows: [],
+  presenceFrames: 0,
+  streamLive: false,
   liveBodies: new Map(),
   liveMarks: new Map(),
   liveEntities: new Map(),
@@ -575,20 +653,35 @@ function instanced(geometry, material, cap) {
   return mesh;
 }
 
-const bodyMesh = instanced(new THREE.CapsuleGeometry(0.4, 1.75, 8, 16), MAT.agent, MAX_BODIES);
-const lampMesh = instanced(new THREE.IcosahedronGeometry(0.16, 0), MAT.lamp, MAX_BODIES);
-const echoMesh = instanced(new THREE.CapsuleGeometry(0.3, 1.4, 6, 10), MAT.echo, MAX_BODIES);
-const wardenMesh = instanced(new THREE.BoxGeometry(0.85, 3.1, 0.16), MAT.slate, MAX_WARDENS);
-const wardenBoss = instanced(new THREE.CircleGeometry(0.2, 16), MAT.brass, MAX_WARDENS);
+const bodyMesh = instanced(new THREE.CylinderGeometry(0.32, 0.56, 1.55, 8), MAT.agent, MAX_BODIES);
+const shoulderMesh = instanced(new THREE.CylinderGeometry(0.48, 0.34, 0.38, 8), MAT.agentTrim, MAX_BODIES);
+const headMesh = instanced(new THREE.IcosahedronGeometry(0.28, 1), MAT.agentTrim, MAX_BODIES);
+const collarMesh = instanced(new THREE.TorusGeometry(0.42, 0.035, 6, 24), MAT.brass, MAX_BODIES);
+const haloMesh = instanced(new THREE.TorusGeometry(0.58, 0.022, 5, 32), MAT.energy, MAX_BODIES);
+const lampMesh = instanced(new THREE.IcosahedronGeometry(0.12, 1), MAT.lamp, MAX_BODIES);
+const echoMesh = instanced(new THREE.CylinderGeometry(0.24, 0.46, 1.4, 7), MAT.echo, MAX_BODIES);
+const echoHead = instanced(new THREE.IcosahedronGeometry(0.23, 0), MAT.echo, MAX_BODIES);
+const echoRing = instanced(new THREE.TorusGeometry(0.5, 0.018, 5, 24), MAT.echo, MAX_BODIES);
+const wardenMesh = instanced(new THREE.CylinderGeometry(0.5, 0.72, 2.72, 4), MAT.slate, MAX_WARDENS);
+const wardenCrown = instanced(new THREE.ConeGeometry(0.48, 0.82, 4), MAT.iron, MAX_WARDENS);
+const wardenBoss = instanced(new THREE.TorusGeometry(0.25, 0.05, 6, 24), MAT.brass, MAX_WARDENS);
+const wardenEye = instanced(new THREE.IcosahedronGeometry(0.11, 1), MAT.lamp, MAX_WARDENS);
 const markPost = instanced(new THREE.CylinderGeometry(0.055, 0.07, 1.85, 8), MAT.iron, MAX_MARKS);
-const markFlag = instanced(new THREE.BoxGeometry(0.82, 0.4, 0.045), MAT.markFlag, MAX_MARKS);
-bodyMesh.userData.pickKind = "person";
-lampMesh.userData.pickKind = "person";
-echoMesh.userData.pickKind = "echo";
-wardenMesh.userData.pickKind = "warden";
-wardenBoss.userData.pickKind = "warden";
-markPost.userData.pickKind = "mark";
-markFlag.userData.pickKind = "mark";
+const markFlag = instanced(new THREE.BoxGeometry(0.82, 0.4, 0.04, 2, 2, 1), MAT.markFlag, MAX_MARKS);
+const markBase = instanced(new THREE.TorusGeometry(0.24, 0.035, 6, 24), MAT.brass, MAX_MARKS);
+const markBeacon = instanced(new THREE.TetrahedronGeometry(0.12, 0), MAT.lamp, MAX_MARKS);
+for (const item of [bodyMesh, shoulderMesh, headMesh, collarMesh, haloMesh, lampMesh]) {
+  item.userData.pickKind = "person";
+}
+for (const item of [echoMesh, echoHead, echoRing]) {
+  item.userData.pickKind = "echo";
+}
+for (const item of [wardenMesh, wardenCrown, wardenBoss, wardenEye]) {
+  item.userData.pickKind = "warden";
+}
+for (const item of [markPost, markFlag, markBase, markBeacon]) {
+  item.userData.pickKind = "mark";
+}
 
 const plane = new THREE.Mesh(
   new THREE.PlaneGeometry(SIZE, SIZE),
@@ -675,17 +768,32 @@ function rebuildWardens(rows) {
   writeInstances(wardenMesh, rows, (object, row) => {
     const at = cell(row.position);
     object.position.copy(at);
-    object.position.y += 0.55;
+    object.position.y += 1.36;
+    object.scale.setScalar(1);
+    object.lookAt(0, object.position.y, 0);
+  });
+  writeInstances(wardenCrown, rows, (object, row) => {
+    const at = cell(row.position);
+    object.position.copy(at);
+    object.position.y += 3.05;
     object.scale.setScalar(1);
     object.lookAt(0, object.position.y, 0);
   });
   writeInstances(wardenBoss, rows, (object, row) => {
     const at = cell(row.position);
     object.position.copy(at);
-    object.position.y += 1.35;
+    object.position.y += 1.62;
     object.scale.setScalar(1);
     object.lookAt(0, object.position.y, 0);
-    object.position.add(new THREE.Vector3(0, 0, 0.1).applyQuaternion(object.quaternion));
+    object.position.add(new THREE.Vector3(0, 0, 0.42).applyQuaternion(object.quaternion));
+  });
+  writeInstances(wardenEye, rows, (object, row) => {
+    const at = cell(row.position);
+    object.position.copy(at);
+    object.position.y += 1.62;
+    object.scale.setScalar(1);
+    object.lookAt(0, object.position.y, 0);
+    object.position.add(new THREE.Vector3(0, 0, 0.46).applyQuaternion(object.quaternion));
   });
 }
 
@@ -716,8 +824,20 @@ function writeEchoes(rows) {
   world.echoOrder = rows.slice(0, MAX_BODIES).map((row) => row.id);
   writeInstances(echoMesh, rows, (object, row) => {
     object.position.copy(cell(row.position));
-    object.position.y += 1.28;
+    object.position.y += 0.82;
     object.rotation.set(0, 0, 0);
+    object.scale.setScalar(1);
+  });
+  writeInstances(echoHead, rows, (object, row) => {
+    object.position.copy(cell(row.position));
+    object.position.y += 1.78;
+    object.rotation.set(0, 0, 0);
+    object.scale.setScalar(1);
+  });
+  writeInstances(echoRing, rows, (object, row) => {
+    object.position.copy(cell(row.position));
+    object.position.y += 1.02;
+    object.rotation.set(Math.PI / 2, 0, 0);
     object.scale.setScalar(1);
   });
 }
@@ -734,6 +854,18 @@ function writeInstances(mesh, rows, place) {
   mesh.instanceMatrix.needsUpdate = true;
 }
 
+function writeBodyPart(item, index, position, y, rotation, scale, color) {
+  dummy.position.copy(position);
+  dummy.position.y += y;
+  dummy.rotation.set(rotation.x, rotation.y, rotation.z);
+  dummy.scale.setScalar(scale);
+  dummy.updateMatrix();
+  item.setMatrixAt(index, dummy.matrix);
+  if (color !== null) {
+    item.setColorAt(index, color);
+  }
+}
+
 function writeBodies(rows) {
   const used = Math.min(rows.length, MAX_BODIES);
   world.bodyOrder = [];
@@ -741,28 +873,20 @@ function writeBodies(rows) {
     const row = rows[i];
     world.bodyOrder.push(row.id);
     const color = world.founders.has(row.id) ? new THREE.Color(0xc4a574) : idColor(row.id);
-    dummy.position.copy(cell(row.position));
-    dummy.position.y += 1.28;
-    dummy.rotation.set(0, 0, 0);
-    dummy.scale.setScalar(1);
-    dummy.updateMatrix();
-    bodyMesh.setMatrixAt(i, dummy.matrix);
-    bodyMesh.setColorAt(i, color);
-    dummy.position.y += 1.05;
-    dummy.scale.setScalar(1);
-    dummy.updateMatrix();
-    lampMesh.setMatrixAt(i, dummy.matrix);
-    lampMesh.setColorAt(i, color);
+    const position = cell(row.position);
+    writeBodyPart(bodyMesh, i, position, 0.8, { x: 0, y: 0, z: 0 }, 1, color);
+    writeBodyPart(shoulderMesh, i, position, 1.54, { x: 0, y: 0, z: 0 }, 1, color);
+    writeBodyPart(headMesh, i, position, 1.93, { x: 0, y: 0, z: 0 }, 1, color);
+    writeBodyPart(collarMesh, i, position, 1.66, { x: Math.PI / 2, y: 0, z: 0 }, 1, color);
+    writeBodyPart(haloMesh, i, position, 2.18, { x: Math.PI / 2, y: 0, z: 0 }, 1, color);
+    writeBodyPart(lampMesh, i, position, 1.93, { x: 0, y: 0, z: 0 }, 1, color);
   }
-  bodyMesh.count = used;
-  lampMesh.count = used;
-  bodyMesh.instanceMatrix.needsUpdate = true;
-  lampMesh.instanceMatrix.needsUpdate = true;
-  if (bodyMesh.instanceColor) {
-    bodyMesh.instanceColor.needsUpdate = true;
-  }
-  if (lampMesh.instanceColor) {
-    lampMesh.instanceColor.needsUpdate = true;
+  for (const item of [bodyMesh, shoulderMesh, headMesh, collarMesh, haloMesh, lampMesh]) {
+    item.count = used;
+    item.instanceMatrix.needsUpdate = true;
+    if (item.instanceColor) {
+      item.instanceColor.needsUpdate = true;
+    }
   }
   writeLabels(rows);
 }
@@ -791,26 +915,46 @@ function writeLabels(rows) {
 
 function nameSprite(text, color, max = 18) {
   const board = document.createElement("canvas");
-  board.width = 256;
-  board.height = 64;
+  board.width = 320;
+  board.height = 72;
   const ctx = board.getContext("2d");
   if (ctx === null) {
     return new THREE.Sprite();
   }
-  ctx.clearRect(0, 0, 256, 64);
-  ctx.fillStyle = "rgba(12, 18, 24, 0.72)";
+  ctx.clearRect(0, 0, board.width, board.height);
+  const wash = ctx.createLinearGradient(20, 0, 300, 0);
+  wash.addColorStop(0, "rgba(12, 18, 24, 0.9)");
+  wash.addColorStop(1, "rgba(25, 38, 45, 0.72)");
+  ctx.fillStyle = wash;
   ctx.beginPath();
-  ctx.roundRect(18, 12, 220, 40, 8);
+  ctx.moveTo(30, 10);
+  ctx.lineTo(292, 10);
+  ctx.lineTo(306, 24);
+  ctx.lineTo(306, 52);
+  ctx.lineTo(292, 66);
+  ctx.lineTo(30, 66);
+  ctx.lineTo(16, 52);
+  ctx.lineTo(16, 24);
+  ctx.closePath();
   ctx.fill();
-  ctx.font = "600 26px 'Source Sans 3', 'Segoe UI', sans-serif";
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.58;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(38, 38, 4, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.font = "500 24px 'IBM Plex Mono', ui-monospace, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = color;
-  ctx.fillText(text.slice(0, max), 128, 33);
+  ctx.fillText(text.slice(0, max), 172, 38);
   const texture = new THREE.CanvasTexture(board);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
-  sprite.scale.set(3.6, 0.9, 1);
+  sprite.scale.set(4.45, 1, 1);
   return sprite;
 }
 
@@ -818,6 +962,7 @@ function rememberBody(id, position) {
   if (typeof id !== "string" || id.length === 0 || position === null) {
     return;
   }
+  world.onlineIds.add(id);
   world.liveBodies.set(id, { id, position });
   world.flashes.set(id, performance.now());
 }
@@ -826,7 +971,12 @@ function foldLiveBodies(events) {
   for (const item of events) {
     const id = actorId(item);
     const at = payloadPosition(item.payload);
-    if ((item.type === "identity.spawn" || item.type === "act.move" || item.type === "act.mark") && id.length > 0 && at !== null) {
+    if (
+      (item.type === "identity.spawn" || item.type === "act.move" || item.type === "act.mark") &&
+      id.length > 0 &&
+      at !== null &&
+      world.onlineIds.has(id)
+    ) {
       world.liveBodies.set(id, { id, position: at });
     }
     if (item.type === "act.mark" && at !== null) {
@@ -865,19 +1015,15 @@ function foldEntity(item) {
 }
 
 function paintBodies() {
+  const echoes = world.bodies.filter((row) => world.onlineIds.has(row.id));
   if (world.follow) {
-    const live = new Map(world.liveBodies);
-    for (const row of world.bodies) {
-      if (!live.has(row.id)) {
-        live.set(row.id, row);
-      }
-    }
-    writeBodies([...live.values()]);
-    writeEchoes(world.bodies);
+    const live = [...world.liveBodies.values()].filter((row) => world.onlineIds.has(row.id));
+    writeBodies(live);
+    writeEchoes(echoes);
     return;
   }
   writeBodies([]);
-  writeEchoes(world.bodies);
+  writeEchoes(echoes);
 }
 
 function paintMarks() {
@@ -915,6 +1061,18 @@ function writeMarks(rows) {
     object.rotation.set(0, 0.15, 0);
     object.scale.set(1, 1, 1);
   });
+  writeInstances(markBase, rows, (object, row) => {
+    object.position.copy(cell(row.position));
+    object.position.y += 0.06;
+    object.rotation.set(Math.PI / 2, 0, 0);
+    object.scale.set(1, 1, 1);
+  });
+  writeInstances(markBeacon, rows, (object, row) => {
+    object.position.copy(cell(row.position));
+    object.position.y += 1.78;
+    object.rotation.set(0, 0, Math.PI / 4);
+    object.scale.set(1, 1, 1);
+  });
 }
 
 function eventPosition(item) {
@@ -936,15 +1094,199 @@ function eventPosition(item) {
   return world.liveBodies.get(actorId(item))?.position ?? null;
 }
 
-function sparkAt(item) {
-  const pos = eventPosition(item);
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, 8, 8),
-    new THREE.MeshBasicMaterial({ color: item.type?.startsWith("amendment") ? 0xc4a574 : 0x4a7a68 }),
+function visualTone(type) {
+  if (type.startsWith("amendment.")) {
+    return { color: 0xc4a574, count: 32, duration: 1900, spread: 8 };
+  }
+  if (type === "speak" || type === "speak.warden") {
+    return { color: 0x5e9a92, count: 22, duration: 1700, spread: 4 };
+  }
+  if (type === "act.mark") {
+    return { color: 0xe0c089, count: 30, duration: 1800, spread: 5 };
+  }
+  if (type === "effect.create") {
+    return { color: 0x4a9a78, count: 28, duration: 1600, spread: 5 };
+  }
+  if (type === "effect.destroy" || type.endsWith("_failed")) {
+    return { color: 0x9b4d52, count: 24, duration: 1300, spread: 3 };
+  }
+  if (type === "effect.move" || type === "act.move") {
+    return { color: 0x718a9b, count: 18, duration: 1200, spread: 3 };
+  }
+  return { color: 0x4a7a68, count: 16, duration: 1200, spread: 3 };
+}
+
+function visualEvent(type) {
+  return (
+    type === "speak" ||
+    type === "speak.warden" ||
+    (type.startsWith("act.") && type !== "act.wait") ||
+    type.startsWith("effect.") ||
+    type.startsWith("amendment.") ||
+    type.endsWith("_failed")
   );
-  mesh.position.copy(pos === null ? hashPoint(Number(item.seq) || 0) : cell(pos));
-  scene.add(mesh);
-  sparks.push({ mesh, born: performance.now() });
+}
+
+function eventSeed(item) {
+  const type = typeof item.type === "string" ? item.type : "event";
+  let seed = (Number(item.seq) || Number(item.tick) * 31 || 1) + type.length * 17;
+  for (let i = 0; i < type.length; i += 1) {
+    seed = Math.imul(seed ^ type.charCodeAt(i), 16777619);
+  }
+  return seed >>> 0;
+}
+
+function eventArc(from, to, color) {
+  const distance = from.distanceTo(to);
+  const middle = from.clone().lerp(to, 0.5);
+  middle.y += Math.max(1.5, distance * 0.16);
+  const curve = new THREE.QuadraticBezierCurve3(from, middle, to);
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(curve.getPoints(28)),
+    new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.68,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  return line;
+}
+
+function interactionDestinations(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const destinations = [];
+  const seen = new Set();
+  const addTarget = (id) => {
+    if (typeof id !== "string" || id.length === 0 || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    if (world.onlineIds.has(id)) {
+      const at = bodyOf(id);
+      if (at !== null) {
+        destinations.push(cell(at));
+        return;
+      }
+    }
+    const warden = world.wardens.find((row) => row.id === id);
+    if (warden?.position !== undefined) {
+      destinations.push(cell(warden.position));
+      return;
+    }
+    const entity = world.liveEntities.get(id);
+    if (entity?.position !== undefined && entity.position !== null) {
+      destinations.push(cell(entity.position));
+    }
+  };
+  if (item.type === "speak" && Array.isArray(payload.hearers)) {
+    for (const id of payload.hearers.slice(0, 8)) {
+      addTarget(id);
+    }
+  }
+  addTarget(payload.target);
+  addTarget(payload.targetId);
+  return destinations;
+}
+
+function disposeSpark(spark) {
+  scene.remove(spark.group);
+  spark.group.traverse((node) => {
+    node.geometry?.dispose();
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      material?.dispose();
+    }
+  });
+}
+
+function sparkAt(item, context = {}) {
+  const type = typeof item.type === "string" ? item.type : "event";
+  if (!visualEvent(type)) {
+    return;
+  }
+  const tone = visualTone(type);
+  const eventAt = context.at ?? eventPosition(item);
+  const origin = eventAt === null ? new THREE.Vector3(0, 0, 0) : cell(eventAt);
+  const group = new THREE.Group();
+  group.position.copy(origin);
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(type.startsWith("amendment.") ? 2.2 : 0.75, 0.035, 5, 64),
+    new THREE.MeshBasicMaterial({
+      color: tone.color,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  ring.quaternion.copy(camera.quaternion);
+  group.add(ring);
+
+  const positions = new Float32Array(tone.count * 3);
+  const velocities = new Float32Array(tone.count * 3);
+  const seed = eventSeed(item);
+  for (let i = 0; i < tone.count; i += 1) {
+    const theta = sequence(i + seed, 0.61803398875) * Math.PI * 2;
+    const y = sequence(i + seed, 0.75487766625, 0.17) * 2 - 1;
+    const radial = Math.sqrt(Math.max(0, 1 - y * y));
+    const speed = 0.55 + sequence(i + seed, 0.56984029099, 0.41) * tone.spread;
+    const offset = i * 3;
+    velocities[offset] = Math.cos(theta) * radial * speed;
+    velocities[offset + 1] = y * speed + (type === "act.mark" ? 1.4 : 0);
+    velocities[offset + 2] = Math.sin(theta) * radial * speed;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const particles = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color: tone.color,
+      size: type.startsWith("amendment.") ? 1.25 : 0.85,
+      map: quantum.dust.material.map,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  group.add(particles);
+
+  const paths = [];
+  const localOrigin = new THREE.Vector3();
+  const from = context.from === null || context.from === undefined ? null : cell(context.from).sub(origin);
+  if ((type === "act.move" || type === "effect.move") && from !== null) {
+    const path = eventArc(from, localOrigin, tone.color);
+    group.add(path);
+    paths.push(path);
+  }
+  for (const destination of interactionDestinations(item)) {
+    const path = eventArc(localOrigin, destination.sub(origin), tone.color);
+    group.add(path);
+    paths.push(path);
+  }
+
+  scene.add(group);
+  sparks.push({
+    group,
+    particles,
+    positions,
+    velocities,
+    ring,
+    paths,
+    born: performance.now(),
+    duration: tone.duration,
+    type,
+  });
+  while (sparks.length > 36) {
+    const oldest = sparks.shift();
+    if (oldest !== undefined) {
+      disposeSpark(oldest);
+    }
+  }
 }
 
 function resize() {
@@ -958,18 +1300,26 @@ function resize() {
 function tickSparks(now) {
   for (let i = sparks.length - 1; i >= 0; i -= 1) {
     const spark = sparks[i];
-    const age = (now - spark.born) / 1400;
+    const age = (now - spark.born) / spark.duration;
     if (age >= 1) {
-      scene.remove(spark.mesh);
-      spark.mesh.geometry.dispose();
-      spark.mesh.material.dispose();
+      disposeSpark(spark);
       sparks.splice(i, 1);
       continue;
     }
-    const s = 1 + age * 4;
-    spark.mesh.scale.setScalar(s);
-    spark.mesh.material.opacity = 1 - age;
-    spark.mesh.material.transparent = true;
+    const travel = Math.sin(Math.min(1, age) * Math.PI * 0.5);
+    for (let n = 0; n < spark.positions.length; n += 3) {
+      spark.positions[n] = spark.velocities[n] * travel;
+      spark.positions[n + 1] = spark.velocities[n + 1] * travel - age * age * 0.8;
+      spark.positions[n + 2] = spark.velocities[n + 2] * travel;
+    }
+    spark.particles.geometry.attributes.position.needsUpdate = true;
+    spark.particles.material.opacity = Math.max(0, 1 - age);
+    const ringScale = 1 + age * (spark.type.startsWith("amendment.") ? 12 : 5);
+    spark.ring.scale.setScalar(ringScale);
+    spark.ring.material.opacity = Math.max(0, (1 - age) * 0.72);
+    for (const path of spark.paths) {
+      path.material.opacity = Math.max(0, (1 - age) * 0.68);
+    }
   }
 }
 
@@ -1135,10 +1485,12 @@ function selectedPosition(selected) {
     return world.anchors.find((row) => row.designation === selected.id)?.centre ?? null;
   }
   if (selected?.kind === "person") {
-    return bodyOf(selected.id);
+    return world.onlineIds.has(selected.id) ? bodyOf(selected.id) : null;
   }
   if (selected?.kind === "echo") {
-    return world.bodies.find((row) => row.id === selected.id)?.position ?? null;
+    return world.onlineIds.has(selected.id)
+      ? world.bodies.find((row) => row.id === selected.id)?.position ?? null
+      : null;
   }
   if (selected?.kind === "warden") {
     return world.wardens.find((row) => row.id === selected.id)?.position ?? null;
@@ -1720,7 +2072,25 @@ function pointerFromEvent(event) {
 function hitsAt(event) {
   pointerFromEvent(event);
   const groups = [anchorsGroup, driftsGroup, entitiesGroup, labelsGroup];
-  const meshes = [bodyMesh, lampMesh, echoMesh, wardenMesh, wardenBoss, markPost, markFlag].filter((mesh) => mesh.count > 0);
+  const meshes = [
+    bodyMesh,
+    shoulderMesh,
+    headMesh,
+    collarMesh,
+    haloMesh,
+    lampMesh,
+    echoMesh,
+    echoHead,
+    echoRing,
+    wardenMesh,
+    wardenCrown,
+    wardenBoss,
+    wardenEye,
+    markPost,
+    markFlag,
+    markBase,
+    markBeacon,
+  ].filter((mesh) => mesh.count > 0);
   const hits = [...raycaster.intersectObjects(groups, true), ...raycaster.intersectObjects(meshes, false)];
   hits.sort((a, b) => a.distance - b.distance);
   return hits;
@@ -1767,10 +2137,16 @@ function pickByScreen(event, slop = 36) {
   }
   if (world.follow) {
     for (const row of world.liveBodies.values()) {
+      if (!world.onlineIds.has(row.id)) {
+        continue;
+      }
       best = considerScreen(row.position, { kind: "person", id: row.id }, x, y, width, height, best);
     }
   }
   for (const row of world.bodies) {
+    if (!world.onlineIds.has(row.id)) {
+      continue;
+    }
     best = considerScreen(row.position, { kind: "echo", id: row.id }, x, y, width, height, best);
   }
   for (const mark of inscriptions()) {
@@ -1808,19 +2184,19 @@ function selectionFromHit(hit) {
   if (typeof instanceId !== "number" || instanceId < 0) {
     return null;
   }
-  if (obj === bodyMesh || obj === lampMesh) {
+  if ([bodyMesh, shoulderMesh, headMesh, collarMesh, haloMesh, lampMesh].includes(obj)) {
     const id = world.bodyOrder[instanceId];
     return typeof id === "string" && id.length > 0 ? { kind: "person", id } : null;
   }
-  if (obj === echoMesh) {
+  if ([echoMesh, echoHead, echoRing].includes(obj)) {
     const id = world.echoOrder[instanceId];
     return typeof id === "string" && id.length > 0 ? { kind: "echo", id } : null;
   }
-  if (obj === wardenMesh || obj === wardenBoss) {
+  if ([wardenMesh, wardenCrown, wardenBoss, wardenEye].includes(obj)) {
     const id = world.wardenOrder[instanceId];
     return typeof id === "string" && id.length > 0 ? { kind: "warden", id } : null;
   }
-  if (obj === markPost || obj === markFlag) {
+  if ([markPost, markFlag, markBase, markBeacon].includes(obj)) {
     const id = world.markOrder[instanceId];
     return typeof id === "string" && id.length > 0 ? { kind: "mark", id } : null;
   }
@@ -1854,6 +2230,22 @@ function tickQuantum(now) {
   }
 }
 
+function tickArtifactMotions(now) {
+  for (const root of [anchorsGroup, driftsGroup, entitiesGroup]) {
+    root.traverse((node) => {
+      if (node.userData.motion === "orbit") {
+        node.rotation.z += 0.004;
+      } else if (node.userData.motion === "gimbal") {
+        node.rotation.y += 0.006;
+        node.rotation.z += 0.002;
+      } else if (node.userData.motion === "pulse") {
+        const scale = 1 + Math.sin(now * 0.0025) * 0.12;
+        node.scale.setScalar(scale);
+      }
+    });
+  }
+}
+
 function frame(now) {
   tickFly(now);
   controls.update();
@@ -1875,10 +2267,18 @@ function frame(now) {
       dummy.scale.setScalar(1 + flare * 0.8);
       dummy.updateMatrix();
       lampMesh.setMatrixAt(i, dummy.matrix);
+
+      haloMesh.getMatrixAt(i, dummy.matrix);
+      dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+      dummy.rotation.set(Math.PI / 2, now * 0.0006 + i * 0.37, 0);
+      dummy.scale.setScalar(1 + Math.sin(now * 0.002 + i) * 0.08 + flare * 0.24);
+      dummy.updateMatrix();
+      haloMesh.setMatrixAt(i, dummy.matrix);
     }
     if (used > 0) {
       bodyMesh.instanceMatrix.needsUpdate = true;
       lampMesh.instanceMatrix.needsUpdate = true;
+      haloMesh.instanceMatrix.needsUpdate = true;
     }
     for (const drift of driftsGroup.children) {
       drift.rotation.y += 0.012;
@@ -1887,6 +2287,7 @@ function frame(now) {
     for (const entity of entitiesGroup.children) {
       entity.rotation.y += 0.008;
     }
+    tickArtifactMotions(now);
   }
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -2337,8 +2738,10 @@ function drawSlice() {
   plotSlice(ctx, world.wardens, "#c4a574", 3, (row) => row.position);
   plotSlice(ctx, world.drifts, "#7ec8c4", 3, (row) => row.position);
   plotSlice(ctx, visibleEntities(), "#c4a574", 3.5, (row) => row.position);
-  plotSlice(ctx, world.follow ? world.bodies : [], "#8b99a3", 2.5, (row) => row.position);
-  plotSlice(ctx, world.follow ? [...world.liveBodies.values()] : world.bodies, "#7ec8c4", 3, (row) => row.position);
+  const onlineEchoes = world.bodies.filter((row) => world.onlineIds.has(row.id));
+  const onlineBodies = [...world.liveBodies.values()].filter((row) => world.onlineIds.has(row.id));
+  plotSlice(ctx, world.follow ? onlineEchoes : [], "#8b99a3", 2.5, (row) => row.position);
+  plotSlice(ctx, world.follow ? onlineBodies : onlineEchoes, "#7ec8c4", 3, (row) => row.position);
   const marks = world.follow && world.liveMarks.size > 0 ? [...world.liveMarks.values()] : world.marks;
   plotSlice(ctx, marks, "#e0c089", 2, (row) => row.position);
   ctx.fillStyle = "#8b99a3";
@@ -2394,9 +2797,11 @@ async function refresh() {
     if (title) {
       title.textContent = typeof named === "string" && named.length > 0 ? named : "Unnamed lattice";
     }
+    const identityRows = Array.isArray(identities.identities) ? identities.identities : [];
+    const standingRows = Array.isArray(standing.standing) ? standing.standing : [];
     const names = new Map();
     const founders = new Set();
-    for (const row of Array.isArray(identities.identities) ? identities.identities : []) {
+    for (const row of identityRows) {
       names.set(row.id, row.name);
       if (row.founder) {
         founders.add(row.id);
@@ -2404,6 +2809,14 @@ async function refresh() {
     }
     world.names = names;
     world.founders = founders;
+    world.identityRows = identityRows;
+    world.standingRows = standingRows;
+    world.onlineIds = new Set(identityRows.filter((row) => row.online === true).map((row) => row.id));
+    for (const id of world.liveBodies.keys()) {
+      if (!world.onlineIds.has(id)) {
+        world.liveBodies.delete(id);
+      }
+    }
     applyMap(map);
     ingestText(rules?.registry?.text);
     rebuildAnchors(world.anchors);
@@ -2434,10 +2847,7 @@ async function refresh() {
         }
       }
     }
-    fillInhabitants(
-      Array.isArray(identities.identities) ? identities.identities : [],
-      Array.isArray(standing.standing) ? standing.standing : [],
-    );
+    fillInhabitants(identityRows, standingRows);
     const pending = Array.isArray(docket.pending) ? docket.pending : [];
     setText("record-tick", String(world.present));
     setText("record-open-count", String(pending.length));
@@ -2464,9 +2874,9 @@ function fillInhabitants(rows, standing) {
   const fame = new Map(standing.map((row) => [row.id, row]));
   const census = line(
     "NPCs",
-    `${world.wardens.length} warden · ${world.drifts.length} drift · ${visibleEntities().length} automaton · ${world.bodies.length} echo`,
+    `${world.wardens.length} warden · ${world.drifts.length} drift · ${visibleEntities().length} automaton · ${world.bodies.filter((row) => world.onlineIds.has(row.id)).length} echo`,
   );
-  const people = rows.map((row) => {
+  const people = rows.filter((row) => world.onlineIds.has(row.id)).map((row) => {
     const name = typeof row.name === "string" && row.name.length > 0 ? row.name : row.id;
     const score = fame.get(row.id);
     const at = bodyOf(row.id);
@@ -2482,7 +2892,7 @@ function fillInhabitants(rows, standing) {
     item.title = at === null ? "No last cell on the public map yet" : `Go to ${at.x}, ${at.y}, ${at.z}`;
     return item;
   });
-  fillList("inhabitants", [census, ...people], "No identities yet.");
+  fillList("inhabitants", [census, ...people], "No inhabitants are connected.");
 }
 
 function visibleEntities() {
@@ -2520,11 +2930,16 @@ function appendRecord(item) {
   }
   const id = actorId(item);
   const at = payloadPosition(item.payload);
+  const previousBody = world.liveBodies.get(id)?.position ?? null;
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const entityId = typeof payload.id === "string" ? payload.id : "";
+  const previousEntity = entityId.length > 0 ? world.liveEntities.get(entityId)?.position ?? null : null;
   if (item.type === "identity.spawn" || item.type === "act.move" || item.type === "act.mark") {
     rememberBody(id, at);
     if (world.follow) {
       paintBodies();
     }
+    fillInhabitants(world.identityRows, world.standingRows);
   }
   if (item.type === "act.mark" && at !== null) {
     world.liveMarks.set(`${at.x},${at.y},${at.z}`, {
@@ -2553,8 +2968,11 @@ function appendRecord(item) {
   }
   drawRibbon();
   drawSlice();
-  if (!reduced && !streamNoise(item.type)) {
-    sparkAt(item);
+  if (!reduced && world.streamLive && !streamNoise(item.type)) {
+    sparkAt(item, {
+      from: item.type === "act.move" ? previousBody : item.type === "effect.move" ? previousEntity : null,
+      at: item.type === "effect.destroy" ? previousEntity : undefined,
+    });
   }
 }
 
@@ -2574,10 +2992,17 @@ function listen() {
     live.append(wait);
   }
   const source = new EventSource("/listen");
+  source.addEventListener("error", () => {
+    world.streamLive = false;
+    world.presenceFrames = 0;
+  });
   source.addEventListener("presence", (event) => {
     try {
       const data = JSON.parse(event.data);
       const rows = Array.isArray(data.bodies) ? data.bodies : [];
+      world.presenceFrames += 1;
+      world.onlineIds.clear();
+      world.liveBodies.clear();
       for (const row of rows) {
         if (typeof row.id === "string") {
           rememberBody(row.id, payloadPosition(row.position ?? row));
@@ -2586,7 +3011,12 @@ function listen() {
       if (world.follow) {
         paintBodies();
       }
+      moveSelectionField(world.selected);
+      fillInhabitants(world.identityRows, world.standingRows);
       drawSlice();
+      if (world.presenceFrames >= 2) {
+        world.streamLive = true;
+      }
     } catch {
       /* ignore malformed frames */
     }

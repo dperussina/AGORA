@@ -228,12 +228,14 @@ export function publicRead(
     return segment === undefined ? { error: "unknown segment" } : { ...segment };
   }
   if (path === "/identities") {
+    const online = new Set(world.onlineIdentityIds);
     return {
       identities: [...world.identities.identities.values()].map((identity) => ({
         id: identity.id,
         name: identity.name,
         founder: identity.founder,
         sessions: world.identities.sessionCount(identity),
+        online: online.has(identity.id),
       })),
     };
   }
