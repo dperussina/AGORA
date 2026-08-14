@@ -141,9 +141,64 @@ camera.position.set(48, 36, 54);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = !reduced;
 controls.dampingFactor = 0.07;
-controls.minDistance = 22;
-controls.maxDistance = 130;
+controls.enableZoom = true;
+controls.minDistance = 8;
+controls.maxDistance = 180;
 controls.target.set(0, 0, 0);
+
+let fly = null;
+
+function worldOf(row) {
+  if (row.type === "vantage") {
+    return orbitSeat(row.position);
+  }
+  const at = cell(row.position);
+  if (row.kind === "echo") {
+    at.addScaledVector(T_AXIS, 5.2);
+  }
+  return at;
+}
+
+function flyToRow(row, distance = 14) {
+  if (row?.position === undefined) {
+    return;
+  }
+  const target = worldOf(row);
+  const away = camera.position.clone().sub(controls.target);
+  if (away.lengthSq() < 0.01) {
+    away.set(18, 12, 18);
+  }
+  away.setLength(distance);
+  fly = {
+    fromPos: camera.position.clone(),
+    toPos: target.clone().add(away),
+    fromTarget: controls.target.clone(),
+    toTarget: target,
+    born: performance.now(),
+    duration: 900,
+  };
+}
+
+function tickFly(now) {
+  if (fly === null) {
+    return;
+  }
+  const t = Math.min(1, (now - fly.born) / fly.duration);
+  const ease = 1 - (1 - t) * (1 - t);
+  camera.position.lerpVectors(fly.fromPos, fly.toPos, ease);
+  controls.target.lerpVectors(fly.fromTarget, fly.toTarget, ease);
+  if (t >= 1) {
+    fly = null;
+  }
+}
+
+function dolly(factor) {
+  const offset = camera.position.clone().sub(controls.target);
+  const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, offset.length() * factor));
+  offset.setLength(next);
+  camera.position.copy(controls.target).add(offset);
+  controls.update();
+}
 
 scene.add(new THREE.HemisphereLight(0x8a9aab, 0x1c1612, 0.42));
 const key = new THREE.DirectionalLight(0xc4d0da, 0.28);
@@ -996,7 +1051,34 @@ function paint() {
     census[row.kind] = (census[row.kind] ?? 0) + 1;
   }
   writeCensus(census);
+  writeHere();
   state.dirty = false;
+}
+
+function writeHere() {
+  const root = $("spectrum-here");
+  if (root === null) {
+    return;
+  }
+  const people = listOf("identity");
+  root.replaceChildren();
+  if (people.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No one is here.";
+    root.append(empty);
+    return;
+  }
+  for (const row of people) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.id = row.id;
+    const named = state.names.get(row.id);
+    button.textContent = typeof named === "string" && named.length > 0 ? named : "agent";
+    item.append(button);
+    root.append(item);
+  }
 }
 
 function applyMap(map) {
@@ -1189,6 +1271,10 @@ async function refresh() {
       readJson("/standing?sort=fame"),
     ]);
     state.tick = Number(metrics.tick) || 0;
+    const tickLabel = $("spectrum-tick");
+    if (tickLabel) {
+      tickLabel.textContent = String(state.tick);
+    }
     state.types = rules?.registry?.types ?? {};
     state.names = new Map((identities.identities ?? []).map((row) => [row.id, row.name]));
     state.founders = new Set((identities.identities ?? []).filter((row) => row.founder).map((row) => row.id));
@@ -1328,8 +1414,9 @@ function tick() {
     paint();
   }
   if (!reduced) {
-    controls.update();
     const now = performance.now();
+    tickFly(now);
+    controls.update();
     cosmos.rotation.y += 0.00018;
     aimLamps();
     for (const node of state.movers) {
@@ -1385,6 +1472,21 @@ function bind() {
     const hit = pickFromEvent(event);
     state.selected = hit;
     writeSelected(hit);
+  });
+  $("spectrum-zoom-in")?.addEventListener("click", () => dolly(0.78));
+  $("spectrum-zoom-out")?.addEventListener("click", () => dolly(1.28));
+  $("spectrum-here")?.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (button === null || typeof button.dataset.id !== "string") {
+      return;
+    }
+    const row = listOf("identity").find((item) => item.id === button.dataset.id);
+    if (row === undefined) {
+      return;
+    }
+    state.selected = row;
+    writeSelected(row);
+    flyToRow(row);
   });
 }
 

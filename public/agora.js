@@ -2066,8 +2066,8 @@ function tickArtifactMotions(now) {
   }
 }
 
-let worldVisible = true;
-let worldInView = true;
+let worldVisible = !$("world-view")?.hidden;
+let worldInView = worldVisible;
 let foldInView = false;
 function syncWorldVisible() {
   worldVisible = worldInView && !foldInView;

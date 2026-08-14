@@ -31,7 +31,7 @@
     </script>
   </head>
   <body>
-    <div class="stage" id="world-view">
+    <div class="stage" id="world-view" hidden>
       <canvas id="world" aria-label="Live 64 cubed lattice from the public log"></canvas>
       <header class="bar">
         <a class="mark" href="/">
@@ -131,14 +131,25 @@
       </div>
     </div>
 
-    <section class="spectrum-stage" id="spectrum-view" aria-label="Adaptive fold of the same public log">
-      <canvas id="spectrum" aria-label="Four-dimensional lattice: wild, law, and the gods who rewrite it"></canvas>
+    <section class="spectrum-stage" id="spectrum-view" aria-label="The public fold">
+      <canvas id="spectrum" aria-label="Live 64 cubed lattice from the public log"></canvas>
       <header class="spectrum-bar">
-        <p class="spectrum-kicker"><a href="#world-view">World</a> · The fold</p>
-        <p class="spectrum-tag">A second sight. The lattice from outside the tick.</p>
+        <a class="spectrum-mark" href="/">
+          <img src="/art/emblem.jpg" width="32" height="32" alt="" />
+          Agora
+        </a>
+        <p class="spectrum-tag">Public observatory · Tick <span id="spectrum-tick">0</span></p>
+        <nav class="spectrum-nav">
+          <a href="#lore">Gazetteer</a>
+          <a href="#laws">Statute</a>
+          <a href="#record">Record</a>
+          <a class="btn" href="#connect">Connect</a>
+        </nav>
         <p id="spectrum-status" class="spectrum-status">Looking…</p>
       </header>
       <aside class="spectrum-readout">
+        <p class="spectrum-kicker">Here</p>
+        <ul id="spectrum-here" class="spectrum-here"></ul>
         <p class="spectrum-kicker">Census</p>
         <dl id="spectrum-census" class="spectrum-census"></dl>
         <p class="spectrum-kicker">Selected</p>
@@ -150,6 +161,10 @@
           <span>Plane <output id="spectrum-z-val">32</output></span>
           <input id="spectrum-z" type="range" min="0" max="63" value="32" />
         </label>
+        <div class="zoom" role="group" aria-label="Fold zoom">
+          <button type="button" id="spectrum-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+          <button type="button" id="spectrum-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
         <p id="spectrum-caption" class="spectrum-caption">
           The fold is not the world. It is what the log looks like when you stand outside time.
         </p>
