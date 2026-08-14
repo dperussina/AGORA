@@ -6,37 +6,59 @@ const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
 const MAX_BODIES = 256;
 const MAX_MARKS = 512;
+function lit(color, emissive, extra = {}) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    emissive,
+    emissiveIntensity: 0.72,
+    roughness: 0.46,
+    metalness: 0.14,
+    ...extra,
+  });
+}
+
+function glow(color, opacity = 0.28) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+}
+
+function corona(group, radius, color, y = 0.35, opacity = 0.3) {
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 10), glow(color, opacity));
+  shell.position.y = y;
+  group.add(shell);
+}
+
 const MAT = {
-  stone: new THREE.MeshStandardMaterial({ color: 0x8a7350, roughness: 0.68, metalness: 0.08 }),
-  roof: new THREE.MeshStandardMaterial({ color: 0x6d5a3a, roughness: 0.48, metalness: 0.18 }),
-  rock: new THREE.MeshStandardMaterial({ color: 0xdce6ec, roughness: 0.92, metalness: 0 }),
-  iron: new THREE.MeshStandardMaterial({ color: 0x2f4a40, roughness: 0.38, metalness: 0.4 }),
-  deck: new THREE.MeshStandardMaterial({ color: 0x4a7a68, roughness: 0.55, metalness: 0.12 }),
-  voidWall: new THREE.MeshStandardMaterial({
-    color: 0x1a2228,
-    roughness: 0.95,
+  stone: lit(0x8a7350, 0xc4a574, { roughness: 0.58, emissiveIntensity: 0.62 }),
+  roof: lit(0x6d5a3a, 0xe0c089, { metalness: 0.22, emissiveIntensity: 0.85 }),
+  rock: lit(0xdce6ec, 0xe7eef2, { roughness: 0.82, metalness: 0, emissiveIntensity: 0.55 }),
+  iron: lit(0x2f4a40, 0x6d9a88, { metalness: 0.32, emissiveIntensity: 0.8 }),
+  deck: lit(0x4a7a68, 0x8fcebb, { emissiveIntensity: 0.95 }),
+  voidWall: lit(0x1a2228, 0x3d6a72, {
+    roughness: 0.9,
     metalness: 0,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.82,
     side: THREE.DoubleSide,
+    emissiveIntensity: 0.7,
   }),
-  rim: new THREE.MeshStandardMaterial({ color: 0x5a6873, roughness: 0.7, metalness: 0.06 }),
-  slate: new THREE.MeshStandardMaterial({ color: 0x1b232b, roughness: 0.5, metalness: 0.22 }),
-  brass: new THREE.MeshStandardMaterial({ color: 0x6d5a3a, roughness: 0.35, metalness: 0.5 }),
-  drift: new THREE.MeshStandardMaterial({ color: 0x3d5248, roughness: 0.35, metalness: 0.25 }),
+  rim: lit(0x8b99a3, 0xdce6ec, { emissiveIntensity: 0.75 }),
+  slate: lit(0x1b232b, 0xc4a574, { metalness: 0.22, emissiveIntensity: 0.55 }),
+  brass: lit(0x6d5a3a, 0xe0c089, { metalness: 0.45, emissiveIntensity: 0.95 }),
+  drift: lit(0x3d5248, 0x7ec8c4, { emissiveIntensity: 1.15 }),
+  lamp: lit(0xe0c089, 0xfff1c8, { roughness: 0.18, metalness: 0.05, emissiveIntensity: 1.4 }),
   orb: new THREE.MeshStandardMaterial({
     roughness: 0.22,
     metalness: 0.18,
     emissive: 0xffffff,
-    emissiveIntensity: 0.45,
+    emissiveIntensity: 0.7,
   }),
-  halo: new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.32,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  }),
+  halo: glow(0xffffff, 0.36),
 };
 
 function box(w, h, d, x, y, z, mat, rotY = 0) {
@@ -64,6 +86,7 @@ function cityArtifact() {
     g.add(box(w, h, d, x, y, z, MAT.stone));
     g.add(box(w * 1.04, 0.07, d * 1.04, x, y + h / 2 + 0.04, z, MAT.roof));
   }
+  corona(g, 2.55, 0xc4a574, 0.55, 0.26);
   return g;
 }
 
@@ -81,6 +104,7 @@ function cairnArtifact() {
     mesh.rotation.z = 0.06;
     g.add(mesh);
   }
+  corona(g, 1.65, 0xdce6ec, 0.35, 0.3);
   return g;
 }
 
@@ -96,9 +120,10 @@ function vantageArtifact() {
   rail.rotation.x = Math.PI / 2;
   rail.position.y = 2.78;
   g.add(rail);
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), MAT.deck);
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), MAT.lamp);
   lamp.position.y = 3.05;
   g.add(lamp);
+  corona(g, 1.35, 0x8fcebb, 2.7, 0.34);
   return g;
 }
 
@@ -111,6 +136,10 @@ function hollowArtifact() {
   lip.rotation.x = Math.PI / 2;
   lip.position.y = 0.95;
   g.add(lip);
+  const wellLight = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 0.35, 1.8, 12), glow(0x7ec8c4, 0.32));
+  wellLight.position.y = -0.2;
+  g.add(wellLight);
+  corona(g, 1.7, 0x5a8a92, 0.2, 0.24);
   return g;
 }
 
@@ -121,6 +150,14 @@ function wardenArtifact() {
   const boss = new THREE.Mesh(new THREE.CircleGeometry(0.26, 12), MAT.brass);
   boss.position.set(0, 1.05, 0.1);
   g.add(boss);
+  corona(g, 1.55, 0xc4a574, 0.55, 0.26);
+  return g;
+}
+
+function driftArtifact() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), MAT.drift));
+  g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.78, 0), glow(0x7ec8c4, 0.3)));
   return g;
 }
 
@@ -130,6 +167,7 @@ const PROTO = {
   vantage: vantageArtifact(),
   hollow: hollowArtifact(),
   warden: wardenArtifact(),
+  drift: driftArtifact(),
 };
 
 function idColor(id) {
@@ -325,7 +363,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setClearColor(0x10161c, 1);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x10161c, 70, 160);
+scene.fog = new THREE.Fog(0x10161c, 90, 190);
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
 camera.position.set(78, 46, 78);
@@ -340,13 +378,14 @@ controls.target.set(0, 0, 0);
 controls.autoRotate = !reduced;
 controls.autoRotateSpeed = 0.35;
 
-scene.add(new THREE.AmbientLight(0xb8c4cc, 0.55));
-const key = new THREE.DirectionalLight(0xe7eef2, 0.85);
+scene.add(new THREE.HemisphereLight(0xe7eef2, 0x1a2228, 0.85));
+scene.add(new THREE.AmbientLight(0xb8c4cc, 0.7));
+const key = new THREE.DirectionalLight(0xe7eef2, 1.05);
 key.position.set(40, 70, 20);
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x6d5a3a, 0.45);
-rim.position.set(-50, 10, -30);
-scene.add(rim);
+const fill = new THREE.DirectionalLight(0xc4a574, 0.55);
+fill.position.set(-50, 18, -30);
+scene.add(fill);
 
 function addCage() {
   const group = new THREE.Group();
@@ -403,6 +442,11 @@ markArm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 markArm.count = 0;
 scene.add(markArm);
 
+const markGlow = new THREE.InstancedMesh(new THREE.SphereGeometry(0.62, 8, 6), glow(0xe0c089, 0.32), MAX_MARKS);
+markGlow.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+markGlow.count = 0;
+scene.add(markGlow);
+
 const plane = new THREE.Mesh(
   new THREE.PlaneGeometry(SIZE, SIZE),
   new THREE.MeshBasicMaterial({
@@ -453,9 +497,8 @@ function rebuildWardens(rows) {
 function rebuildDrifts(rows) {
   clearGroup(driftsGroup);
   for (const drift of rows) {
-    const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), MAT.drift);
+    const mesh = PROTO.drift.clone();
     mesh.position.copy(cell(drift.position));
-    mesh.userData.spin = 1;
     driftsGroup.add(mesh);
   }
 }
@@ -510,6 +553,12 @@ function writeMarks(rows) {
     object.position.copy(cell(row.position));
     object.position.y += 0.28;
     object.rotation.set(0, 0.4, 0);
+    object.scale.set(1, 1, 1);
+  });
+  writeInstances(markGlow, rows, (object, row) => {
+    object.position.copy(cell(row.position));
+    object.position.y += 0.2;
+    object.rotation.set(0, 0, 0);
     object.scale.set(1, 1, 1);
   });
 }
