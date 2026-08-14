@@ -46,7 +46,7 @@ function namedOk(name: string, ctx: PredicateContext): boolean {
     case "cell_unmarked":
       return !ctx.marked;
     default:
-      return true;
+      return false;
   }
 }
 
@@ -66,5 +66,5 @@ function predOk(pred: string, args: unknown[], ctx: PredicateContext): boolean {
     }
     return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z)) <= radius;
   }
-  return true;
+  return false;
 }

@@ -16,112 +16,190 @@ export interface Entity {
 export interface EffectContext {
   selfId: string;
   targetId?: string;
+  params?: Record<string, string | number | boolean | null>;
   fields: Map<string, Record<string, string | number | boolean | null>>;
   entities: Map<string, Entity>;
   emit: (name: string, payload: Record<string, unknown>) => void;
   nextId: () => string;
+  /** GAME.md currency lives on the clerk, not the field bag. */
+  moveCurrency?: (from: string, to: string, amount: number) => boolean;
 }
 
-export function runEffects(effects: readonly Effect[], ctx: EffectContext): void {
+export interface EffectReport {
+  effect: string;
+  ok: boolean;
+  reason?: string;
+}
+
+type Scalar = string | number | boolean | null;
+type Eval = { ok: true; value: Scalar } | { ok: false; reason: string };
+
+export function runEffects(effects: readonly Effect[], ctx: EffectContext): EffectReport[] {
+  const reports: EffectReport[] = [];
   for (const item of effects.slice(0, 16)) {
-    applyEffect(item, ctx);
+    reports.push(applyEffect(item, ctx));
   }
+  return reports;
 }
 
-function applyEffect(item: Effect, ctx: EffectContext): void {
+function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
   const args = item.args;
   switch (item.effect) {
     case "set_field": {
       const ref = resolveRef(args[0], ctx);
-      const field = String(args[1] ?? "");
-      if (ref === undefined || field === "") {
-        return;
+      if (!ref.ok) {
+        return fail(item.effect, ref.reason);
       }
-      const bag = bagOf(ref, ctx);
-      bag[field] = evalArg(args[2], ctx);
-      break;
+      const field = String(args[1] ?? "");
+      if (field === "") {
+        return fail(item.effect, "set_field requires a field");
+      }
+      const value = evalArg(args[2], ctx);
+      if (!value.ok) {
+        return fail(item.effect, value.reason);
+      }
+      bagOf(ref.value, ctx)[field] = value.value;
+      return ok(item.effect);
     }
     case "create": {
-      const type = String(args[0] ?? "entity");
+      const type = evalArg(args[0], ctx);
+      if (!type.ok || typeof type.value !== "string" || type.value === "") {
+        return fail(item.effect, type.ok ? "create requires a type" : type.reason);
+      }
+      const position = resolvePosition(args[1], ctx);
+      if (!position.ok) {
+        return fail(item.effect, position.reason);
+      }
+      const fields = asFieldBag(args[2], ctx);
+      if (!fields.ok) {
+        return fail(item.effect, fields.reason);
+      }
       const id = ctx.nextId();
-      const position = asPosition(args[1]);
       ctx.entities.set(id, {
         id,
-        type,
-        fields: asFieldBag(args[2]),
-        position,
+        type: type.value,
+        fields: fields.value,
+        position: position.value,
       });
-      ctx.emit("effect.create", position === undefined ? { id, type } : { id, type, ...position });
-      break;
+      ctx.emit("effect.create", position.value === undefined ? { id, type: type.value } : { id, type: type.value, ...position.value });
+      return ok(item.effect);
     }
     case "destroy": {
       const ref = resolveRef(args[0], ctx);
-      if (ref !== undefined && ctx.entities.has(ref)) {
-        ctx.entities.delete(ref);
-        ctx.emit("effect.destroy", { id: ref });
+      if (!ref.ok) {
+        return fail(item.effect, ref.reason);
       }
-      break;
+      if (!ctx.entities.has(ref.value)) {
+        return fail(item.effect, `unknown entity ${ref.value}`);
+      }
+      ctx.entities.delete(ref.value);
+      ctx.emit("effect.destroy", { id: ref.value });
+      return ok(item.effect);
     }
     case "move": {
       const ref = resolveRef(args[0], ctx);
-      const entity = ref === undefined ? undefined : ctx.entities.get(ref);
-      const delta = asPosition(args[1]);
-      if (entity?.position !== undefined && delta !== undefined) {
-        entity.position = {
-          x: entity.position.x + delta.x,
-          y: entity.position.y + delta.y,
-          z: entity.position.z + delta.z,
-        };
-        ctx.emit("effect.move", { id: ref, ...entity.position });
+      if (!ref.ok) {
+        return fail(item.effect, ref.reason);
       }
-      break;
+      const entity = ctx.entities.get(ref.value);
+      if (entity?.position === undefined) {
+        return fail(item.effect, `entity ${ref.value} has no position`);
+      }
+      const dest = resolveMove(entity.position, args[1]);
+      if (!dest.ok) {
+        return fail(item.effect, dest.reason);
+      }
+      entity.position = dest.value;
+      ctx.emit("effect.move", { id: ref.value, ...entity.position });
+      return ok(item.effect);
     }
     case "transfer": {
-      const from = resolveRef(args[0], ctx);
-      const to = resolveRef(args[1], ctx);
-      const field = String(args[2] ?? "");
-      const amount = Number(evalArg(args[3], ctx));
-      if (from === undefined || to === undefined || field === "" || !Number.isInteger(amount)) {
-        return;
+      const field = String(args[0] ?? "");
+      const from = resolveRef(args[1], ctx);
+      const to = resolveRef(args[2], ctx);
+      const amount = evalArg(args[3], ctx);
+      if (field === "") {
+        return fail(item.effect, "transfer requires a field");
       }
-      const src = bagOf(from, ctx);
-      const dst = bagOf(to, ctx);
+      if (!from.ok) {
+        return fail(item.effect, from.reason);
+      }
+      if (!to.ok) {
+        return fail(item.effect, to.reason);
+      }
+      if (!amount.ok || typeof amount.value !== "number" || amount.value < 0) {
+        return fail(item.effect, amount.ok ? "transfer amount must be a non-negative integer" : amount.reason);
+      }
+      if (field === "currency" && ctx.moveCurrency !== undefined) {
+        if (!ctx.moveCurrency(from.value, to.value, amount.value)) {
+          return fail(item.effect, "insufficient currency");
+        }
+        return ok(item.effect);
+      }
+      const src = bagOf(from.value, ctx);
       const have = typeof src[field] === "number" ? src[field] : 0;
-      if (have < amount) {
-        return;
+      if (have < amount.value) {
+        return fail(item.effect, `insufficient ${field}`);
       }
-      src[field] = have - amount;
-      dst[field] = (typeof dst[field] === "number" ? dst[field] : 0) + amount;
-      break;
+      const dst = bagOf(to.value, ctx);
+      src[field] = have - amount.value;
+      dst[field] = (typeof dst[field] === "number" ? dst[field] : 0) + amount.value;
+      return ok(item.effect);
     }
     case "reveal": {
       const ref = resolveRef(args[0], ctx);
-      const field = String(args[1] ?? "");
-      if (ref !== undefined) {
-        bagOf(ref, ctx)[`revealed:${field}`] = true;
+      if (!ref.ok) {
+        return fail(item.effect, ref.reason);
       }
-      break;
+      const field = String(args[1] ?? "");
+      if (field === "") {
+        return fail(item.effect, "reveal requires a field");
+      }
+      bagOf(ref.value, ctx)[`revealed:${field}`] = true;
+      return ok(item.effect);
     }
     case "emit": {
-      ctx.emit(String(args[0] ?? "emit"), { args: args.slice(1) });
-      break;
+      const message = interpolate(args[0], ctx);
+      if (!message.ok) {
+        return fail(item.effect, message.reason);
+      }
+      ctx.emit(String(message.value ?? "emit"), { args: args.slice(1) });
+      return ok(item.effect);
     }
     default:
-      break;
+      return fail(item.effect, `unknown effect ${item.effect}`);
   }
 }
 
-function resolveRef(value: unknown, ctx: EffectContext): string | undefined {
-  if (value === "$self") {
-    return ctx.selfId;
+function ok(effect: string): EffectReport {
+  return { effect, ok: true };
+}
+
+function fail(effect: string, reason: string): EffectReport {
+  return { effect, ok: false, reason };
+}
+
+function resolveRef(value: unknown, ctx: EffectContext): { ok: true; value: string } | { ok: false; reason: string } {
+  if (value === "$self" || value === "self") {
+    return { ok: true, value: ctx.selfId };
   }
-  if (value === "$target") {
-    return ctx.targetId;
+  if (value === "$target" || value === "target") {
+    if (ctx.targetId === undefined) {
+      return { ok: false, reason: "unbound $target" };
+    }
+    return { ok: true, value: ctx.targetId };
   }
-  if (typeof value === "string" && !value.startsWith("$")) {
-    return value;
+  if (typeof value !== "string") {
+    return { ok: false, reason: "entity ref must be a string" };
   }
-  return undefined;
+  const bound = bindParam(value, ctx);
+  if (bound !== undefined) {
+    return typeof bound === "string" ? { ok: true, value: bound } : { ok: false, reason: `${value} is not an id` };
+  }
+  if (value.startsWith("$")) {
+    return { ok: false, reason: `unbound ${value}` };
+  }
+  return { ok: true, value };
 }
 
 function bagOf(id: string, ctx: EffectContext): Record<string, string | number | boolean | null> {
@@ -138,38 +216,141 @@ function bagOf(id: string, ctx: EffectContext): Record<string, string | number |
   return created;
 }
 
-function evalArg(value: unknown, ctx: EffectContext): string | number | boolean | null {
+function evalArg(value: unknown, ctx: EffectContext): Eval {
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
-    return typeof value === "number" && !Number.isInteger(value) ? 0 : value;
+    if (typeof value === "number" && !Number.isInteger(value)) {
+      return { ok: false, reason: "non-integer number" };
+    }
+    return { ok: true, value };
   }
   if (typeof value !== "string") {
-    return null;
+    return { ok: false, reason: "unsupported argument" };
   }
   const plus = /^(.+)\s*\+\s*(.+)$/.exec(value);
   if (plus?.[1] !== undefined && plus[2] !== undefined) {
-    const left = Number(evalArg(lookup(plus[1], ctx), ctx));
-    const right = Number(evalArg(lookup(plus[2], ctx), ctx));
-    if (Number.isInteger(left) && Number.isInteger(right)) {
-      return left + right;
+    const left = lookup(plus[1], ctx);
+    const right = lookup(plus[2], ctx);
+    if (!left.ok) {
+      return left;
     }
+    if (!right.ok) {
+      return right;
+    }
+    if (typeof left.value === "number" && typeof right.value === "number") {
+      return { ok: true, value: left.value + right.value };
+    }
+    return { ok: false, reason: "addition requires integers" };
   }
   return lookup(value, ctx);
 }
 
-function lookup(token: string, ctx: EffectContext): string | number | boolean | null {
+function lookup(token: string, ctx: EffectContext): Eval {
   const trimmed = token.trim();
   if (/^-?\d+$/.test(trimmed)) {
-    return Number(trimmed);
+    return { ok: true, value: Number(trimmed) };
+  }
+  if (trimmed === "$self" || trimmed === "self") {
+    return { ok: true, value: ctx.selfId };
+  }
+  if (trimmed === "$target" || trimmed === "target") {
+    return ctx.targetId === undefined ? { ok: false, reason: "unbound $target" } : { ok: true, value: ctx.targetId };
   }
   const field = /^\$self\.(\w+)$/.exec(trimmed);
   if (field?.[1] !== undefined) {
-    return bagOf(ctx.selfId, ctx)[field[1]] ?? 0;
+    return { ok: true, value: bagOf(ctx.selfId, ctx)[field[1]] ?? 0 };
   }
   const target = /^\$target\.(\w+)$/.exec(trimmed);
-  if (target?.[1] !== undefined && ctx.targetId !== undefined) {
-    return bagOf(ctx.targetId, ctx)[target[1]] ?? 0;
+  if (target?.[1] !== undefined) {
+    if (ctx.targetId === undefined) {
+      return { ok: false, reason: "unbound $target" };
+    }
+    return { ok: true, value: bagOf(ctx.targetId, ctx)[target[1]] ?? 0 };
   }
-  return trimmed;
+  const bound = bindParam(trimmed, ctx);
+  if (bound !== undefined) {
+    return { ok: true, value: bound };
+  }
+  if (trimmed.startsWith("$")) {
+    return { ok: false, reason: `unbound ${trimmed}` };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function bindParam(token: string, ctx: EffectContext): Scalar | undefined {
+  const name = token.startsWith("$") ? token.slice(1) : token;
+  if (!/^[A-Za-z_]\w*$/.test(name)) {
+    return undefined;
+  }
+  const params = ctx.params;
+  if (params === undefined || !Object.prototype.hasOwnProperty.call(params, name)) {
+    return undefined;
+  }
+  return params[name] ?? null;
+}
+
+function interpolate(value: unknown, ctx: EffectContext): Eval {
+  if (typeof value !== "string") {
+    return evalArg(value, ctx);
+  }
+  if (!value.includes("$")) {
+    return { ok: true, value };
+  }
+  const parts = value.split(/(\$[A-Za-z_]\w*(?:\.\w+)?)/);
+  let out = "";
+  for (const part of parts) {
+    if (!part.startsWith("$")) {
+      out += part;
+      continue;
+    }
+    const found = lookup(part, ctx);
+    if (!found.ok) {
+      return found;
+    }
+    out += found.value === null ? "" : String(found.value);
+  }
+  return { ok: true, value: out };
+}
+
+function resolvePosition(
+  value: unknown,
+  ctx: EffectContext,
+): { ok: true; value: Position | undefined } | { ok: false; reason: string } {
+  if (value === null || value === undefined) {
+    return { ok: true, value: undefined };
+  }
+  if (typeof value === "string") {
+    const bound = bindParam(value, ctx);
+    if (bound !== undefined && typeof bound === "object") {
+      return resolvePosition(bound, ctx);
+    }
+    if (value.startsWith("$")) {
+      return { ok: false, reason: `unbound ${value}` };
+    }
+    return { ok: false, reason: "position must be a vec or null" };
+  }
+  const vec = asPosition(value);
+  if (vec === undefined) {
+    return { ok: false, reason: "position must be a vec or null" };
+  }
+  return { ok: true, value: vec };
+}
+
+function resolveMove(
+  from: Position,
+  value: unknown,
+): { ok: true; value: Position } | { ok: false; reason: string } {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, reason: "move requires a vec" };
+  }
+  const row = value as Record<string, unknown>;
+  const vec = asPosition(value);
+  if (vec === undefined) {
+    return { ok: false, reason: "move requires a vec" };
+  }
+  if (row["absolute"] === true) {
+    return { ok: true, value: vec };
+  }
+  return { ok: true, value: { x: from.x + vec.x, y: from.y + vec.y, z: from.z + vec.z } };
 }
 
 function asPosition(value: unknown): Position | undefined {
@@ -178,20 +359,31 @@ function asPosition(value: unknown): Position | undefined {
   }
   const row = value as Record<string, unknown>;
   if (typeof row["x"] === "number" && typeof row["y"] === "number" && typeof row["z"] === "number") {
+    if (![row["x"], row["y"], row["z"]].every((n) => Number.isInteger(n))) {
+      return undefined;
+    }
     return { x: row["x"], y: row["y"], z: row["z"] };
   }
   return undefined;
 }
 
-function asFieldBag(value: unknown): Record<string, string | number | boolean | null> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return {};
+function asFieldBag(
+  value: unknown,
+  ctx: EffectContext,
+): { ok: true; value: Record<string, Scalar> } | { ok: false; reason: string } {
+  if (value === null || value === undefined) {
+    return { ok: true, value: {} };
   }
-  const out: Record<string, string | number | boolean | null> = {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, reason: "create fields must be an object" };
+  }
+  const out: Record<string, Scalar> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (item === null || typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isInteger(item))) {
-      out[key] = item;
+    const resolved = evalArg(item, ctx);
+    if (!resolved.ok) {
+      return resolved;
     }
+    out[key] = resolved.value;
   }
-  return out;
+  return { ok: true, value: out };
 }

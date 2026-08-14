@@ -14,6 +14,7 @@ export interface Intent {
   delta?: Position;
   text?: string;
   target?: string;
+  params?: Record<string, string | number | boolean>;
 }
 
 export function nextBudget(actionBudget: number, unspent: number, carryCap: number): number {

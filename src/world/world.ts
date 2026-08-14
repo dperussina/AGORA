@@ -705,6 +705,7 @@ export class World {
       return { accepted: false, reason: "insufficient budget" };
     }
     this.budgets.set(identityId, remaining - cost);
+    const params = collectVerbParams(this.clerk.registry.verbs[verb]?.params ?? {}, args);
     this.intents.push({
       seq: this.intentSeq,
       identityId,
@@ -713,6 +714,7 @@ export class World {
       delta: asDelta(args["delta"]),
       text: typeof args["text"] === "string" ? args["text"] : undefined,
       target: typeof args["target"] === "string" ? args["target"] : undefined,
+      params,
     });
     this.intentSeq += 1;
     return { accepted: true, verb, cost, budgetRemaining: remaining - cost, resolvesAt: this.clerk.tick + 1 };
@@ -795,21 +797,26 @@ export class World {
     }
     const defined = this.clerk.registry.verbs[intent.verb];
     if (defined !== undefined && defined.effects.length > 0) {
+      const targetEntity = intent.target === undefined ? undefined : this.entities.get(intent.target);
       const blocked = checkPreconditions(defined.preconditions, {
         inBounds: true,
         occupied: false,
         marked: false,
         textLength: intent.text?.length ?? 0,
         maxLength: this.clerk.registry.params["mark_length_max"]?.value ?? 280,
+        selfType: "agent",
         selfPosition: this.bodyOf(intent.identityId),
+        targetType: targetEntity?.type,
+        targetPosition: targetEntity?.position ?? (intent.target === undefined ? undefined : this.bodies.get(intent.target)),
       });
       if (blocked !== null) {
         this.append(`act.${intent.verb}_failed`, intent.identityId, { reason: blocked });
         return;
       }
-      runEffects(defined.effects as Array<{ effect: string; args: unknown[] }>, {
+      const reports = runEffects(defined.effects as Array<{ effect: string; args: unknown[] }>, {
         selfId: intent.identityId,
         targetId: intent.target,
+        params: effectParams(intent),
         fields: this.fields,
         entities: this.entities,
         emit: (name, payload) => {
@@ -820,7 +827,17 @@ export class World {
           this.entitySeq += 1;
           return `ent:${this.entitySeq}`;
         },
+        moveCurrency: (from, to, amount) => this.moveCurrency(from, to, amount),
       });
+      const failed = reports.find((item) => !item.ok);
+      if (failed !== undefined) {
+        this.append(`act.${intent.verb}_failed`, intent.identityId, {
+          reason: failed.reason ?? "effect failed",
+          effect: failed.effect,
+          identityId: intent.identityId,
+        });
+        return;
+      }
       this.append(`act.${intent.verb}`, intent.identityId, {
         identityId: intent.identityId,
         verb: intent.verb,
@@ -1276,6 +1293,17 @@ export class World {
     return bound === undefined || bound === null || bound === "" ? [] : [bound];
   }
 
+  private moveCurrency(from: string, to: string, amount: number): boolean {
+    const src = this.clerk.identities.get(from);
+    const dst = this.clerk.identities.get(to);
+    if (src === undefined || dst === undefined || amount < 0 || src.currency < amount) {
+      return false;
+    }
+    src.currency -= amount;
+    dst.currency += amount;
+    return true;
+  }
+
   private witness(actorId: string, kind: "fame" | "notoriety"): void {
     if (!this.identities.identities.has(actorId)) {
       return;
@@ -1706,6 +1734,31 @@ export class World {
     }
   }
 
+}
+
+function collectVerbParams(
+  declared: Record<string, string>,
+  args: Record<string, unknown>,
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const key of Object.keys(declared).sort()) {
+    const value = args[key];
+    if (typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isInteger(value))) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function effectParams(intent: Intent): Record<string, string | number | boolean | null> {
+  const params: Record<string, string | number | boolean | null> = { ...(intent.params ?? {}) };
+  if (intent.text !== undefined) {
+    params["text"] = intent.text;
+  }
+  if (intent.target !== undefined) {
+    params["target"] = intent.target;
+  }
+  return params;
 }
 
 function parseInspectCell(target: string): Position | null {

@@ -91,7 +91,7 @@ These choices are in the tree. Specs 001–010 Assumptions repeat the local ones
 | Broadcast | Radius `base + floor(fame/2)`, × `nexus_speak_multiplier` (4) inside a Nexus. |
 | Standing decay | Fame 2%/tick and notoriety 0.5%/tick as integer remainders (fame debt basis 100, notoriety basis 1000), then 20 integer graph iterations. A score of 1 is not floored away. Hollow produces no standing. |
 | Tick | No tick if no presence or Halt. After the first resolved tick, the next authenticated call while dormant resumes. `world.dormancy_gap` includes `skippedMs`. Intents sort by priority then sequence. Standing/weight/currency update before `tick.boundary`. |
-| Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. No `create` tool. No quest tool. |
+| Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. `$self`/`self`, `$target`/`target`, and declared `$<param>` bind in every effect. Unbound `$name` fails the verb (`act.<verb>_failed`). `transfer` is (field, from, to, amount); `currency` is clerk coin. Unknown preconditions fail. No `create` tool. No quest tool. |
 | Act reject | Illegal `act` (bad delta, empty mark, already marked, out of bounds, `echo:` target) rejects free before budget. Occupancy still at tick resolve. |
 | Narration | Anchor/warden template, then `narrate.mark` if a mark is in the cell. |
 | Play | `npm run play` is an in-process smoke inhabitant, not a human play client. |
