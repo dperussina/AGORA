@@ -246,8 +246,10 @@ Stats
 
 World
   GET  ${origin}/rules
+       live registry: params, space, verbs, types, triggers, text, tiers
   GET  ${origin}/registry
   GET  ${origin}/registry/history
+       applied patches (id, kind, patch) — the statute the spectator page folds
   GET  ${origin}/map?z=<n>&t=<T>
        anchors and wardens are structural and live
        anchors include voted name and lore (null until named)
@@ -338,6 +340,10 @@ const world = {
   epithets: new Map(),
   kindLore: new Map(),
   selected: null,
+  law: null,
+  registry: null,
+  storageNote: null,
+  applied: [],
 };
 
 function cell(pos) {
@@ -1165,12 +1171,12 @@ function selectLore(selected, options = {}) {
   markLoreHere();
 }
 
-function indexRow(kind, id, klass, at, title) {
+function indexRow(kind, id, klass, at, title, bucket = "lore") {
   const item = document.createElement("li");
   item.classList.add("go");
   item.tabIndex = 0;
-  item.dataset.loreKind = kind;
-  item.dataset.loreId = id;
+  item.dataset[`${bucket}Kind`] = kind;
+  item.dataset[`${bucket}Id`] = id;
   const a = document.createElement("span");
   a.className = "idx-class";
   a.textContent = klass;
@@ -1180,17 +1186,22 @@ function indexRow(kind, id, klass, at, title) {
   const strong = document.createElement("strong");
   strong.textContent = title;
   item.append(a, b, strong);
-  if (world.selected?.kind === kind && world.selected?.id === id) {
+  const current = bucket === "law" ? world.law : world.selected;
+  if (current?.kind === kind && current?.id === id) {
     item.classList.add("here");
   }
   return item;
 }
 
-function showLoreRegister(name) {
-  for (const id of ["places", "people", "kinds", "marks"]) {
-    const list = $(`lore-${id}`);
-    const btn = document.querySelector(`[data-reg="${id}"]`);
-    const on = id === name;
+function showRegister(sectionId, prefix, names, selected) {
+  const root = $(sectionId);
+  if (root === null) {
+    return;
+  }
+  for (const id of names) {
+    const list = $(`${prefix}-${id}`);
+    const btn = root.querySelector(`[data-reg="${id}"]`);
+    const on = id === selected;
     if (list) {
       list.hidden = !on;
     }
@@ -1199,6 +1210,10 @@ function showLoreRegister(name) {
       btn.setAttribute("aria-selected", on ? "true" : "false");
     }
   }
+}
+
+function showLoreRegister(name) {
+  showRegister("lore", "lore", ["places", "people", "kinds", "marks"], name);
 }
 
 function markLoreHere() {
@@ -1280,6 +1295,250 @@ function fillLore() {
   selectLore(world.selected ?? { kind: "world", id: "world" });
 }
 
+const LAW_TABS = ["params", "space", "verbs", "types", "triggers", "applied"];
+
+function amendmentLockup(id) {
+  return typeof id === "number" ? `#${id}` : "";
+}
+
+function nuanceLines(value) {
+  const rows = [];
+  const walk = (item, path) => {
+    if (item === null || item === undefined) {
+      rows.push(path.length === 0 ? "—" : `${path}  —`);
+      return;
+    }
+    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+      rows.push(path.length === 0 ? String(item) : `${path}  ${item}`);
+      return;
+    }
+    if (Array.isArray(item)) {
+      if (item.length === 0) {
+        rows.push(path.length === 0 ? "[]" : `${path}  []`);
+        return;
+      }
+      item.forEach((entry, index) => walk(entry, `${path}[${index}]`));
+      return;
+    }
+    if (typeof item === "object") {
+      const keys = Object.keys(item);
+      if (keys.length === 0) {
+        rows.push(path.length === 0 ? "{}" : `${path}  {}`);
+        return;
+      }
+      for (const key of keys) {
+        walk(item[key], path.length === 0 ? key : `${path}.${key}`);
+      }
+    }
+  };
+  walk(value, "");
+  return rows.join("\n");
+}
+
+function setLawPlate(kind, title, meta, body, at) {
+  const plate = $("law-read");
+  if (plate) {
+    plate.dataset.kind = kind;
+  }
+  setText("law-read-kind", kind);
+  setText("law-read-title", title);
+  setText("law-read-meta", meta);
+  setText("law-read-body", body);
+  const atNode = $("law-read-at");
+  if (atNode) {
+    if (typeof at === "string" && at.length > 0) {
+      atNode.hidden = false;
+      atNode.textContent = at;
+    } else {
+      atNode.hidden = true;
+      atNode.textContent = "";
+    }
+  }
+}
+
+function registryMeta() {
+  const registry = world.registry;
+  if (registry === null || typeof registry !== "object") {
+    return { version: 0, genesisTick: 0, quorumFloor: 4, residencyPeriod: 50 };
+  }
+  const meta = registry.meta !== null && typeof registry.meta === "object" ? registry.meta : {};
+  return {
+    version: registry.version ?? 0,
+    ...meta,
+    topology: registry.space?.topology,
+    ...world.storageNote,
+    tiers: registry.tiers ?? {},
+  };
+}
+
+function showLawRegister(name) {
+  showRegister("laws", "law", LAW_TABS, name);
+}
+
+function markLawHere() {
+  for (const id of LAW_TABS.map((name) => `law-${name}`)) {
+    const root = $(id);
+    if (root === null) {
+      continue;
+    }
+    for (const item of root.querySelectorAll("[data-law-kind]")) {
+      const on =
+        item.getAttribute("data-law-kind") === world.law?.kind && item.getAttribute("data-law-id") === world.law?.id;
+      item.classList.toggle("here", on);
+    }
+  }
+}
+
+function selectLaw(selected) {
+  let current = selected;
+  const registry = world.registry;
+  if (current?.kind === "param" && registry?.params?.[current.id] === undefined) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "axis" && !registry?.space?.axes?.some((row) => row.name === current.id)) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "verb" && registry?.verbs?.[current.id] === undefined) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "type" && registry?.types?.[current.id] === undefined) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "trigger" && registry?.triggers?.[current.id] === undefined) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "applied" && !world.applied.some((row) => String(row.id) === current.id)) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "extra" && !registry?.space?.extraAnchors?.some((row) => row.designation === current.id)) {
+    current = { kind: "meta", id: "meta" };
+  }
+  if (current?.kind === "removed" && !registry?.space?.removedAnchors?.includes(current.id)) {
+    current = { kind: "meta", id: "meta" };
+  }
+  world.law = current;
+  if (current?.kind === "param") {
+    const row = registry.params[current.id];
+    setLawPlate(
+      `L${row.tier ?? "—"} param`,
+      current.id,
+      [row.type, row.min !== undefined ? `min ${row.min}` : "", row.max !== undefined ? `max ${row.max}` : ""]
+        .filter(Boolean)
+        .join(" · "),
+      nuanceLines(row),
+      amendmentLockup(row.lastAmendment),
+    );
+    showLawRegister("params");
+  } else if (current?.kind === "space") {
+    setLawPlate("space", "topology", registry?.space?.topology ?? "lattice", nuanceLines(registry?.space ?? {}), "");
+    showLawRegister("space");
+  } else if (current?.kind === "axis") {
+    const row = registry.space.axes.find((item) => item.name === current.id);
+    setLawPlate("axis", current.id, `size ${row?.size ?? "—"}`, nuanceLines(row), amendmentLockup(row?.lastAmendment));
+    showLawRegister("space");
+  } else if (current?.kind === "extra") {
+    const row = registry.space.extraAnchors.find((item) => item.designation === current.id);
+    setLawPlate("anchor", current.id, row?.class ?? "anchor", nuanceLines(row), cellLockup(row?.centre));
+    showLawRegister("space");
+  } else if (current?.kind === "removed") {
+    setLawPlate("removed", current.id, "space.removedAnchors", nuanceLines({ designation: current.id, status: "removed" }), "");
+    showLawRegister("space");
+  } else if (current?.kind === "verb") {
+    const row = registry.verbs[current.id];
+    setLawPlate("verb", current.id, `cost ${row?.cost ?? "—"}`, nuanceLines(row), "");
+    showLawRegister("verbs");
+  } else if (current?.kind === "type") {
+    const row = registry.types[current.id];
+    setLawPlate("type", current.id, `${Object.keys(row?.fields ?? {}).length} fields`, nuanceLines(row), "");
+    showLawRegister("types");
+  } else if (current?.kind === "trigger") {
+    const row = registry.triggers[current.id];
+    setLawPlate("trigger", current.id, row?.when ?? "trigger", nuanceLines(row), "");
+    showLawRegister("triggers");
+  } else if (current?.kind === "applied") {
+    const row = world.applied.find((item) => String(item.id) === current.id);
+    const patch = row?.patch !== null && typeof row?.patch === "object" ? row.patch : { kind: row?.kind };
+    setLawPlate("applied", `#${current.id}`, row?.kind ?? "patch", nuanceLines(patch), `#${current.id}`);
+    showLawRegister("applied");
+  } else {
+    const facts = registryMeta();
+    setLawPlate("registry", `Version ${facts.version}`, "GET /rules", nuanceLines(facts), "");
+  }
+  markLawHere();
+}
+
+function paintLawIndex() {
+  const registry = world.registry;
+  const params = Object.entries(registry?.params ?? {})
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([path, row]) =>
+      indexRow("param", path, `L${row?.tier ?? "—"}`, String(row?.value ?? ""), path, "law"),
+    );
+  fillList("law-params", params, "No params in the registry.");
+  const space = [];
+  const topology = registry?.space?.topology;
+  if (typeof topology === "string") {
+    space.push(indexRow("space", "topology", "space", topology, "topology", "law"));
+  }
+  for (const axis of Array.isArray(registry?.space?.axes) ? registry.space.axes : []) {
+    space.push(
+      indexRow("axis", axis.name, axis.writable === false ? "lock" : "write", String(axis.size), axis.name, "law"),
+    );
+  }
+  for (const extra of Array.isArray(registry?.space?.extraAnchors) ? registry.space.extraAnchors : []) {
+    space.push(
+      indexRow("extra", extra.designation, extra.class ?? "anchor", coords(extra.centre), extra.designation, "law"),
+    );
+  }
+  for (const id of Array.isArray(registry?.space?.removedAnchors) ? registry.space.removedAnchors : []) {
+    space.push(indexRow("removed", id, "removed", "", id, "law"));
+  }
+  fillList("law-space", space, "No space in the registry.");
+  const verbs = Object.entries(registry?.verbs ?? {})
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([name, row]) => indexRow("verb", name, "verb", `c${row?.cost ?? "—"}`, name, "law"));
+  fillList("law-verbs", verbs, "No verbs in the registry.");
+  const types = Object.entries(registry?.types ?? {})
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([name, row]) =>
+      indexRow("type", name, "type", String(Object.keys(row?.fields ?? {}).length), name, "law"),
+    );
+  fillList("law-types", types, "No types in the registry.");
+  const triggers = Object.entries(registry?.triggers ?? {})
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([name, row]) => indexRow("trigger", name, row?.when ?? "when", "", name, "law"));
+  fillList("law-triggers", triggers, "No triggers in the registry.");
+  const applied = world.applied
+    .slice()
+    .reverse()
+    .map((row) =>
+      indexRow("applied", String(row.id), clip(row.kind ?? "patch", 12), `#${row.id}`, row.kind ?? "patch", "law"),
+    );
+  fillList("law-applied", applied, "No patches have applied. Genesis seed is version 0.");
+  setText("law-n-params", String(params.length));
+  setText("law-n-space", String(space.length));
+  setText("law-n-verbs", String(verbs.length));
+  setText("law-n-types", String(types.length));
+  setText("law-n-triggers", String(triggers.length));
+  setText("law-n-applied", String(applied.length));
+  const version = registry?.version ?? 0;
+  setText("law-census", `v${version} · ${params.length} params · ${verbs.length} verbs`);
+}
+
+function fillStatute(rules, history) {
+  world.registry = rules?.registry ?? null;
+  world.storageNote = rules?.storageNote ?? null;
+  world.applied = Array.isArray(history?.applied) ? history.applied : [];
+  const facts = registryMeta();
+  setText("law-meta-title", `Version ${facts.version}`);
+  const body = $("law-meta-body");
+  if (body) {
+    body.textContent = nuanceLines(facts);
+  }
+  paintLawIndex();
+  selectLaw(world.law ?? { kind: "meta", id: "meta" });
+}
+
 function pointerFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
   const width = rect.width || 1;
@@ -1287,6 +1546,7 @@ function pointerFromEvent(event) {
   pointer.set(((event.clientX - rect.left) / width) * 2 - 1, -((event.clientY - rect.top) / height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
   raycaster.camera = camera;
+  return rect;
 }
 
 function hitsAt(event) {
@@ -1296,6 +1556,73 @@ function hitsAt(event) {
   const hits = [...raycaster.intersectObjects(groups, true), ...raycaster.intersectObjects(meshes, false)];
   hits.sort((a, b) => a.distance - b.distance);
   return hits;
+}
+
+function considerScreen(pos, selected, x, y, width, height, best) {
+  if (selected === null || pos === null || typeof pos !== "object") {
+    return best;
+  }
+  if (typeof pos.x !== "number" || typeof pos.y !== "number" || typeof pos.z !== "number") {
+    return best;
+  }
+  const clip = cell(pos).project(camera);
+  if (clip.z < -1 || clip.z > 1) {
+    return best;
+  }
+  const sx = (clip.x * 0.5 + 0.5) * width;
+  const sy = (-clip.y * 0.5 + 0.5) * height;
+  const dist = Math.hypot(sx - x, sy - y);
+  if (dist >= best.dist) {
+    return best;
+  }
+  return { dist, selected };
+}
+
+function pickByScreen(event, slop = 36) {
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || 1;
+  const height = rect.height || 1;
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  let best = { dist: slop, selected: null };
+  for (const anchor of world.anchors) {
+    best = considerScreen(anchor.centre, { kind: "place", id: anchor.designation }, x, y, width, height, best);
+  }
+  for (const warden of world.wardens) {
+    best = considerScreen(warden.position, { kind: "warden", id: warden.id }, x, y, width, height, best);
+  }
+  for (const drift of world.drifts) {
+    best = considerScreen(drift.position, { kind: "drift", id: drift.id }, x, y, width, height, best);
+  }
+  for (const entity of visibleEntities()) {
+    best = considerScreen(entity.position, { kind: "entity", id: entity.id }, x, y, width, height, best);
+  }
+  if (world.follow) {
+    for (const row of world.liveBodies.values()) {
+      best = considerScreen(row.position, { kind: "person", id: row.id }, x, y, width, height, best);
+    }
+  }
+  for (const row of world.bodies) {
+    best = considerScreen(row.position, { kind: "echo", id: row.id }, x, y, width, height, best);
+  }
+  for (const mark of inscriptions()) {
+    best = considerScreen(
+      mark.position,
+      { kind: "mark", id: `${mark.position.x},${mark.position.y},${mark.position.z}` },
+      x,
+      y,
+      width,
+      height,
+      best,
+    );
+  }
+  return best.selected;
+}
+
+function pickFromEvent(event) {
+  const hit = hitsAt(event)[0];
+  const selected = hit === undefined ? null : selectionFromHit(hit);
+  return selected ?? pickByScreen(event);
 }
 
 function selectionFromHit(hit) {
@@ -1332,19 +1659,8 @@ function selectionFromHit(hit) {
   return null;
 }
 
-function pickSighting(event) {
-  const hit = hitsAt(event)[0];
-  const selected = hit === undefined ? null : selectionFromHit(hit);
-  if (selected === null) {
-    return;
-  }
-  selectLore(selected, { fly: true });
-}
-
 function aimSighting(event) {
-  const hit = hitsAt(event)[0];
-  const selected = hit === undefined ? null : selectionFromHit(hit);
-  canvas.classList.toggle("aim", selected !== null);
+  canvas.classList.toggle("aim", pickFromEvent(event) !== null);
 }
 
 function frame(now) {
@@ -1666,13 +1982,14 @@ async function refresh() {
   const status = $("live-status");
   try {
     const tQuery = world.follow ? "" : `?t=${Number($("scrub-t")?.value ?? world.visible)}`;
-    const [metrics, docket, map, rules, identities, standing] = await Promise.all([
+    const [metrics, docket, map, rules, identities, standing, history] = await Promise.all([
       readJson("/pulse"),
       readJson("/docket"),
       readJson(`/map${tQuery}`),
       readJson("/rules"),
       readJson("/identities"),
       readJson("/standing?sort=fame"),
+      readJson("/registry/history"),
     ]);
     status.textContent = metrics.halted ? "World halted." : "The log is live.";
     status.dataset.state = metrics.halted ? "down" : "up";
@@ -1703,6 +2020,7 @@ async function refresh() {
     drawRibbon();
     drawSlice();
     fillLore();
+    fillStatute(rules, history);
     setStat("tick", world.present);
     setStat("online", metrics.online);
     setStat("lastTickPresent", metrics.lastTickPresent);
@@ -1962,29 +2280,43 @@ function bindControls() {
   };
   $("zoom-in")?.addEventListener("click", () => dolly(0.78));
   $("zoom-out")?.addEventListener("click", () => dolly(1.28));
-  canvas.addEventListener("pointermove", (event) => {
-    if (pointerAt !== null) {
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      pointerAt = null;
       return;
     }
-    aimSighting(event);
-  });
-  canvas.addEventListener("pointerleave", () => {
+    pointerAt = { x: event.clientX, y: event.clientY, hit: pickFromEvent(event), dragged: false };
     canvas.classList.remove("aim");
   });
-  canvas.addEventListener("pointerdown", (event) => {
-    pointerAt = { x: event.clientX, y: event.clientY };
-  });
-  canvas.addEventListener("pointerup", (event) => {
+  canvas.addEventListener("pointermove", (event) => {
     if (pointerAt === null) {
+      aimSighting(event);
       return;
     }
     const dx = event.clientX - pointerAt.x;
     const dy = event.clientY - pointerAt.y;
-    pointerAt = null;
-    if (dx * dx + dy * dy > 25) {
+    if (dx * dx + dy * dy > 64) {
+      pointerAt.dragged = true;
+    }
+  });
+  const endPointer = () => {
+    if (pointerAt === null) {
       return;
     }
-    pickSighting(event);
+    const dragged = pointerAt.dragged;
+    const hit = pointerAt.hit;
+    pointerAt = null;
+    if (dragged || hit === null) {
+      return;
+    }
+    selectLore(hit, { fly: true });
+  };
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("pointerleave", () => {
+    if (pointerAt === null) {
+      canvas.classList.remove("aim");
+    }
   });
   const roster = $("inhabitants");
   const go = (node) => {
@@ -2043,7 +2375,7 @@ function bindControls() {
       selectLore({ kind: "world", id: "world" });
     }
   });
-  document.querySelector(".folio-regs")?.addEventListener("click", (event) => {
+  document.querySelector("#lore .folio-regs")?.addEventListener("click", (event) => {
     const btn = event.target instanceof Element ? event.target.closest("[data-reg]") : null;
     if (btn === null) {
       return;
@@ -2051,6 +2383,50 @@ function bindControls() {
     const name = btn.getAttribute("data-reg");
     if (name !== null) {
       showLoreRegister(name);
+    }
+  });
+  const openLaw = (node) => {
+    const row = node instanceof Element ? node.closest("[data-law-kind]") : null;
+    if (row === null) {
+      return;
+    }
+    const kind = row.getAttribute("data-law-kind");
+    const id = row.getAttribute("data-law-id");
+    if (kind === null || id === null) {
+      return;
+    }
+    selectLaw({ kind, id });
+  };
+  for (const name of LAW_TABS) {
+    const list = $(`law-${name}`);
+    if (list === null) {
+      continue;
+    }
+    list.addEventListener("click", (event) => openLaw(event.target));
+    list.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openLaw(event.target);
+      }
+    });
+  }
+  $("law-meta")?.addEventListener("click", () => {
+    selectLaw({ kind: "meta", id: "meta" });
+  });
+  $("law-meta")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectLaw({ kind: "meta", id: "meta" });
+    }
+  });
+  document.querySelector("#laws .folio-regs")?.addEventListener("click", (event) => {
+    const btn = event.target instanceof Element ? event.target.closest("[data-reg]") : null;
+    if (btn === null) {
+      return;
+    }
+    const name = btn.getAttribute("data-reg");
+    if (name !== null) {
+      showLawRegister(name);
     }
   });
 }

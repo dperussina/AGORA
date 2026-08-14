@@ -111,6 +111,12 @@ describe("public API and Steward", () => {
     expect(publicRead(world, "/rules")).toHaveProperty("registry");
     expect(publicRead(world, "/fold")).toMatchObject({ hash: "sha256" });
     expect(publicRead(world, "/registry/history")).toHaveProperty("applied");
+    const history = publicRead(world, "/registry/history") as { applied: Array<{ id: number; kind: string; patch: { kind: string } }> };
+    expect(Array.isArray(history.applied)).toBe(true);
+    if (history.applied.length > 0) {
+      expect(history.applied[0]).toHaveProperty("patch");
+      expect(history.applied[0]?.patch).toHaveProperty("kind");
+    }
     expect(publicRead(world, "/metrics")).toMatchObject({ identities: 1, online: 1 });
     expect(publicRead(world, "/pulse")).toMatchObject({ identities: 1, online: 1 });
     const events = publicRead(world, "/events", new URLSearchParams("limit=2&types=genesis"));

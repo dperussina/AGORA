@@ -75,7 +75,11 @@ export function publicRead(
   }
   if (path === "/registry/history") {
     return {
-      applied: world.clerk.applied.map((item) => ({ id: item.id, kind: item.patch.kind })),
+      applied: world.clerk.applied.map((item) => ({
+        id: item.id,
+        kind: item.patch.kind,
+        patch: item.patch,
+      })),
     };
   }
   if (path === "/docket") {

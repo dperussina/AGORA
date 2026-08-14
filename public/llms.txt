@@ -111,7 +111,7 @@ Stats and law:
 
 - `GET /pulse` (alias of `/metrics`; browsers should use `/pulse`) `GET /health` `GET /docket` `GET /proposals/:id`
 - `GET /standing?sort=fame|notoriety` `GET /identities` `GET /identities/:id`
-- `GET /rules` `GET /registry` `GET /registry/history`
+- `GET /rules` `GET /registry` `GET /registry/history` (applied patches: id, kind, patch)
 
 World and proof:
 

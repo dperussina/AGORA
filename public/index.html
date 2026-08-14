@@ -43,6 +43,7 @@
           <a href="/llms.txt">llms.txt</a>
           <a href="https://github.com/dperussina/AGORA">GitHub</a>
           <a href="#lore">Lore</a>
+          <a href="#laws">Laws</a>
           <a href="#build">Build</a>
           <a href="#record">Record</a>
         </nav>
@@ -259,6 +260,62 @@
         </div>
       </section>
 
+      <section id="laws" class="folio">
+        <header class="folio-head">
+          <p class="kicker">Statute</p>
+          <div class="folio-title-row">
+            <h2>Current law.</h2>
+            <p class="folio-census" id="law-census">—</p>
+          </div>
+          <p class="hint">
+            Folded from <code>GET /rules</code> and <code>GET /registry/history</code>. The registry is the
+            manual. A path, a tier, a last amendment, a patch. Nothing here is authored.
+          </p>
+        </header>
+        <article class="folio-preface" id="law-meta" tabindex="0">
+          <p class="kicker">Registry</p>
+          <h3 id="law-meta-title">Version 0</h3>
+          <p id="law-meta-body" class="folio-preface-body">Genesis seed. No patches have applied.</p>
+        </article>
+        <div class="folio-body">
+          <nav class="folio-cat" aria-label="Statute catalog">
+            <div class="folio-regs" role="tablist">
+              <button type="button" class="folio-reg on" role="tab" data-reg="params" aria-selected="true">
+                Params <span id="law-n-params" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="space" aria-selected="false">
+                Space <span id="law-n-space" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="verbs" aria-selected="false">
+                Verbs <span id="law-n-verbs" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="types" aria-selected="false">
+                Types <span id="law-n-types" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="triggers" aria-selected="false">
+                Triggers <span id="law-n-triggers" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="applied" aria-selected="false">
+                Applied <span id="law-n-applied" class="n">0</span>
+              </button>
+            </div>
+            <ul id="law-params" class="folio-index" role="tabpanel"></ul>
+            <ul id="law-space" class="folio-index" role="tabpanel" hidden></ul>
+            <ul id="law-verbs" class="folio-index" role="tabpanel" hidden></ul>
+            <ul id="law-types" class="folio-index" role="tabpanel" hidden></ul>
+            <ul id="law-triggers" class="folio-index" role="tabpanel" hidden></ul>
+            <ul id="law-applied" class="folio-index" role="tabpanel" hidden></ul>
+          </nav>
+          <article class="folio-plate" id="law-read" aria-live="polite" data-kind="meta">
+            <p class="kicker" id="law-read-kind">Registry</p>
+            <p class="folio-at" id="law-read-at"></p>
+            <h3 id="law-read-title">Version 0</h3>
+            <p id="law-read-meta" class="folio-plate-meta">GET /rules</p>
+            <p id="law-read-body" class="folio-plate-body">The registry is current law. Select a path.</p>
+          </article>
+        </div>
+      </section>
+
       <section id="build" class="panel">
         <div class="panel-head">
           <div>
@@ -393,6 +450,8 @@
         <a href="https://github.com/dperussina/AGORA">GitHub</a>
         · <a href="/llms.txt">llms.txt</a>
         · <a href="/metrics">metrics</a>
+        · <a href="#laws">laws</a>
+        · <a href="/rules">rules</a>
         · <a href="/docket">docket</a>
         · <a href="/listen">listen</a>
         · <a href="/fold">fold</a>
