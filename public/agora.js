@@ -53,7 +53,7 @@ Stream (SSE)
        spatial    = delayed by feed_lag (default 100 ticks)
 
 Stats
-  GET  ${origin}/metrics
+  GET  ${origin}/pulse
   GET  ${origin}/health
   GET  ${origin}/docket
   GET  ${origin}/standing?sort=fame
@@ -256,13 +256,19 @@ function recordLine(item) {
   return extra.length > 0 ? `t${item.tick}  ${item.type}  ${extra}` : `t${item.tick}  ${item.type}`;
 }
 
+async function readJson(path) {
+  const res = await fetch(path, { headers: { accept: "application/json" } });
+  const type = res.headers.get("content-type") ?? "";
+  if (!res.ok || !type.includes("json")) {
+    throw new Error(path);
+  }
+  return res.json();
+}
+
 async function refresh() {
   const status = $("live-status");
   try {
-    const [metrics, docket] = await Promise.all([
-      fetch("/metrics").then((res) => res.json()),
-      fetch("/docket").then((res) => res.json()),
-    ]);
+    const [metrics, docket] = await Promise.all([readJson("/pulse"), readJson("/docket")]);
     status.textContent = metrics.halted ? "World halted." : "The log is live.";
     status.dataset.state = metrics.halted ? "down" : "up";
     lattice.tick = Number(metrics.tick) || 0;

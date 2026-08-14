@@ -44,7 +44,7 @@ export function publicRead(
       spec: "specs/003-world-engine/contracts/hash-chain.md",
     };
   }
-  if (path === "/metrics") {
+  if (path === "/metrics" || path === "/pulse") {
     const weights = [...world.clerk.identities.values()].map((identity) => Number(world.clerk.weightOf(identity)));
     return {
       tick: world.clerk.tick,

@@ -101,7 +101,11 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
 
 function siteFile(pathname: string, accept: string): string | null {
   if (pathname === "/" || pathname === "/index.html") {
-    return accept.includes("text/html") || pathname === "/index.html" ? "index.html" : null;
+    if (pathname === "/index.html") {
+      return "index.html";
+    }
+    const wantsJson = accept.includes("application/json") && !accept.includes("text/html");
+    return wantsJson ? null : "index.html";
   }
   let name = decodeURIComponent(pathname.replace(/^\//, ""));
   if (name === "llms.text") {
@@ -205,8 +209,19 @@ function attachFeed(world: World, req: IncomingMessage, res: ServerResponse, cla
   res.on("close", cleanup);
 }
 
+function clientIp(req: IncomingMessage): string {
+  const forwarded = header(req, "x-forwarded-for");
+  if (forwarded !== undefined) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first !== undefined && first.length > 0) {
+      return first;
+    }
+  }
+  return req.socket.remoteAddress ?? "unknown";
+}
+
 function allowRead(req: IncomingMessage): boolean {
-  const ip = req.socket.remoteAddress ?? "unknown";
+  const ip = clientIp(req);
   const now = Date.now();
   const row = readHits.get(ip);
   if (row === undefined || row.reset < now) {
