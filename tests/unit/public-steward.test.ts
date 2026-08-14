@@ -53,6 +53,21 @@ function registerNamed(world: World, name: string) {
 }
 
 describe("public API and Steward", () => {
+  it("leases spectator presence beyond a tick without keeping stale identities online", () => {
+    let presenceNow = 1_000;
+    const world = new World(undefined, undefined, {
+      presenceLeaseMs: 120_000,
+      presenceNow: () => presenceNow,
+    });
+    const ada = registerNamed(world, "Ada");
+    world.advanceTick();
+    expect(world.onlineIdentityIds).toContain(ada.identityId);
+    presenceNow += 119_999;
+    expect(world.onlineIdentityIds).toContain(ada.identityId);
+    presenceNow += 2;
+    expect(world.onlineIdentityIds).not.toContain(ada.identityId);
+  });
+
   it("applies below-floor amendments as provisional", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");

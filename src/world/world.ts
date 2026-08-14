@@ -91,6 +91,8 @@ export interface WorldOptions {
   snapshotInterval?: number;
   segmentSize?: number;
   segments?: SegmentStore;
+  presenceLeaseMs?: number;
+  presenceNow?: () => number;
 }
 
 export class World {
@@ -115,6 +117,9 @@ export class World {
   private readonly pendingEdges: WitnessEdge[] = [];
   readonly occupancyHistory = new Map<number, Array<{ identityId: string; name: string | null; position: Position }>>();
   private readonly present = new Set<string>();
+  private readonly recentActivity = new Map<string, number>();
+  private readonly presenceLeaseMs: number;
+  private readonly presenceNow: () => number;
   private readonly intents: Intent[] = [];
   private intentSeq = 0;
   private dormant = true;
@@ -142,6 +147,10 @@ export class World {
   constructor(log: EventLog = new MemoryLog(), serverKey = randomBytes(32), options: WorldOptions = {}) {
     this.log = log;
     this.identities = new IdentityStore(serverKey);
+    const requestedPresenceLease = options.presenceLeaseMs ?? 180_000;
+    this.presenceLeaseMs =
+      Number.isInteger(requestedPresenceLease) && requestedPresenceLease > 0 ? requestedPresenceLease : 180_000;
+    this.presenceNow = options.presenceNow ?? Date.now;
     this.snapshotInterval = options.snapshotInterval ?? DEFAULT_SNAPSHOT_INTERVAL;
     this.segmentSize = options.segmentSize ?? DEFAULT_SEGMENT_SIZE;
     this.segments = options.segments ?? new MemorySegmentStore();
@@ -261,6 +270,7 @@ export class World {
       return this.firstContact(id, args, meta, now);
     }
     this.present.add(identity.id);
+    this.recentActivity.set(identity.id, this.presenceNow());
     this.lastCallAt = now;
     if (this.dormant && this.everTicked && !this.halted) {
       this.advanceTick(now);
@@ -1610,11 +1620,15 @@ export class World {
   }
 
   get onlineCount(): number {
-    return this.present.size;
+    return this.onlineIdentityIds.length;
   }
 
   get onlineIdentityIds(): string[] {
-    return [...this.present].sort();
+    const cutoff = this.presenceNow() - this.presenceLeaseMs;
+    return [...this.recentActivity.entries()]
+      .filter(([, lastSeen]) => lastSeen >= cutoff)
+      .map(([identityId]) => identityId)
+      .sort();
   }
 
   persist(): void {

@@ -150,16 +150,20 @@ async function sendSite(res: ServerResponse, name: string): Promise<void> {
   }
 }
 
+function onlineBodies(world: World): Array<{ id: string; position: { x: number; y: number; z: number } }> {
+  const online = new Set(world.onlineIdentityIds);
+  return [...world.bodies.entries()]
+    .filter(([id]) => online.has(id))
+    .map(([id, position]) => ({ id, position }));
+}
+
 function attachListen(world: World, req: IncomingMessage, res: ServerResponse): void {
   res.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
-  const online = new Set(world.onlineIdentityIds);
-  const bodies = [...world.bodies.entries()]
-    .filter(([id]) => online.has(id))
-    .map(([id, position]) => ({ id, position }));
+  const bodies = onlineBodies(world);
   res.write(presenceFrame(bodies));
   for (const item of world.listenLog.slice(-40)) {
     res.write(recordFrame(item));
@@ -179,6 +183,7 @@ function attachListen(world: World, req: IncomingMessage, res: ServerResponse): 
       clearInterval(beat);
       return;
     }
+    res.write(presenceFrame(onlineBodies(world)));
     res.write(": heartbeat\n\n");
   }, HEARTBEAT_MS);
   const cleanup = () => {
