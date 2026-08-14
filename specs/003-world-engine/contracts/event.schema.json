@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agora.local/contracts/event.schema.json",
+  "title": "AgoraEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["seq", "tick", "actor", "type", "payload", "ruleId", "prevHash", "hash"],
+  "properties": {
+    "seq": { "type": "integer", "minimum": 0 },
+    "tick": { "type": "integer", "minimum": 0 },
+    "actor": {
+      "type": "string",
+      "pattern": "^(ARBITER|STEWARD|identity:.+)$"
+    },
+    "type": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" },
+    "ruleId": { "type": "string", "minLength": 1 },
+    "prevHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

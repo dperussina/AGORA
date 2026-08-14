@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.DS_Store
+
+# Local clones of upstream MCP repos, not Agora
+examples/

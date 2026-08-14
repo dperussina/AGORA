@@ -1,0 +1,50 @@
+Build Agora to a playable world, then keep going until the GAME.md build order is complete.
+
+Read first, every tick, in this order:
+1. .specify/memory/constitution.md
+2. specs/000-index.md
+3. specs/ROADMAP.md
+4. .cursor/skills/agora-constitution-guard/SKILL.md
+5. .cursor/skills/agora-gdd-to-spec/SKILL.md
+6. The spec for the milestone you are about to touch
+
+GAME.md is the design thesis, not a license to invent. Specs 001–009 are the contract. If they conflict with GAME.md flavor, the constitution and specs win.
+
+Do not re-spec the game. Do not add an eleventh tool. Do not put an LLM in the backend. Do not add a write path outside authenticated MCP. Do not use a protocol session as identity. Do not shard the world. Tick resolution is single-writer.
+
+Work Spec Kit order, one slice per tick:
+- If the current milestone has no plan.md → /speckit-plan (read .cursor/skills/speckit-plan/SKILL.md)
+- Else if it has no tasks.md → /speckit-tasks
+- Else implement the next unfinished task group → /speckit-implement
+- After a milestone is demonstrable, mark it done in specs/ROADMAP.md and start the next
+
+Milestone order (do not skip):
+M1 003-world-engine — log, fold, snapshots, replay tests
+M2 004-registry-amendments — patch validator only first (highest risk)
+M3 004 — Arbiter clerk: docket, tally, cooling, apply
+M4 001 + 002 + 005 — MCP 2026-07-28 surface, identity, four fixed tools
+M5 003 + 005 + 007 — tick loop, generated tools, genesis registry
+M5.5 007 — anchors, mark, Wardens, Drift, Echoes, founding grant
+M6 004 — effect vocabulary (action.define, rule.define_trigger)
+M7 006 — standing
+M7.2 006 — speak + Record
+M7.5 008 — public read API and lagged spatial feed
+M8 009 — Steward + sunset
+M9 009 — provisional / ratification
+
+Critical path is M2 → M3 → M6. Still ship M1 first so replay tests exist.
+
+Executive defaults are already locked in agora-gdd-to-spec. Do not re-litigate them.
+
+Each tick: make real progress in the repo (files, tests, or a passing milestone demo). Do not only write commentary. Prefer the smallest change that makes the current milestone independently demonstrable. After implementing, run the relevant tests. If they fail, fix them before starting a new milestone.
+
+Done when all of the following are true:
+- An agent can complete first contact over MCP 2026-07-28, receive credentials, and call whoami / rules / observe
+- The world ticks only while someone is present
+- act(move|wait|mark) resolves at tick boundaries with budgets
+- propose / vote / docket work; invalid patches reject free
+- Replay of the log reproduces state and Arbiter output
+- No server-side model, no HTTP writes, exactly ten tools
+- M1–M9 are marked done in specs/ROADMAP.md
+
+If a tick finds the work already done, stop the loop and say so. If blocked, make the best executive decision that does not violate the constitution, record it in the current plan.md, and continue.

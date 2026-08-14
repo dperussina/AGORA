@@ -1,0 +1,199 @@
+import {
+  EFFECT_VOCABULARY,
+  LAYER0_PATHS,
+  MAX_EFFECTS,
+  type Registry,
+} from "./registry.ts";
+
+export type Patch =
+  | { kind: "param.set"; path: string; value: number }
+  | { kind: "text.set"; path: string; value: string }
+  | { kind: "space.op"; op: "resize" | "add_axis"; axis: string | { name: string; size: number; wrap: boolean; writable: boolean }; size?: number }
+  | { kind: "schema.define_type"; name: string; fields: Record<string, { type: string; default?: unknown; visibility?: string }> }
+  | { kind: "schema.extend_type"; type: string; field: { name: string; type: string; default?: unknown; visibility?: string } }
+  | {
+      kind: "action.define";
+      name: string;
+      cost: number;
+      params: Record<string, string>;
+      preconditions: unknown[];
+      effects: Array<{ effect: string; args: unknown[] }>;
+    }
+  | { kind: "rule.define_trigger"; id: string; when: string; condition: unknown; effects: Array<{ effect: string; args: unknown[] }> }
+  | { kind: "tier.move"; path: string; tier: 1 | 2 }
+  | { kind: "revert"; proposalId: number };
+
+export type Validation =
+  | { ok: true; tier: 1 | 2 }
+  | { ok: false; code: string; reason: string };
+
+const KINDS = new Set([
+  "param.set",
+  "text.set",
+  "space.op",
+  "schema.define_type",
+  "schema.extend_type",
+  "action.define",
+  "rule.define_trigger",
+  "tier.move",
+  "revert",
+]);
+
+export function validatePatch(registry: Registry, patch: unknown): Validation {
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    return fail("schema", "patch must be an object");
+  }
+  const kind = (patch as { kind?: unknown }).kind;
+  if (typeof kind !== "string" || !KINDS.has(kind)) {
+    return fail("schema", "unknown or missing patch kind");
+  }
+  const body = patch as Patch;
+
+  switch (body.kind) {
+    case "param.set":
+      return validateParamSet(registry, body);
+    case "text.set":
+      return validateTextSet(registry, body);
+    case "space.op":
+      return validateSpaceOp(registry, body);
+    case "schema.define_type":
+      if (!body.name || registry.types[body.name] !== undefined) {
+        return fail("conflict", "type name missing or already defined");
+      }
+      return { ok: true, tier: 2 };
+    case "schema.extend_type":
+      if (registry.types[body.type] === undefined) {
+        return fail("missing_path", `unknown type ${body.type}`);
+      }
+      return { ok: true, tier: 2 };
+    case "action.define":
+      return validateAction(registry, body);
+    case "rule.define_trigger":
+      return validateEffects(body.effects);
+    case "tier.move":
+      if (isLayer0(body.path) || body.path.startsWith("steward.sunset")) {
+        return fail("layer0", "cannot move a Layer 0 path");
+      }
+      if (body.tier !== 1 && body.tier !== 2) {
+        return fail("schema", "tier must be 1 or 2");
+      }
+      return { ok: true, tier: 1 };
+    case "revert":
+      if (!Number.isInteger(body.proposalId) || body.proposalId < 0) {
+        return fail("schema", "revert requires a proposalId");
+      }
+      return { ok: true, tier: 2 };
+    default:
+      return fail("schema", "unknown or missing patch kind");
+  }
+}
+
+function validateParamSet(registry: Registry, body: Extract<Patch, { kind: "param.set" }>): Validation {
+  if (typeof body.path !== "string") {
+    return fail("schema", "param.set requires a path");
+  }
+  if (isLayer0(body.path)) {
+    return fail("layer0", `Layer 0 path cannot be amended: ${body.path}`);
+  }
+  const key = body.path.replace(/^params\./, "");
+  const param = registry.params[key];
+  if (param === undefined) {
+    return fail("missing_path", `unknown param ${body.path}`);
+  }
+  if (!Number.isInteger(body.value)) {
+    return fail("schema", "param value must be an integer");
+  }
+  if (param.min !== undefined && body.value < param.min) {
+    return fail("bounds", `${key} below min ${param.min}`);
+  }
+  if (param.max !== undefined && body.value > param.max) {
+    return fail("bounds", `${key} above max ${param.max}`);
+  }
+  return { ok: true, tier: param.tier };
+}
+
+function validateTextSet(registry: Registry, body: Extract<Patch, { kind: "text.set" }>): Validation {
+  if (typeof body.path !== "string") {
+    return fail("schema", "text.set requires a path");
+  }
+  if (isLayer0(body.path)) {
+    return fail("layer0", `Layer 0 path cannot be amended: ${body.path}`);
+  }
+  const key = body.path.replace(/^text\./, "");
+  if (!(key in registry.text)) {
+    return fail("missing_path", `unknown text ${body.path}`);
+  }
+  if (typeof body.value !== "string") {
+    return fail("schema", "text value must be a string");
+  }
+  return { ok: true, tier: 2 };
+}
+
+function validateSpaceOp(registry: Registry, body: Extract<Patch, { kind: "space.op" }>): Validation {
+  if (body.op === "resize") {
+    if (typeof body.axis !== "string") {
+      return fail("schema", "resize requires axis name");
+    }
+    const axis = registry.space.axes.find((item) => item.name === body.axis);
+    if (axis === undefined) {
+      return fail("missing_path", `unknown axis ${body.axis}`);
+    }
+    if (typeof body.size !== "number" || !Number.isInteger(body.size) || body.size < 1) {
+      return fail("bounds", "resize size must be a positive integer");
+    }
+    return { ok: true, tier: 1 };
+  }
+  if (body.op === "add_axis") {
+    const axis = body.axis;
+    if (typeof axis !== "object" || axis === null) {
+      return fail("schema", "add_axis requires an axis object");
+    }
+    if (registry.space.axes.some((item) => item.name === axis.name)) {
+      return fail("conflict", `axis ${axis.name} exists`);
+    }
+    return { ok: true, tier: 1 };
+  }
+  return fail("schema", "unknown space.op");
+}
+
+function validateAction(
+  registry: Registry,
+  body: Extract<Patch, { kind: "action.define" }>,
+): Validation {
+  if (!body.name) {
+    return fail("schema", "action.define requires a name");
+  }
+  if (registry.verbs[body.name] !== undefined) {
+    return fail("conflict", `verb ${body.name} exists`);
+  }
+  if (!Number.isInteger(body.cost) || body.cost < 0) {
+    return fail("schema", "cost must be a non-negative integer");
+  }
+  return validateEffects(body.effects);
+}
+
+function validateEffects(effects: Array<{ effect: string; args: unknown[] }>): Validation {
+  if (!Array.isArray(effects)) {
+    return fail("schema", "effects must be an array");
+  }
+  if (effects.length > MAX_EFFECTS) {
+    return fail("effect_cap", `at most ${MAX_EFFECTS} effects`);
+  }
+  for (const item of effects) {
+    if (item === null || typeof item !== "object" || typeof item.effect !== "string") {
+      return fail("schema", "each effect needs an effect name");
+    }
+    if (!(EFFECT_VOCABULARY as readonly string[]).includes(item.effect)) {
+      return fail("vocabulary", `unknown effect ${item.effect}`);
+    }
+  }
+  return { ok: true, tier: 2 };
+}
+
+function isLayer0(path: string): boolean {
+  return typeof path === "string" && (LAYER0_PATHS.has(path) || path.startsWith("layer0."));
+}
+
+function fail(code: string, reason: string): Validation {
+  return { ok: false, code, reason };
+}
