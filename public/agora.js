@@ -310,7 +310,7 @@ async function refresh() {
 }
 
 function appendRecord(item) {
-  const root = $("record");
+  const root = $("record-log");
   const empty = root.querySelector(".empty");
   if (empty) {
     empty.remove();
@@ -325,7 +325,7 @@ function appendRecord(item) {
 }
 
 function listen() {
-  const root = $("record");
+  const root = $("record-log");
   root.replaceChildren();
   const empty = document.createElement("li");
   empty.className = "empty";
