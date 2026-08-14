@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { publicRead } from "../public/read.ts";
-import { recordFrame } from "../world/record-hub.ts";
+import { recordFrame, streamKind } from "../world/record-hub.ts";
 import { httpStatusFor, negotiatedProtocolHeader } from "../world/rpc.ts";
 import { World, type McpRequest } from "../world/world.ts";
 
@@ -156,7 +156,7 @@ function attachListen(world: World, req: IncomingMessage, res: ServerResponse): 
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
-  for (const item of world.record.slice(-20)) {
+  for (const item of world.listenLog.slice(-40)) {
     res.write(recordFrame(item));
   }
   const unsub = world.recordHub.subscribe((frame) => {
@@ -192,10 +192,12 @@ function attachFeed(world: World, req: IncomingMessage, res: ServerResponse, cla
     if (res.writableEnded) {
       return false;
     }
-    if (want.has("governance") || want.has("spatial")) {
+    const type = frameType(frame);
+    const kind = type === null ? null : streamKind(type);
+    if ((want.has("governance") && kind === "governance") || (want.has("spatial") && kind === "spatial")) {
       res.write(frame);
     }
-    if (frame.includes("tick.boundary")) {
+    if (type === "tick.boundary") {
       res.write(`event: tick\ndata: ${JSON.stringify({ tick: world.clerk.tick })}\n\n`);
     }
     return true;
@@ -213,6 +215,11 @@ function attachFeed(world: World, req: IncomingMessage, res: ServerResponse, cla
   };
   req.on("close", cleanup);
   res.on("close", cleanup);
+}
+
+function frameType(frame: string): string | null {
+  const match = /"type":"([^"]+)"/.exec(frame);
+  return match?.[1] ?? null;
 }
 
 function clientIp(req: IncomingMessage): string {

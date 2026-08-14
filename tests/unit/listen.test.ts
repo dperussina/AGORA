@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
-import { recordFrame, RecordHub } from "../../src/world/record-hub.ts";
+import { recordFrame, RecordHub, streamKind } from "../../src/world/record-hub.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -13,6 +13,13 @@ function req(method: string, params?: Record<string, unknown>, id = 1): McpReque
 }
 
 describe("spectator listen", () => {
+  it("classifies acts as spatial and amendments as governance", () => {
+    expect(streamKind("act.move")).toBe("spatial");
+    expect(streamKind("speak")).toBe("spatial");
+    expect(streamKind("amendment.propose")).toBe("governance");
+    expect(streamKind("tick.boundary")).toBe("governance");
+  });
+
   it("fans Record items to subscribers without being a write path", () => {
     const hub = new RecordHub();
     const frames: string[] = [];
@@ -25,6 +32,70 @@ describe("spectator listen", () => {
     unsub();
     hub.publish({ tick: 2, type: "tick.boundary", payload: {} });
     expect(frames).toHaveLength(1);
+  });
+
+  it("publishes names, moves, speech, and proposal cost on the public stream", () => {
+    const world = new World();
+    const seen: string[] = [];
+    world.recordHub.subscribe((frame) => {
+      seen.push(frame);
+      return true;
+    });
+    const challenge = world.handle({
+      body: req("tools/call", { name: "whoami", arguments: {} }),
+      now: 1,
+    });
+    const creds = world.handle({
+      body: req("tools/call", {
+        name: "whoami",
+        arguments: {},
+        inputResponses: { intent: "register" },
+        requestState: (challenge.result as { requestState: string }).requestState,
+      }),
+      now: 1,
+    }).result as { sessionToken: string; identityId: string };
+    const nameAsk = world.handle({
+      body: req("tools/call", { name: "whoami", arguments: {} }),
+      now: 2,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    world.handle({
+      body: req("tools/call", {
+        name: "whoami",
+        arguments: {},
+        inputResponses: { name: "Ada" },
+        requestState: (nameAsk.result as { requestState: string }).requestState,
+      }),
+      now: 2,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    world.handle({
+      body: req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }),
+      now: 3,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    world.advanceTick();
+    world.handle({
+      body: req("tools/call", { name: "speak", arguments: { text: "hello lattice", broadcast: true } }),
+      now: 4,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    world.handle({
+      body: req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "text.set", path: "text.world_name", value: "Ada's World" } },
+      }),
+      now: 5,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    expect(seen.some((frame) => frame.includes("identity.name") && frame.includes("Ada"))).toBe(true);
+    expect(seen.some((frame) => frame.includes("act.move"))).toBe(true);
+    expect(seen.some((frame) => frame.includes("hello lattice"))).toBe(true);
+    expect(seen.some((frame) => frame.includes("amendment.propose") && frame.includes("\"cost\":10"))).toBe(true);
+    expect(world.record.some((item) => item.type === "speak")).toBe(false);
+    expect(world.listenLog.some((item) => item.type === "speak")).toBe(true);
+    expect(world.listenLog.some((item) => item.type === "tick.boundary")).toBe(false);
+    expect(world.record.some((item) => item.type === "tick.boundary")).toBe(true);
   });
 
   it("publishes from the world Record when credentials are minted", () => {

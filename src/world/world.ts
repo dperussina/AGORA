@@ -102,6 +102,7 @@ export class World {
   readonly ledger: LedgerRow[] = [];
   readonly inbox = new Map<string, Array<{ from: string; text: string; tick: number }>>();
   readonly record: Array<{ tick: number; type: string; payload: Record<string, unknown> }> = [];
+  readonly listenLog: Array<{ tick: number; type: string; actor: string; payload: Record<string, unknown> }> = [];
   private readonly speakCounts = new Map<string, number>();
   private readonly pendingEdges: WitnessEdge[] = [];
   readonly occupancyHistory = new Map<number, Array<{ identityId: string; name: string | null; position: Position }>>();
@@ -479,6 +480,9 @@ export class World {
             proposalId: result.proposalId,
             tier: result.tier,
             patch: args["patch"],
+            cost: this.clerk.registry.params["proposal_cost"]?.value ?? 10,
+            currency: this.clerk.identities.get(identity.id)?.currency ?? 0,
+            identityId: identity.id,
           });
           if (this.clerk.identities.size < (this.clerk.registry.meta.quorumFloor ?? 4)) {
             const applied = this.clerk.applyImmediately(result.proposalId);
@@ -507,7 +511,7 @@ export class World {
         }
         const result = this.clerk.vote(identity.id, proposalId, position as VotePosition);
         if (result.ok) {
-          this.append("amendment.vote", identity.id, { proposalId, position });
+          this.append("amendment.vote", identity.id, { proposalId, position, identityId: identity.id });
         }
         return result;
       }
@@ -607,7 +611,7 @@ export class World {
     const spawn = this.spawnInNexus();
     this.bodies.set(identityId, spawn);
     this.budgets.set(identityId, this.clerk.registry.params["action_budget"]?.value ?? 3);
-    this.append("identity.spawn", identityId, { ...spawn });
+    this.append("identity.spawn", identityId, { ...spawn, identityId });
   }
 
   private spawnInNexus(): Position {
@@ -751,7 +755,7 @@ export class World {
         return;
       }
       this.bodies.set(intent.identityId, moved.position);
-      this.append("act.move", intent.identityId, { ...moved.position });
+      this.append("act.move", intent.identityId, { ...moved.position, identityId: intent.identityId });
       return;
     }
     if (intent.verb === "mark") {
@@ -768,7 +772,7 @@ export class World {
         return;
       }
       this.marks.set(key, { text, authorId: intent.identityId, tick: this.clerk.tick, position: at });
-      this.append("act.mark", intent.identityId, { text, ...at });
+      this.append("act.mark", intent.identityId, { text, ...at, identityId: intent.identityId });
       this.witness(intent.identityId, "fame");
       return;
     }
@@ -792,13 +796,18 @@ export class World {
         fields: this.fields,
         entities: this.entities,
         emit: (name, payload) => {
-          this.append(name, intent.identityId, payload);
+          this.append(name, intent.identityId, { ...payload, identityId: intent.identityId });
           this.witness(intent.identityId, name === "effect.destroy" ? "notoriety" : "fame");
         },
         nextId: () => {
           this.entitySeq += 1;
           return `ent:${this.entitySeq}`;
         },
+      });
+      this.append(`act.${intent.verb}`, intent.identityId, {
+        identityId: intent.identityId,
+        verb: intent.verb,
+        text: intent.text,
       });
     }
   }
@@ -1165,7 +1174,7 @@ export class World {
       list.push({ from: identityId, text, tick: this.clerk.tick });
       this.inbox.set(hearer, list);
     }
-    this.append("speak", identityId, { text, hearers });
+    this.append("speak", identityId, { text, hearers, identityId });
     return { ok: true, text, hearers, budgetSpent: 0 };
   }
 
@@ -1185,7 +1194,14 @@ export class World {
       .replaceAll("{axis}", warden.axis)
       .replaceAll("{size}", String(axis?.size ?? "?"))
       .replaceAll("{amendmentId}", String(amendmentId));
-    this.append("speak.warden", identityId, { target, text, axis: warden.axis, size: axis?.size ?? null, amendmentId });
+    this.append("speak.warden", identityId, {
+      target,
+      text,
+      axis: warden.axis,
+      size: axis?.size ?? null,
+      amendmentId,
+      identityId,
+    });
     return {
       ok: true,
       hearers: [],
@@ -1236,7 +1252,56 @@ export class World {
     const item = { tick: this.clerk.tick, type, payload };
     this.record.push(item);
     this.notifications.push({ type, payload });
+  }
+
+  private publishListen(type: string, actor: string, payload: Record<string, unknown>): void {
+    const item = { tick: this.clerk.tick, type, actor, payload };
+    if (!this.isListenNoise(type)) {
+      this.listenLog.push(item);
+      if (this.listenLog.length > 200) {
+        this.listenLog.shift();
+      }
+    }
     this.recordHub.publish(item);
+  }
+
+  private isArbiterRecord(type: string): boolean {
+    return (
+      type.startsWith("credential.") ||
+      type.startsWith("amendment.") ||
+      type === "identity.founder" ||
+      type === "world.dormancy_gap" ||
+      type === "tick.boundary" ||
+      type === "genesis" ||
+      type === "coherence.revert" ||
+      type.startsWith("steward.") ||
+      type.endsWith("_failed")
+    );
+  }
+
+  private isListenNoise(type: string): boolean {
+    return type === "tick.boundary" || type === "world.dormancy_gap";
+  }
+
+  private isPublicStream(_type: string): boolean {
+    return true;
+  }
+
+  rebuildListenLog(): void {
+    this.listenLog.length = 0;
+    for (const event of this.log.events()) {
+      if (this.isPublicStream(event.type) && !this.isListenNoise(event.type)) {
+        this.listenLog.push({
+          tick: event.tick,
+          type: event.type,
+          actor: event.actor,
+          payload: event.payload,
+        });
+      }
+    }
+    if (this.listenLog.length > 200) {
+      this.listenLog.splice(0, this.listenLog.length - 200);
+    }
   }
 
   private fireTriggers(): void {
@@ -1402,15 +1467,11 @@ export class World {
       ruleId: type,
     });
     archiveAfterAppend(this.log, this.segments, event, this.snapshotInterval, this.segmentSize);
-    if (
-      type.startsWith("credential.") ||
-      type.startsWith("amendment.") ||
-      type === "identity.founder" ||
-      type === "world.dormancy_gap" ||
-      type === "tick.boundary" ||
-      type.endsWith("_failed")
-    ) {
+    if (this.isArbiterRecord(type)) {
       this.noteRecord(type, payload);
+    }
+    if (this.isPublicStream(type)) {
+      this.publishListen(type, cited, payload);
     }
     this.persist();
   }
@@ -1485,6 +1546,7 @@ export class World {
         }
       }
       this.clerk.tick = view.fold.tick;
+      this.rebuildListenLog();
       return;
     }
     this.clerk.restore({
@@ -1528,6 +1590,7 @@ export class World {
     this.everTicked = snapshot.everTicked === true;
     this.record.length = 0;
     this.record.push(...snapshot.record);
+    this.rebuildListenLog();
     this.lastAxisSizes = { x: 64, y: 64, z: 64 };
     this.anchors.length = 0;
     this.anchors.push(...generateAnchors(seedRegistry()));

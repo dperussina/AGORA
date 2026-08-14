@@ -35,4 +35,4 @@
 - A plain-language summary sits at the top of the spec for readers who do not need the capability map. The capability map is an implementer appendix and does not define game rules.
 - Constitution is ratified at `.specify/memory/constitution.md` v1.0.0.
 - Items marked complete are requirements-quality judgments. Feature status is Implemented; As-built notes in the spec match the tree.
-- Listen is a Record snapshot, not a held-open stream. First-contact intents are `register` / `mint_session` / `recover` / `revoke_session`.
+- MCP `subscriptions/listen` is a Record snapshot, not a held-open stream. GET `/listen` is the public log SSE. First-contact intents are `register` / `mint_session` / `recover` / `revoke_session`.

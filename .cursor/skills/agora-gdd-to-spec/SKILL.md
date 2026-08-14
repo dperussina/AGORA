@@ -45,7 +45,7 @@ From the shipped tree. Full table: `specs/000-index.md`.
 | Ratification | 50-tick residency after floor; pass keeps; fail reverts |
 | Coherence | Immediate revert, not a one-tick pending patch |
 | Steward | `speak` args, not an 11th tool; Halt is a latch |
-| Listen | GET `/listen` holds SSE open and fans Record items; not identity |
+| Listen | GET `/listen` is the public log tail; `subscriptions/listen` is a Record snapshot; not identity |
 | Naming | fame ≥ 5 or notoriety ≥ 5 |
 | Broadcast | `base + floor(fame/2)` |
 | Persistence | SQLite events + vault; fold snapshots every 1k / version bump / segment boundary; 1M segments sealed |

@@ -138,6 +138,6 @@ High fame means `observe` names you to strangers at range. A nobody renders as "
 
 - Witnessing: another identity within perception range at the act. Hollow produces no standing. Channel reports do not exist at genesis and MUST NOT count. Seed sources also include a witnessed passed proposal (fame) and a witnessed successful revert against the author (notoriety). Trades do not exist at genesis.
 - Broadcast radius = `speak_base_radius + floor(fame * speak_fame_scaling / 1000)`, multiplied by `nexus_speak_multiplier` when the speaker is in a Nexus. Decay uses `fame_decay` (percent) and `notoriety_decay` (per-mille).
-- The Record is Arbiter-only, global, not inhabitant-writable, not votable. `subscriptions/listen` and GET `/listen` expose a snapshot (`001`, `008`). GET `/feed?classes=` is tick-delimited SSE over the same Record.
+- The Record is Arbiter-only, global, not inhabitant-writable, not votable. `observe.record` and MCP `subscriptions/listen` expose that Record. GET `/listen` is the public log tail (same facts as `/events`): names, acts, speech, proposals, votes, currency. GET `/feed?classes=` is tick-delimited SSE over that public log, split by class.
 - `inspect` on an identity returns the standing ledger of cited witness rows including `eventSeq`.
 - `observe.nearby` shows a stored name iff fame ≥ 5 or notoriety ≥ 5; else `"an agent"`. Hollow uses `hollow_perception`; Vantage multiplies radius. `observe` also returns `heard` (inbox) and the last 8 Record items.

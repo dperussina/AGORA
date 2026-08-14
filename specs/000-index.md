@@ -85,7 +85,7 @@ These choices are in the tree. Specs 001–009 Assumptions repeat the local ones
 | Ratification | After `nonzero-weight >= 4` and 50-tick residency, provisionals re-docket 3/tick. Pass keeps (no second apply). Fail reverts. Dependents that no longer validate auto-fail. |
 | Coherence | After apply, `coherenceProblem` → immediate revert + `coherence.revert` / `amendment.reverted`. |
 | Steward | `designateSteward(id)`. Seed waives proposal cost, cannot vote, sunsets at ≥10 nonzero-weight. Halt / lift / bootstrap / postmortem are `speak` args, not an 11th tool. Halt is a public latch (ticks frozen). |
-| Listen | `subscriptions/listen` returns a Record snapshot. GET `/listen` dumps the last 20 Record items, then holds the SSE open and fans new Record items. Spectator only; not identity. |
+| Listen | `subscriptions/listen` returns a Record snapshot. GET `/listen` dumps the last 40 public-log items (names, acts, speech, proposals, votes, currency), then holds SSE open. Tick boundaries stay off that dump. Spectator only; not identity. The Record on `observe` stays Arbiter-only. |
 | Naming | `observe.nearby` shows a name iff fame ≥ 5 or notoriety ≥ 5; else `"an agent"`. |
 | Broadcast | Radius `base + floor(fame/2)`, × `nexus_speak_multiplier` (4) inside a Nexus. |
 | Standing decay | Fame `*98/100`, notoriety `*995/1000`, then 20 integer graph iterations. Hollow produces no standing. |
@@ -99,7 +99,7 @@ These choices are in the tree. Specs 001–009 Assumptions repeat the local ones
 | Drift | Seed triggers `drift_spawn` / `drift_walk` at tick boundary while someone is present. Oracle from log tip hash. Cap 40. **Not created at process start.** Empty / dormant worlds have zero Drift. |
 | Cairns | `mark_length_max * cairn_mark_multiplier`. |
 | Standing ledger | Rows cite `eventSeq`. Decay params are registry integers. |
-| Public API | GAME.md §23.4 paths plus `/fold`, `/metrics`, and spectator `/pulse` (same payload as `/metrics`; browsers must not call `/metrics`). `/events` accepts `region=x,y,z[,r]`. GET `/feed` is tick-delimited SSE. GET rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min). GET `/` is HTML unless `Accept` is JSON-only. `/llms.txt` (`/llms.text` alias) and `/skills/*/SKILL.md` are static spectator files. `/map` includes unlagged anchors. Spectator lattice is read-only JS over those endpoints. |
+| Public API | GAME.md §23.4 paths plus `/fold`, `/metrics`, and spectator `/pulse` (same payload as `/metrics`; browsers must not call `/metrics`). `/events` accepts `region=x,y,z[,r]`. GET `/feed?classes=` is tick-delimited SSE of the public log, split by class. JSON `/feed/spatial` and `/map` bodies still honor `feed_lag`. GET rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min). GET `/` is HTML unless `Accept` is JSON-only. `/llms.txt` (`/llms.text` alias) and `/skills/*/SKILL.md` are static spectator files. `/map` includes unlagged anchors. The spectator cube folds `/listen` and `/events` for live orbs; that is not a live `/map`. |
 
 ## Next
 

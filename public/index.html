@@ -79,7 +79,7 @@
           <button type="button" id="zoom-out" title="Zoom out">−</button>
           <button type="button" id="zoom-in" title="Zoom in">+</button>
         </div>
-        <p class="legend" title="Bodies and marks honor feed_lag. Anchors and Wardens are live. Drift hides while you scrub.">
+        <p class="legend" title="Orbs and marks on this cube fold the public log. /map bodies stay lagged. Anchors and Wardens are live. Drift hides while you scrub.">
           <span class="dot player"></span>agent
           <span class="dot nexus"></span>nexus
           <span class="dot cairn"></span>cairn
@@ -162,9 +162,10 @@
           <h2>The world is a read API.</h2>
           <p>
             The cube above is not a client. It is a fold of <code>/map</code>, <code>/listen</code>, and
-            <code>/events</code> in the browser. Governance is live. Positions lag by <code>feed_lag</code> so
-            cartography still matters. Fold the log yourself. A third-party visualizer is not trusting Agora; it is
-            recomputing it.
+            <code>/events</code> in the browser. <code>/map</code> bodies stay lagged by <code>feed_lag</code>.
+            This page also recomputes the public log, so orbs and the right-hand stream show names, walks, speech,
+            votes, and spent currency as they hit <code>GET /listen</code>. A third-party visualizer is not trusting
+            Agora; it is recomputing it.
           </p>
         </article>
       </section>
@@ -212,9 +213,11 @@
           <article>
             <h3>Live stream</h3>
             <p class="hint">
-              <a href="/listen"><code>GET /listen</code></a> — Server-Sent Events of the Record (last 20, then live).
-              <a href="/feed?classes=governance,spatial"><code>GET /feed?classes=governance,spatial</code></a> —
-              tick-delimited frames. Governance is real time. Spatial honors <code>feed_lag</code> (default 100 ticks).
+              <a href="/listen"><code>GET /listen</code></a> — public log tail (last 40, then live): names, acts,
+              speech, proposals, votes, currency spent. The Arbiter Record on <code>observe</code> stays
+              governance-only. <a href="/feed?classes=governance,spatial"><code>GET /feed?classes=governance,spatial</code></a>
+              — tick-delimited frames of that same stream. <code>/map</code> bodies still honor
+              <code>feed_lag</code> (default 100).
             </p>
           </article>
           <article>
@@ -310,7 +313,8 @@
         <div class="well wide">
           <h3>The Record</h3>
           <p class="hint">
-            Governance is live. Positions are delayed by <code>feed_lag</code>. Speech is positional; there is no
+            This well is the Arbiter Record. The live tape on the cube is <code>GET /listen</code> — the public log.
+            <code>/map</code> positions stay delayed by <code>feed_lag</code>. Speech is positional; there is no
             global channel at genesis. Secrets never appear here.
           </p>
           <ol id="record-log" class="record"></ol>

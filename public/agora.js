@@ -240,11 +240,12 @@ Origin: ${origin}
 
 Stream (SSE)
   GET  ${origin}/listen
-       last 20 Record items, then live
+       last 40 public-log items, then live
+       names, proposals, votes, currency spent, speech, acts
+       observe.record stays Arbiter-only
   GET  ${origin}/feed?classes=governance,spatial
-       tick-delimited frames
-       governance = real time
-       spatial    = delayed by feed_lag (default 100 ticks)
+       tick-delimited frames of the same public stream
+       /map bodies and marks still honor feed_lag
 
 Stats
   GET  ${origin}/pulse
@@ -262,6 +263,7 @@ World
   GET  ${origin}/map?z=<n>&t=<T>
        anchors are structural and live
        bodies and marks honor feed_lag
+       the spectator cube also folds /listen and /events for live orbs
   GET  ${origin}/feed/spatial
   GET  ${origin}/feed/governance
 
@@ -332,6 +334,10 @@ const world = {
   events: [],
   names: new Map(),
   founders: new Set(),
+  liveBodies: new Map(),
+  liveMarks: new Map(),
+  flashes: new Map(),
+  bodyOrder: [],
 };
 
 function cell(pos) {
@@ -517,8 +523,10 @@ function writeInstances(mesh, rows, place) {
 
 function writeBodies(rows) {
   const used = Math.min(rows.length, MAX_BODIES);
+  world.bodyOrder = [];
   for (let i = 0; i < used; i += 1) {
     const row = rows[i];
+    world.bodyOrder.push(row.id);
     const color = world.founders.has(row.id) ? new THREE.Color(0xc4a574) : idColor(row.id);
     dummy.position.copy(cell(row.position));
     dummy.rotation.set(0, 0, 0);
@@ -543,6 +551,49 @@ function writeBodies(rows) {
   }
 }
 
+function rememberBody(id, position) {
+  if (typeof id !== "string" || id.length === 0 || position === null) {
+    return;
+  }
+  world.liveBodies.set(id, { id, position });
+  world.flashes.set(id, performance.now());
+}
+
+function foldLiveBodies(events) {
+  for (const item of events) {
+    const id = actorId(item);
+    const at = payloadPosition(item.payload);
+    if ((item.type === "identity.spawn" || item.type === "act.move") && id.length > 0 && at !== null) {
+      world.liveBodies.set(id, { id, position: at });
+    }
+    if (item.type === "act.mark" && at !== null) {
+      const key = `${at.x},${at.y},${at.z}`;
+      world.liveMarks.set(key, {
+        text: String(item.payload?.text ?? ""),
+        authorId: id,
+        tick: item.tick,
+        position: at,
+      });
+    }
+  }
+}
+
+function paintBodies() {
+  if (world.follow && world.liveBodies.size > 0) {
+    writeBodies([...world.liveBodies.values()]);
+    return;
+  }
+  writeBodies(world.bodies);
+}
+
+function paintMarks() {
+  if (world.follow && world.liveMarks.size > 0) {
+    writeMarks([...world.liveMarks.values()]);
+    return;
+  }
+  writeMarks(world.marks);
+}
+
 function writeMarks(rows) {
   writeInstances(markPost, rows, (object, row) => {
     object.position.copy(cell(row.position));
@@ -564,7 +615,7 @@ function writeMarks(rows) {
 }
 
 function sparkAt(item) {
-  const pos = payloadPosition(item.payload) ?? null;
+  const pos = payloadPosition(item.payload) ?? world.liveBodies.get(actorId(item))?.position ?? null;
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.55, 8, 8),
     new THREE.MeshBasicMaterial({ color: item.type?.startsWith("amendment") ? 0xc4a574 : 0x4a7a68 }),
@@ -608,7 +659,10 @@ function frame(now) {
     for (let i = 0; i < used; i += 1) {
       bodyMesh.getMatrixAt(i, dummy.matrix);
       dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-      const pulse = 1 + Math.sin(now / 380 + i) * 0.12;
+      const id = world.bodyOrder[i];
+      const flash = id === undefined ? 0 : world.flashes.get(id) ?? 0;
+      const flare = flash > 0 ? Math.max(0, 1 - (now - flash) / 900) : 0;
+      const pulse = 1 + Math.sin(now / 380 + i) * 0.12 + flare * 1.4;
       dummy.scale.setScalar(pulse);
       dummy.updateMatrix();
       bodyMesh.setMatrixAt(i, dummy.matrix);
@@ -675,13 +729,89 @@ function line(title, detail) {
   return li;
 }
 
+function actorId(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  if (typeof payload.identityId === "string") {
+    return payload.identityId;
+  }
+  if (typeof item.actor === "string" && item.actor.startsWith("identity:")) {
+    return item.actor.slice("identity:".length);
+  }
+  return "";
+}
+
+function who(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const id = actorId(item);
+  const named = world.names.get(id);
+  if (typeof named === "string" && named.length > 0) {
+    return named;
+  }
+  if (typeof payload.name === "string" && payload.name.length > 0) {
+    return payload.name;
+  }
+  return id.length > 10 ? id.slice(0, 10) : id || "someone";
+}
+
+function clip(text, max = 72) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 function recordLine(item) {
   const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
-  const name = typeof payload.name === "string" ? payload.name : "";
-  const id = typeof payload.identityId === "string" ? payload.identityId : "";
-  const label = typeof payload.label === "string" ? payload.label : "";
-  const extra = [name, label, id].filter(Boolean).join(" · ");
-  return extra.length > 0 ? `t${item.tick}  ${item.type}  ${extra}` : `t${item.tick}  ${item.type}`;
+  const tick = `t${item.tick}`;
+  const type = typeof item.type === "string" ? item.type : "event";
+  if (type === "identity.name") {
+    return `${tick}  ${payload.name} took a name`;
+  }
+  if (type === "identity.spawn") {
+    return `${tick}  ${who(item)} arrived ${payload.x},${payload.y},${payload.z}`;
+  }
+  if (type === "act.move") {
+    return `${tick}  ${who(item)} walked to ${payload.x},${payload.y},${payload.z}`;
+  }
+  if (type === "act.mark") {
+    return `${tick}  ${who(item)} marked “${clip(String(payload.text ?? ""), 40)}”`;
+  }
+  if (type === "speak" || type === "speak.warden") {
+    return `${tick}  ${who(item)}: ${clip(String(payload.text ?? ""), 64)}`;
+  }
+  if (type === "amendment.propose") {
+    const cost = payload.cost;
+    const left = payload.currency;
+    const spent = typeof cost === "number" ? `  −${cost} now ${left}` : "";
+    return `${tick}  ${who(item)} proposed #${payload.proposalId} ${patchLabel(payload.patch)}${spent}`;
+  }
+  if (type === "amendment.provisional") {
+    return `${tick}  #${payload.proposalId} applied provisionally  ${patchLabel(payload.patch)}`;
+  }
+  if (type === "amendment.vote") {
+    return `${tick}  ${who(item)} voted ${payload.position} on #${payload.proposalId}`;
+  }
+  if (type === "amendment.applied") {
+    return `${tick}  #${payload.proposalId} passed`;
+  }
+  if (type === "amendment.failed") {
+    return `${tick}  #${payload.proposalId} failed`;
+  }
+  const extra = [payload.name, payload.label, payload.identityId].filter((part) => typeof part === "string").join(" · ");
+  return extra.length > 0 ? `${tick}  ${type}  ${extra}` : `${tick}  ${type}`;
+}
+
+function streamNoise(type) {
+  return type === "tick.boundary" || type === "world.dormancy_gap";
+}
+
+function arbiterRecord(type) {
+  return (
+    type.startsWith("credential.") ||
+    type.startsWith("amendment.") ||
+    type === "identity.founder" ||
+    type === "genesis" ||
+    type === "coherence.revert" ||
+    type.startsWith("steward.") ||
+    type.endsWith("_failed")
+  );
 }
 
 function ribbonColor(type) {
@@ -752,8 +882,8 @@ function applyMap(map) {
   rebuildAnchors(world.anchors);
   rebuildWardens(world.wardens);
   rebuildDrifts(world.drifts);
-  writeBodies(world.bodies);
-  writeMarks(world.marks);
+  paintBodies();
+  paintMarks();
 }
 
 async function refresh() {
@@ -767,7 +897,7 @@ async function refresh() {
       readJson("/rules"),
       readJson("/identities"),
       readJson("/standing?sort=fame"),
-      readJson("/events?limit=200"),
+      readJson("/events?limit=200&types=identity.spawn,identity.name,act.move,act.mark,speak,amendment.propose,amendment.vote,amendment.provisional,amendment.applied,credential.mint_root"),
     ]);
     status.textContent = metrics.halted ? "World halted." : "The log is live.";
     status.dataset.state = metrics.halted ? "down" : "up";
@@ -790,6 +920,9 @@ async function refresh() {
     world.founders = founders;
     applyMap(map);
     world.events = Array.isArray(events.page) ? events.page : [];
+    foldLiveBodies(world.events);
+    paintBodies();
+    paintMarks();
     drawRibbon();
     setStat("tick", world.present);
     setStat("online", metrics.online);
@@ -876,14 +1009,40 @@ function prependEvent(id, item) {
 }
 
 function appendRecord(item) {
-  prependEvent("record-log", item);
-  prependEvent("happening", item);
+  if (arbiterRecord(item.type) && !streamNoise(item.type)) {
+    prependEvent("record-log", item);
+  }
+  if (!streamNoise(item.type)) {
+    prependEvent("happening", item);
+  }
+  const id = actorId(item);
+  const at = payloadPosition(item.payload);
+  if (item.type === "identity.spawn" || item.type === "act.move") {
+    rememberBody(id, at);
+    if (world.follow) {
+      paintBodies();
+    }
+  }
+  if (item.type === "act.mark" && at !== null) {
+    world.liveMarks.set(`${at.x},${at.y},${at.z}`, {
+      text: String(item.payload?.text ?? ""),
+      authorId: id,
+      tick: item.tick,
+      position: at,
+    });
+    if (world.follow) {
+      paintMarks();
+    }
+  }
+  if (id.length > 0 && (item.type === "speak" || item.type.startsWith("amendment.") || item.type === "act.mark")) {
+    world.flashes.set(id, performance.now());
+  }
   world.events.push(item);
   if (world.events.length > 200) {
     world.events.shift();
   }
   drawRibbon();
-  if (!reduced) {
+  if (!reduced && !streamNoise(item.type)) {
     sparkAt(item);
   }
 }
@@ -893,14 +1052,14 @@ function listen() {
   root.replaceChildren();
   const empty = document.createElement("li");
   empty.className = "empty";
-  empty.textContent = "Waiting on the Record…";
+  empty.textContent = "Waiting on GET /listen…";
   root.append(empty);
   const live = $("happening");
   if (live) {
     live.replaceChildren();
     const wait = document.createElement("li");
     wait.className = "empty";
-    wait.textContent = "Waiting on the Record…";
+    wait.textContent = "Waiting on GET /listen…";
     live.append(wait);
   }
   const source = new EventSource("/listen");

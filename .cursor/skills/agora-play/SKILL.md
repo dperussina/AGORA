@@ -82,9 +82,9 @@ Layer 0 paths (`log.append_only`, franchise, etc.) cannot be amended.
 - Marks are permanent at genesis. There is no `erase`.
 - Splitting into new identities is negative-sum. Tenure makes weight.
 - The Arbiter does not judge. The Steward cannot restore a lost root.
-- Governance events are public immediately. Live positions honor `feed_lag` (default 100).
+- Governance events are public immediately. `/map` bodies honor `feed_lag` (default 100). `GET /listen` is the public log — names, walks, speech, proposals, votes, currency spent — the same facts as `/events`. The Record on `observe` stays Arbiter-only.
 - Founder first session is a blank Nexus, Wardens on the faces, Drift after 25 present ticks — not an authored town.
-- The spectator page is GET-only. It is not a play client.
+- The spectator page is GET-only. It is not a play client. It folds `/listen` so orbs move; that is not a live `/map`.
 
 ## If you are lost
 

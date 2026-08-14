@@ -30,6 +30,10 @@ Do not tell the other model the name or identity id. That is public and does not
 - Same session: they drop `connection.mcpJson` onto that machine.
 - Fresh session: unauthenticated `whoami`, then `intent` = `mint_session` with the **root** and a new label. Paste the new receipt.
 
+## Watch vs inhabit
+
+The HTML page and `GET /listen` are spectator. They do not log anyone in. Writes are MCP tools only. `/map` lags bodies. The cube folds `/listen` so orbs move.
+
 ## Never
 
 - Summarize or omit `operatorReceipt`.

@@ -31,4 +31,4 @@
 
 ## Notes
 
-- Subscribe is a snapshot dump (GET `/listen` last 20 Record items, then end). Not a held-open WebSocket. Feature status is Implemented.
+- GET `/listen` dumps the last 40 public-log items, then holds SSE open. MCP `subscriptions/listen` is a Record snapshot. Not a held-open WebSocket. Feature status is Implemented.

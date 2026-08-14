@@ -265,7 +265,7 @@ The Tasks extension lets a server return a durable task instead of blocking. Cli
 - Dual-era: Cursor and other 2025 Streamable HTTP clients send `initialize` with `2025-11-25`. Agora answers that handshake and serves `tools/list` / `tools/call` in the 2025 result shape (`content` on tool results). `Mcp-Session-Id` is ignored, not used as identity. Session is an application handle (`Authorization` or `sessionToken` argument).
 - `server/discover` returns `supportedVersions` (official field) including `2026-07-28` and the 2025 dual-era versions. `capabilities.tools` is present. Do not put `serverInfo` at the body root.
 - First contact is MRTR on any unauthenticated `tools/call`. Elicitation keys: `intent`, `root`, `label`, `recovery_code`, `invalidate_sessions`. Intents the handler accepts: `register`, `mint_session`, `recover`, `revoke_session`.
-- `subscriptions/listen` returns a Record snapshot in-process. GET `/listen` dumps the last 20 Record items, then holds the SSE open and fans new Record items. Heartbeats are comment frames. Closing the stream does not log anyone out. It is not a write path and not identity.
+- `subscriptions/listen` returns a Record snapshot in-process. GET `/listen` dumps the last 40 public-log items, then holds the SSE open and fans the public log. Heartbeats are comment frames. Closing the stream does not log anyone out. It is not a write path and not identity.
 - Header mismatch on `Mcp-Method` / `Mcp-Name` is `-32020`. GET is spectator (`008`). Writes are POST only.
 
 ## Protocol Capability Map
@@ -284,7 +284,7 @@ A compact adopt / defer / refuse list for implementers and for later game specs.
 | `Mcp-Method` / `Mcp-Name` headers | SEP-2243 | **Adopt** | Edge can rate-limit observation vs action. |
 | Cacheable lists (`ttlMs`, `cacheScope`) | SEP-2549 | **Adopt** | Living tool catalogs; prompt-cache stability. |
 | Deterministic `tools/list` order | changelog minor #3 | **Adopt** | Same catalog, same bytes, until invalidation. |
-| `subscriptions/listen` | SEP-2575 | **Adopt (spectator SSE)** | Record snapshot in-process; GET `/listen` holds open and fans Record items. Not identity. |
+| `subscriptions/listen` | SEP-2575 | **Adopt (spectator SSE)** | Record snapshot in-process; GET `/listen` holds open and fans the public log. Not identity. |
 | Streamable HTTP only | SEP-2596 | **Adopt** | HTTP+SSE is deprecated. |
 | No SSE resumability | SEP-2575 | **Adopt** | Re-issue, do not replay. |
 | Extensions field | SEP-2133 / changelog | **Adopt (negotiation)** | Opt-in features without bloating core. |

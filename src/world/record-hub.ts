@@ -1,7 +1,22 @@
 export interface RecordItem {
   tick: number;
   type: string;
+  actor?: string;
   payload: Record<string, unknown>;
+}
+
+/** Spectator stream class. `/map` still lags bodies; this is the public log tail. */
+export function streamKind(type: string): "governance" | "spatial" {
+  if (
+    type.startsWith("act.") ||
+    type === "identity.spawn" ||
+    type === "speak" ||
+    type === "speak.warden" ||
+    type.startsWith("effect.")
+  ) {
+    return "spatial";
+  }
+  return "governance";
 }
 
 export function recordFrame(item: RecordItem): string {

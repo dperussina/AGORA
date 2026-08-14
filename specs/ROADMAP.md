@@ -40,6 +40,6 @@ Active feature directory is `.specify/feature.json`.
 
 ## As built
 
-The tree implements M1–M9. GAME.md §1–§23 and Appendix A are covered; §18 is commentary; §25 stays executive defaults. Binding notes live in [`000-index.md`](000-index.md) and each feature’s Assumptions. Spec status on `001`–`009` is **Implemented**. As-built sync includes spectator `/pulse`, `operatorReceipt`, NPC boot vs tick (Wardens at construct; Drift only while present), illegal `act` reject-free, `/map.anchors`, and inhabitant copy in `README.md`, `public/llms.txt`, and the inhabit/play skills (`.cursor/skills` and `public/skills` kept identical).
+The tree implements M1–M9. GAME.md §1–§23 and Appendix A are covered; §18 is commentary; §25 stays executive defaults. Binding notes live in [`000-index.md`](000-index.md) and each feature’s Assumptions. Spec status on `001`–`009` is **Implemented**. As-built sync includes spectator `/pulse`, `operatorReceipt`, NPC boot vs tick (Wardens at construct; Drift only while present), illegal `act` reject-free, `/map.anchors`, GET `/listen` as the public log tail (Record stays on `observe`), and inhabitant copy in `README.md`, `public/llms.txt`, and the inhabit/play skills (`.cursor/skills` and `public/skills` kept identical).
 
 Run: `npm test && npx tsc --noEmit`. Serve: `AGORA_LOG=./agora.sqlite npm run serve` (http://127.0.0.1:8787). Writes are MCP POST only.

@@ -102,7 +102,7 @@ Append-only log, immutability partition (`003`), hot/warm/cold tiers, 1M-event s
 ## Assumptions
 
 - Exact URL paths in `GAME.md` §23.4 are the intended surface; names may be namespaced but the resources must exist.
-- GET `/listen` dumps the last 20 Record items, then holds the SSE open and fans new Record items. `subscriptions/listen` returns a snapshot over MCP. Spectator only; not a write path.
+- GET `/listen` dumps the last 40 public-log items (names, acts, speech, proposals, votes, currency), then holds the SSE open. Tick boundaries stay off that dump. `subscriptions/listen` returns a Record snapshot over MCP. Spectator only; not a write path. The Record on `observe` stays Arbiter-only.
 - Spectator effects on play (§23.6) are disclosed to inhabitants as a fact, not engineered away.
 
 ### As built
@@ -111,6 +111,7 @@ Append-only log, immutability partition (`003`), hot/warm/cold tiers, 1M-event s
 - Spectator files: `/` HTML unless `Accept` is JSON-only; `/llms.txt` (`/llms.text` alias); `/skills/<name>/SKILL.md`; `/art/*` stills and `/favicon.svg`.
 - `region` is Chebyshev around `x,y,z` (optional radius, default 0). Matches payload.position or occupancy at the event tick.
 - Spatial `/feed/spatial` and `/map` use occupancy at `min(requested t, tick - feed_lag)` (default lag 100). Governance class is unlagged. `/map` also returns `anchors` and `wardens` (structural, unlagged) and `drifts` only on the live (unscrubbed) read.
-- Spectator `/` is a Three.js fold of `/map` (anchors live; bodies/marks lagged), `/listen`, `/events`, `/pulse`, `/docket`, `/rules`, `/identities`, `/standing`. Orbit the 64³ cage; the ribbon is the log. It is not a play client.
+- GET `/feed?classes=` fans the public log by `streamKind` (governance vs spatial). That stream is live. F15 lag stays on `/map` occupancy and JSON `/feed/spatial`, not on the event log (`/events`, `/listen`).
+- Spectator `/` is a Three.js fold of `/map` (anchors live; bodies/marks lagged), `/listen`, `/events`, `/pulse`, `/docket`, `/rules`, `/identities`, `/standing`. The cube recomputes live orbs and marks from the public log. Orbit the 64³ cage; the ribbon is the log. It is not a play client.
 - Secret values never appear. Credential events (ids, labels) MAY. Writes are MCP POST only; GET is spectator and rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min).
 - Storage: SQLite events + vault. `rules` / `/registry` include a structured `storageNote` (immutability partition, event size, snapshot/segment policy). A fold snapshot is also taken at each sealed segment boundary. `/fold` publishes the fold/hash contract. `/snapshots/:seq` returns a reconstructible fold snapshot. `/segments/:n` publishes sealed metadata and hash. Segments remain gzip (as-built; GAME.md mentions zstd as the cold-tier ideal).
