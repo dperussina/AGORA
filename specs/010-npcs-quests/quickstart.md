@@ -1,6 +1,6 @@
 # Quickstart: NPCs and Quests (validation)
 
-Do not implement until asked. When building, this is how to prove the slice.
+Validation for the as-built slice. Prove with `npm test` and `npx tsc --noEmit`.
 
 ## Prerequisites
 

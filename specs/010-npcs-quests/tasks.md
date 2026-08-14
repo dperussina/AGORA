@@ -18,8 +18,8 @@
 
 **Purpose**: Point the tree at this slice. No new package, no `src/quest/`.
 
-- [ ] T001 Confirm `.specify/feature.json` points at `specs/010-npcs-quests` and that `src/npc/` and `src/quest/` do not exist
-- [ ] T002 [P] Read `specs/010-npcs-quests/contracts/genesis-forbids.md` and `specs/010-npcs-quests/contracts/inspect-npc.md` before editing engine files
+- [X] T001 Confirm `.specify/feature.json` points at `specs/010-npcs-quests` and that `src/npc/` and `src/quest/` do not exist
+- [X] T002 [P] Read `specs/010-npcs-quests/contracts/genesis-forbids.md` and `specs/010-npcs-quests/contracts/inspect-npc.md` before editing engine files
 
 ---
 
@@ -29,9 +29,9 @@
 
 **⚠️ CRITICAL**: No user story work until this phase is complete
 
-- [ ] T003 Add `createdBy` (event seq or `"derived"`) and `personifies` (registry path) to inspect results in `src/world/world.ts`
-- [ ] T004 Include creating event seq on `effect.create` payloads in `src/engine/effects.ts` and the `emit` path in `src/world/world.ts`
-- [ ] T005 Keep genesis `registry.types` keys exactly `agent`, `mark`, `warden`, `drift`, `anchor` in `src/engine/registry.ts`
+- [X] T003 Add `createdBy` (event seq or `"derived"`) and `personifies` (registry path) to inspect results in `src/world/world.ts`
+- [X] T004 Include creating event seq on `effect.create` payloads in `src/engine/effects.ts` and the `emit` path in `src/world/world.ts`
+- [X] T005 Keep genesis `registry.types` keys exactly `agent`, `mark`, `warden`, `drift`, `anchor` in `src/engine/registry.ts`
 
 **Checkpoint**: Inspect can cite. Seed types unchanged. Still ten tools.
 
@@ -45,12 +45,12 @@
 
 ### Tests
 
-- [ ] T006 [P] [US3] Add genesis-forbid tests from `specs/010-npcs-quests/contracts/genesis-forbids.md` in `tests/unit/npc-quests.test.ts`
+- [X] T006 [P] [US3] Add genesis-forbid tests from `specs/010-npcs-quests/contracts/genesis-forbids.md` in `tests/unit/npc-quests.test.ts`
 
 ### Implementation
 
-- [ ] T007 [US3] Assert `TOOL_NAMES` in `src/mcp/catalog.ts` stays the ten live tools and does not include `create` or `quest`
-- [ ] T008 [US3] Leave `src/engine/registry.ts` without a quest, objective, bounty, or reward type
+- [X] T007 [US3] Assert `TOOL_NAMES` in `src/mcp/catalog.ts` stays the ten live tools and does not include `create` or `quest`
+- [X] T008 [US3] Leave `src/engine/registry.ts` without a quest, objective, bounty, or reward type
 
 **Checkpoint**: MVP. A first session still has nothing to accept.
 
@@ -64,14 +64,14 @@
 
 ### Tests
 
-- [ ] T009 [P] [US2] Add inspect-citation tests for warden and drift in `tests/unit/npc-quests.test.ts`
+- [X] T009 [P] [US2] Add inspect-citation tests for warden and drift in `tests/unit/npc-quests.test.ts`
 
 ### Implementation
 
-- [ ] T010 [US2] Return `personifies` and `createdBy: "derived"` on warden inspect in `src/world/world.ts`
-- [ ] T011 [US2] Return `personifies: "types.drift"` and spawn seq on drift inspect in `src/world/world.ts`
-- [ ] T012 [US2] Keep Echoes read-only in `src/world/world.ts` (`observe` past `t`; no act target)
-- [ ] T013 [P] [US2] Mention entity and warden targets in the `inspect` description in `src/mcp/catalog.ts` without adding a tool
+- [X] T010 [US2] Return `personifies` and `createdBy: "derived"` on warden inspect in `src/world/world.ts`
+- [X] T011 [US2] Return `personifies: "types.drift"` and spawn seq on drift inspect in `src/world/world.ts`
+- [X] T012 [US2] Keep Echoes read-only in `src/world/world.ts` (`observe` past `t`; no act target)
+- [X] T013 [P] [US2] Mention entity and warden targets in the `inspect` description in `src/mcp/catalog.ts` without adding a tool
 
 **Checkpoint**: Seed NPCs are facts. Still no quest.
 
@@ -85,13 +85,13 @@
 
 ### Tests
 
-- [ ] T014 [P] [US1] Add voted-automaton create/inspect/replay tests in `tests/unit/npc-quests.test.ts`
+- [X] T014 [P] [US1] Add voted-automaton create/inspect/replay tests in `tests/unit/npc-quests.test.ts`
 
 ### Implementation
 
-- [ ] T015 [US1] Route `inspect` of `ent:<n>` through `World.entities` in `src/world/world.ts` with `personifies: types.<type>` and `createdBy` seq
-- [ ] T016 [US1] Keep seed Drift on the Oracle path in `src/world/world.ts`; do not spawn a fourth family at construct
-- [ ] T017 [US1] Let `runEffects` `create` of a voted type land in `World.entities` via existing `src/engine/effects.ts` (no new collection)
+- [X] T015 [US1] Route `inspect` of `ent:<n>` through `World.entities` in `src/world/world.ts` with `personifies: types.<type>` and `createdBy` seq
+- [X] T016 [US1] Keep seed Drift on the Oracle path in `src/world/world.ts`; do not spawn a fourth family at construct
+- [X] T017 [US1] Let `runEffects` `create` of a voted type land in `World.entities` via existing `src/engine/effects.ts` (no new collection)
 
 **Checkpoint**: Creatures arrive by vote. Boot is still Warden / Drift / Echo.
 
@@ -105,12 +105,12 @@
 
 ### Tests
 
-- [ ] T018 [P] [US4] Add trigger-payment citation test in `tests/unit/npc-quests.test.ts`
+- [X] T018 [P] [US4] Add trigger-payment citation test in `tests/unit/npc-quests.test.ts`
 
 ### Implementation
 
-- [ ] T019 [US4] Ensure trigger `emit` / `append` in `src/world/world.ts` cites the trigger id on `transfer` / `set_field` effects
-- [ ] T020 [US4] Do not add seed gate/reward behavior to wardens or drift in `src/world/world.ts`
+- [X] T019 [US4] Ensure trigger `emit` / `append` in `src/world/world.ts` cites the trigger id on `transfer` / `set_field` effects
+- [X] T020 [US4] Do not add seed gate/reward behavior to wardens or drift in `src/world/world.ts`
 
 **Checkpoint**: A contract is physics. Not a completion screen.
 
@@ -124,12 +124,12 @@
 
 ### Tests
 
-- [ ] T021 [P] [US5] Add standing-and-franchise tests in `tests/unit/npc-quests.test.ts`
+- [X] T021 [P] [US5] Add standing-and-franchise tests in `tests/unit/npc-quests.test.ts`
 
 ### Implementation
 
-- [ ] T022 [US5] Keep `assessStanding` identity-only in `src/world/world.ts`
-- [ ] T023 [US5] Reject `vote` / first contact when the principal is not an identity in `src/world/world.ts`
+- [X] T022 [US5] Keep `assessStanding` identity-only in `src/world/world.ts`
+- [X] T023 [US5] Reject `vote` / first contact when the principal is not an identity in `src/world/world.ts`
 
 **Checkpoint**: §15.7 still unanswered in code.
 
@@ -139,9 +139,9 @@
 
 **Purpose**: Docs and quickstart stay honest. No quest copy on the door.
 
-- [ ] T024 [P] Sync the no-quest / no-eleventh-tool line in `public/llms.txt` and `.cursor/skills/agora-play/SKILL.md` (copy play skill to `public/skills/agora-play/SKILL.md`)
-- [ ] T025 [P] Mark `010` as-built notes in `specs/010-npcs-quests/spec.md` and `specs/000-index.md` only after tests pass
-- [ ] T026 Run `specs/010-npcs-quests/quickstart.md` via `npm test` and `npx tsc --noEmit`
+- [X] T024 [P] Sync the no-quest / no-eleventh-tool line in `public/llms.txt` and `.cursor/skills/agora-play/SKILL.md` (copy play skill to `public/skills/agora-play/SKILL.md`)
+- [X] T025 [P] Mark `010` as-built notes in `specs/010-npcs-quests/spec.md` and `specs/000-index.md` only after tests pass
+- [X] T026 Run `specs/010-npcs-quests/quickstart.md` via `npm test` and `npx tsc --noEmit`
 
 ---
 

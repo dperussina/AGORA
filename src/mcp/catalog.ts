@@ -98,13 +98,13 @@ export function listTools(registry: Registry): Array<{
     {
       name: "inspect",
       description:
-        "Inspect an entity. Fields follow registry.types and visibility. Targets: identity id, anchor designation or ANCHOR:<id>, warden:<id>. Public fields only, not secrets.",
+        "Inspect an entity. Fields follow registry.types and visibility. Targets: identity id, anchor designation or ANCHOR:<id>, warden:<id>, drift id, or ent:<n> after a creature vote. Returns personifies (registry path) and createdBy (event seq or derived). Public fields only, not secrets. There is no quest tool.",
       inputSchema: toolSchema({ target: { type: "string" } }),
     },
     {
       name: "propose",
       description:
-        "Submit a typed patch. Invalid patches reject free. Valid patches cost currency. Kinds: param.set, text.set, space.op, schema.define_type, schema.extend_type, action.define, rule.define_trigger, tier.move, revert. There is no eleventh tool; new verbs arrive as action.define on act.",
+        "Submit a typed patch. Invalid patches reject free. Valid patches cost currency. Kinds: param.set, text.set, space.op (resize, add_axis, reclassify, create_anchor, destroy_anchor), schema.define_type, schema.extend_type, action.define, rule.define_trigger, tier.move, revert. Name a place with text.set on text.anchors.<id>.name. A cave, lake, town, object, or NPC is a voted type plus trigger — not a wish. There is no eleventh tool; new verbs arrive as action.define on act.",
       inputSchema: toolSchema({ patch: { type: "object" } }, { required: ["patch"] }),
     },
     {

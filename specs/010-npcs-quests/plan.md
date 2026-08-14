@@ -8,7 +8,7 @@
 
 ## Summary
 
-Seed NPCs stay Warden, Drift, and Echo (`007`). Later creatures are ordinary `schema.define_type` + `rule.define_trigger` / `action.define` (`004`). The engine already has `entities` and `runEffects`; it does not inspect those entities or cite what they personify. This plan closes that gap and locks the negatives: no quest type, no quest tool, no authored character, no win condition, no standing or franchise for automata.
+Seed NPCs stay Warden, Drift, and Echo (`007`). Later creatures are ordinary `schema.define_type` + `rule.define_trigger` / `action.define` (`004`). The engine already has `entities` and `runEffects`. This slice adds inspect citation and locks the negatives: no quest type, no quest tool, no authored character, no win condition, no standing or franchise for automata. **As built.**
 
 ## Technical Context
 
@@ -96,4 +96,4 @@ None. No constitution violation to justify.
 
 ## Next
 
-`/speckit-tasks` when the user wants a task list. `/speckit-implement` only when they ask to build.
+Shipped. Tasks T001–T026 are done. Do not add `src/quest/` or an eleventh tool.

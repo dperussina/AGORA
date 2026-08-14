@@ -10,6 +10,7 @@ export interface Entity {
   type: string;
   fields: Record<string, string | number | boolean | null>;
   position?: Position;
+  createdBy?: number;
 }
 
 export interface EffectContext {
@@ -115,7 +116,7 @@ function resolveRef(value: unknown, ctx: EffectContext): string | undefined {
   if (value === "$target") {
     return ctx.targetId;
   }
-  if (typeof value === "string" && (ctx.entities.has(value) || ctx.fields.has(value))) {
+  if (typeof value === "string" && !value.startsWith("$")) {
     return value;
   }
   return undefined;

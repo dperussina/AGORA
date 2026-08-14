@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import { Clerk, type VotePosition } from "../engine/clerk.ts";
-import { seedRegistry } from "../engine/registry.ts";
 import { coherenceProblem } from "../engine/coherence.ts";
 import { validatePatch } from "../engine/validate.ts";
 import type { Actor } from "../engine/types.ts";
@@ -16,6 +15,7 @@ import {
   cellsInVolume,
   chebyshev,
   extendAnchors,
+  applyAnchorLegislation,
   generateAnchors,
   generateWardens,
   installAnchorText,
@@ -138,6 +138,7 @@ export class World {
     this.segmentSize = options.segmentSize ?? DEFAULT_SEGMENT_SIZE;
     this.segments = options.segments ?? new MemorySegmentStore();
     this.anchors = generateAnchors(this.clerk.registry);
+    applyAnchorLegislation(this.clerk.registry, this.anchors);
     this.wardens = generateWardens(this.clerk.registry);
     installAnchorText(this.clerk.registry, this.anchors);
     if (this.log.tip() === undefined) {
@@ -504,6 +505,9 @@ export class World {
         if (identity.id === this.stewardId) {
           return { ok: false, reason: "Steward cannot vote" };
         }
+        if (!this.identities.identities.has(identity.id) || identity.id.startsWith("ent:") || identity.id.startsWith("warden:")) {
+          return { ok: false, reason: "not an identity" };
+        }
         const proposalId = args["proposal_id"];
         const position = args["position"];
         if (typeof proposalId !== "number" || (position !== "for" && position !== "against" && position !== "abstain")) {
@@ -706,6 +710,9 @@ export class World {
 
   /** Rejects intents that cannot succeed, before budget is spent. Occupancy still resolves at the tick. */
   private actWouldFail(identityId: string, verb: string, args: Record<string, unknown>): string | null {
+    if (typeof args["target"] === "string" && args["target"].startsWith("echo:")) {
+      return "echoes are observational";
+    }
     if (verb === "move") {
       const delta = asDelta(args["delta"]);
       if (delta === undefined) {
@@ -797,6 +804,7 @@ export class World {
         entities: this.entities,
         emit: (name, payload) => {
           this.append(name, intent.identityId, { ...payload, identityId: intent.identityId });
+          this.noteCreated(payload["id"]);
           this.witness(intent.identityId, name === "effect.destroy" ? "notoriety" : "fame");
         },
         nextId: () => {
@@ -858,12 +866,36 @@ export class World {
           amendPath: `space.axes.${warden.axis}.size`,
           tier: 1,
           lastAmendment: axis?.lastAmendment ?? null,
+          personifies: `space.axes.${warden.axis}`,
+          createdBy: "derived",
         },
       };
     }
     const drift = this.drifts.find((item) => item.id === target);
     if (drift !== undefined) {
-      return { target, fields: { position: drift.position, seed: drift.seed } };
+      return {
+        target,
+        fields: {
+          position: drift.position,
+          seed: drift.seed,
+          personifies: "types.drift",
+          createdBy: drift.createdBy ?? "derived",
+        },
+      };
+    }
+    const entity = this.entities.get(target);
+    if (entity !== undefined) {
+      return {
+        target,
+        fields: {
+          id: entity.id,
+          type: entity.type,
+          ...entity.fields,
+          ...(entity.position === undefined ? {} : { position: entity.position }),
+          personifies: `types.${entity.type}`,
+          createdBy: entity.createdBy ?? "derived",
+        },
+      };
     }
     return { target, fields: {}, reason: "unknown target" };
   }
@@ -939,6 +971,7 @@ export class World {
       id: `drift:${this.driftSeq}`,
       seed: `${tip}:${this.driftSeq}`,
       position: { x: oracle.int(size), y: oracle.int(size), z: oracle.int(size) },
+      createdBy: this.log.tip()?.seq ?? -1,
     });
     this.driftSeq += 1;
   }
@@ -972,8 +1005,8 @@ export class World {
     const added = extendAnchors(this.clerk.registry, this.anchors, this.lastAxisSizes);
     if (added.length > 0) {
       this.anchors.push(...added);
-      installAnchorText(this.clerk.registry, added);
     }
+    applyAnchorLegislation(this.clerk.registry, this.anchors);
     this.lastAxisSizes = next;
   }
 
@@ -1225,6 +1258,9 @@ export class World {
   }
 
   private witness(actorId: string, kind: "fame" | "notoriety"): void {
+    if (!this.identities.identities.has(actorId)) {
+      return;
+    }
     const origin = this.bodyOf(actorId);
     if (this.anchorAt(origin)?.class === "hollow") {
       return;
@@ -1328,12 +1364,18 @@ export class World {
           selfId: "ARBITER",
           fields: this.fields,
           entities: this.entities,
-          emit: (name, payload) => this.append(name, "ARBITER", payload),
+          emit: (name, payload) => {
+            this.append(name, "ARBITER", { ...payload, triggerId: id });
+            this.noteCreated(payload["id"]);
+          },
           nextId: () => {
             this.entitySeq += 1;
             return `ent:${this.entitySeq}`;
           },
         });
+        if (effect.effect === "transfer" || effect.effect === "set_field") {
+          this.append(`effect.${effect.effect}`, "ARBITER", { triggerId: id });
+        }
       }
     }
   }
@@ -1455,6 +1497,16 @@ export class World {
       continueCursor: last === undefined ? null : last.seq + 1,
       isDone: slice.length < limit,
     };
+  }
+
+  private noteCreated(id: unknown): void {
+    if (typeof id !== "string") {
+      return;
+    }
+    const entity = this.entities.get(id);
+    if (entity !== undefined) {
+      entity.createdBy = this.log.tip()?.seq ?? -1;
+    }
   }
 
   private append(type: string, actor: string, payload: Record<string, unknown>): void {
@@ -1593,7 +1645,7 @@ export class World {
     this.rebuildListenLog();
     this.lastAxisSizes = { x: 64, y: 64, z: 64 };
     this.anchors.length = 0;
-    this.anchors.push(...generateAnchors(seedRegistry()));
+    this.anchors.push(...generateAnchors(this.clerk.registry));
     this.syncGeography();
     for (const identity of this.identities.identities.values()) {
       if (identity.name !== null) {

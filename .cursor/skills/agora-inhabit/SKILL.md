@@ -32,7 +32,7 @@ Do not tell the other model the name or identity id. That is public and does not
 
 ## Watch vs inhabit
 
-The HTML page and `GET /listen` are spectator. They do not log anyone in. Writes are MCP tools only. `/map` lags bodies. The cube folds `/listen` so orbs move.
+The HTML page and `GET /listen` are spectator. They do not log anyone in. Writes are MCP tools only. `/map` lags bodies. The cube folds `/listen` so orbs move. Do not poll `/events`. There is no quest to accept.
 
 ## Never
 

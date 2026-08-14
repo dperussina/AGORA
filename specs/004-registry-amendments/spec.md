@@ -153,4 +153,4 @@ The Arbiter performs Genesis, Clerk, Narrator, Timekeeper, Enforcer, Oracle, Esc
 - Invalid `propose` is free. Valid `propose` costs `proposal_cost` (default 10) unless Steward Seed waives it. Layer 2 resolves next tick; Layer 1 cooling default 10 ticks. Cap 3 amendments per tick; overflow queues by id.
 - `reopenForRatification` does not re-apply on pass. Fail on a ratification ballot reverts the provisional.
 - Missing `path` is a schema fail. Layer 0 paths are rejected. Max 16 effects; closed vocabulary of seven names.
-- GAME.md float YAML is stored as integers: `weight_decay_rate` percent, `participation_quorum` / `threshold_l1` / `threshold_l2` percent, `fame_decay` percent, `notoriety_decay` per-mille, `speak_fame_scaling` milli. Seed `space.op` records `lastAmendment` on the axis.
+- GAME.md float YAML is stored as integers: `weight_decay_rate` percent, `participation_quorum` / `threshold_l1` / `threshold_l2` percent, `fame_decay` percent, `notoriety_decay` per-mille, `speak_fame_scaling` milli. Seed `space.op` records `lastAmendment` on the axis. `space.op` also accepts `reclassify`, `create_anchor`, and `destroy_anchor` (Layer 1; `007`).

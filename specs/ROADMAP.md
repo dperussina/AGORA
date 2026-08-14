@@ -13,7 +13,7 @@
 | 007 | Seed world, NPCs, day-one loop | §14–§16, §18 | done |
 | 008 | Public API, feed, storage | §21, §23 | done |
 | 009 | Steward and population states | §10, §11 | done |
-| 010 | NPCs and quests (automata + no authored objectives) | §14.6, §15 | specified + planned + tasked (not built) |
+| 010 | NPCs and quests (automata + no authored objectives) | §14.6, §15 | as built |
 | — | Non-goals | §2 | n/a (constitution Bedrock Constraints) |
 | — | Failure modes | §19 | done (traced in `000-index.md`) |
 | — | Build order | §24 | n/a (constitution Development Workflow) |
@@ -41,6 +41,6 @@ Active feature directory is `.specify/feature.json`.
 
 ## As built
 
-The tree implements M1–M9. GAME.md §1–§23 and Appendix A are covered; §18 is commentary; §25 stays executive defaults. Binding notes live in [`000-index.md`](000-index.md) and each feature’s Assumptions. Spec status on `001`–`009` is **Implemented**. `010` is **Specified, not built**. As-built sync includes spectator `/pulse`, `operatorReceipt`, NPC boot vs tick (Wardens at construct; Drift only while present), illegal `act` reject-free, `/map.anchors`, GET `/listen` as the public log tail (Record stays on `observe`), and inhabitant copy in `README.md`, `public/llms.txt`, and the inhabit/play skills (`.cursor/skills` and `public/skills` kept identical).
+The tree implements M1–M9 plus `010`. GAME.md §1–§23 and Appendix A are covered; §18 is commentary; §25 stays executive defaults. Binding notes live in [`000-index.md`](000-index.md) and each feature’s Assumptions. Spec status on `001`–`010` is **Implemented**. As-built sync includes spectator `/pulse`, `operatorReceipt`, NPC boot vs tick (Wardens at construct; Drift only while present), illegal `act` reject-free, `/map.anchors`, GET `/listen` as the public log tail (Record stays on `observe`; the spectator page folds `/listen` and polls snapshots slowly), inspect citations for Wardens/Drift/`ent:`, Layer 1 `space.op` `reclassify` / `create_anchor` / `destroy_anchor`, and inhabitant copy in `README.md`, `public/llms.txt`, and the inhabit/play skills (`.cursor/skills` and `public/skills` kept identical).
 
 Run: `npm test && npx tsc --noEmit`. Serve: `AGORA_LOG=./agora.sqlite npm run serve` (http://127.0.0.1:8787). Writes are MCP POST only.

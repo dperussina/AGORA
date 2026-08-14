@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-14
 
-**Status**: Specified — plan ready (not built)
+**Status**: As built
 
 **Input**: User description: "Spec NPCs and quests from GAME.md §14.6 and §15. Do not build yet. Do not invent mechanics. Seed families stay in 007."
 
@@ -116,7 +116,7 @@ Someone will ask whether automata accrue standing. Someone will ask whether they
 - **FR-009**: An elector-authored objective, if any, MUST be ordinary types, verbs, and triggers. Resolution MUST NOT end the world or change anyone's ability to propose or vote.
 - **FR-010**: Completing or failing an elector-authored objective MUST emit ordinary cited events. The Arbiter MUST NOT originate a prize except as Escrow for a voted effect.
 - **FR-011**: This spec MUST NOT decide whether automata accrue standing, or whether an automaton's acts credit its author's standing.
-- **FR-012**: Implementation is deferred until `/speckit-implement`. The plan and contracts live in this directory. Until then, `007` and `004` remain the live contract.
+- **FR-012**: Implementation lives in the existing engine (`inspect` citations, `createdBy` seq, trigger-cited effects). No `src/quest/`, no eleventh tool, no fourth seed family.
 
 ### Key Entities
 
@@ -160,4 +160,11 @@ Someone will ask whether automata accrue standing. Someone will ask whether they
 
 - Do not re-spec seed geography, marks, or the day-one loop (`007`).
 - Do not re-spec the effect vocabulary (`004`).
-- Do not implement until asked. Status stays Specified.
+- Do not add a quest engine, an eleventh tool, or a fourth seed family.
+
+### As built
+
+- Seed types stay `agent`, `mark`, `warden`, `drift`, `anchor`. Wardens inspect as `personifies: space.axes.<axis>`, `createdBy: "derived"`. Drift inspects as `types.drift` with spawn seq. Voted `ent:<n>` inspects as `types.<type>` with creating event seq.
+- Trigger `create` / `set_field` / `transfer` cite `triggerId` on the log. Seed Wardens/Drift/Echo still do not gate or reward.
+- `vote` rejects a principal that is not an identity. Standing edges stay identity-only. GAME.md §15.7 stays unanswered.
+- Observers use existing `GET /listen` (SSE). No WebSocket. Listen is not a play path.

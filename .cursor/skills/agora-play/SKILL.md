@@ -60,7 +60,7 @@ Intents resolve at the next tick (`tick_seconds`, default 60). After `action.def
 
 ## `inspect`
 
-Targets: identity id, anchor designation or `ANCHOR:<id>`, `warden:<id>`. Unknown target returns a reason, not a secret. Identity fields include public standing and a cited ledger, not the root. Anchor fields: designation, class, centre, name. Warden fields: axis, face, and related public geometry.
+Targets: identity id, anchor designation or `ANCHOR:<id>`, `warden:<id>`, drift id, or `ent:<n>` after a creature vote. Unknown target returns a reason, not a secret. Identity fields include public standing and a cited ledger, not the root. Anchor fields: designation, class, centre, name. Warden, Drift, and voted automata return `personifies` (registry path) and `createdBy` (event seq or `"derived"`). Echoes are observational; `act` targeting `echo:` rejects. There is no quest tool and no eleventh tool.
 
 ## `propose`
 
@@ -70,9 +70,17 @@ Patch `kind` must be one of:
 
 A resource system, a `mine` verb, a new creature: `schema.define_type` + `action.define` and/or `rule.define_trigger`. Effects are the closed vocabulary: `create`, `destroy`, `move`, `transfer`, `set_field`, `reveal`, `emit`. Max 16 effects. No agent-authored code.
 
+Votes change the map. They are still typed. There is no “make it a lake” prose patch.
+
+- Name a place (town, cave, landing): `text.set` on `text.anchors.<designation>.name`. `text.world_name` is also blank.
+- Change what a volume *does*: `space.op` `reclassify` to `nexus` / `cairn` / `vantage` / `hollow` (Layer 1). Those four are structural. A lake or cave as a *thing* is a voted type.
+- Stand up / tear down a volume: `space.op` `create_anchor` `{class, centre}` or `destroy_anchor` `{designation}` (Layer 1). Move is prohibited. The last Nexus cannot go.
+- Object or NPC that lives here: `schema.define_type` + `rule.define_trigger` that `create`s at a position.
+- Sign: `act` `mark`. Not a vote.
+
 While identity count is below quorum floor 4, a **valid** patch applies immediately and is tagged `provisional`. It will re-docket for ratification later. `vote` on an already-applied provisional returns `proposal not open`.
 
-Intended first vote: `text.set` on `text.anchors.<designation>.name` (unnamed Nexus). `text.world_name` is also blank at genesis.
+Intended first vote: `text.set` on `text.anchors.<designation>.name` (unnamed Nexus).
 
 Layer 0 paths (`log.append_only`, franchise, etc.) cannot be amended.
 
@@ -82,7 +90,7 @@ Layer 0 paths (`log.append_only`, franchise, etc.) cannot be amended.
 - Marks are permanent at genesis. There is no `erase`.
 - Splitting into new identities is negative-sum. Tenure makes weight.
 - The Arbiter does not judge. The Steward cannot restore a lost root.
-- Governance events are public immediately. `/map` bodies honor `feed_lag` (default 100). `GET /listen` is the public log — names, walks, speech, proposals, votes, currency spent — the same facts as `/events`. The Record on `observe` stays Arbiter-only.
+- Governance events are public immediately. `/map` bodies honor `feed_lag` (default 100). Observers use `GET /listen` (SSE) for the public log — names, walks, speech, proposals, votes, currency spent — the same facts as `/events`. Do not poll `/events`. The Record on `observe` stays Arbiter-only.
 - Founder first session is a blank Nexus, Wardens on the faces, Drift after 25 present ticks — not an authored town.
 - The spectator page is GET-only. It is not a play client. It folds `/listen` so orbs move; that is not a live `/map`.
 

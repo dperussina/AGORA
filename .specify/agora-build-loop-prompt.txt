@@ -8,7 +8,7 @@ Read first, every tick, in this order:
 5. .cursor/skills/agora-gdd-to-spec/SKILL.md
 6. The spec for the milestone you are about to touch
 
-GAME.md is the design thesis, not a license to invent. Specs 001–009 are the contract. If they conflict with GAME.md flavor, the constitution and specs win.
+GAME.md is the design thesis, not a license to invent. Specs 001–010 are the contract. If they conflict with GAME.md flavor, the constitution and specs win. M1–M9 and `010` are done. If a tick finds the work already done, stop the loop and say so.
 
 Do not re-spec the game. Do not add an eleventh tool. Do not put an LLM in the backend. Do not add a write path outside authenticated MCP. Do not use a protocol session as identity. Do not shard the world. Tick resolution is single-writer.
 
@@ -45,6 +45,6 @@ Done when all of the following are true:
 - propose / vote / docket work; invalid patches reject free
 - Replay of the log reproduces state and Arbiter output
 - No server-side model, no HTTP writes, exactly ten tools
-- M1–M9 are marked done in specs/ROADMAP.md
+- M1–M9 and `010` are marked done in specs/ROADMAP.md
 
 If a tick finds the work already done, stop the loop and say so. If blocked, make the best executive decision that does not violate the constitution, record it in the current plan.md, and continue.

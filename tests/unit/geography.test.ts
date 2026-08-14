@@ -208,6 +208,68 @@ describe("seed geography", () => {
     expect(echoes.some((row) => row.identityId === ada.identityId)).toBe(true);
   });
 
+  it("lets a vote reclassify, create, and destroy anchors", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const identity = world.clerk.identities.get(ada.identityId);
+    if (identity !== undefined) {
+      identity.currency = 40;
+    }
+    const cairn = world.anchors.find((anchor) => anchor.class === "cairn");
+    expect(cairn).toBeDefined();
+    const named = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "text.set", path: `text.anchors.${cairn!.designation}.name`, value: "Ash Hollow" } },
+      }),
+      ada.sessionToken,
+    );
+    expect(named.result).toMatchObject({ ok: true, provisional: true });
+    const reclass = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "space.op", op: "reclassify", designation: cairn!.designation, class: "hollow" } },
+      }),
+      ada.sessionToken,
+    );
+    expect(reclass.result).toMatchObject({ ok: true, provisional: true });
+    expect(world.anchors.find((anchor) => anchor.designation === cairn!.designation)?.class).toBe("hollow");
+    expect(world.clerk.registry.text[`anchors.${cairn!.designation}.name`]).toBe("Ash Hollow");
+
+    let centre = { x: 8, y: 8, z: 8 };
+    for (let x = 4; x < 60; x += 5) {
+      const candidate = { x, y: 8, z: 8 };
+      if (world.anchors.every((anchor) => Math.max(Math.abs(anchor.centre.x - x), Math.abs(anchor.centre.y - 8), Math.abs(anchor.centre.z - 8)) >= 12)) {
+        centre = candidate;
+        break;
+      }
+    }
+    const created = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "space.op", op: "create_anchor", class: "cairn", centre } },
+      }),
+      ada.sessionToken,
+    );
+    expect(created.result).toMatchObject({ ok: true, provisional: true });
+    const voted = world.clerk.registry.space.extraAnchors?.[0];
+    expect(voted).toBeDefined();
+    expect(world.anchors.some((anchor) => anchor.designation === voted!.designation)).toBe(true);
+    const gone = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { patch: { kind: "space.op", op: "destroy_anchor", designation: voted!.designation } },
+      }),
+      ada.sessionToken,
+    );
+    expect(gone.result).toMatchObject({ ok: true, provisional: true });
+    expect(world.anchors.some((anchor) => anchor.designation === voted!.designation)).toBe(false);
+  });
+
   it("spawns Drift from the seed trigger at the interval", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");

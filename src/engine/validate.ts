@@ -4,11 +4,20 @@ import {
   MAX_EFFECTS,
   type Registry,
 } from "./registry.ts";
+import { ANCHOR_CLASSES, designationOf, liveAnchors } from "./geography.ts";
 
 export type Patch =
   | { kind: "param.set"; path: string; value: number }
   | { kind: "text.set"; path: string; value: string }
-  | { kind: "space.op"; op: "resize" | "add_axis"; axis: string | { name: string; size: number; wrap: boolean; writable: boolean }; size?: number }
+  | {
+      kind: "space.op";
+      op: "resize" | "add_axis" | "reclassify" | "create_anchor" | "destroy_anchor";
+      axis?: string | { name: string; size: number; wrap: boolean; writable: boolean };
+      size?: number;
+      designation?: string;
+      class?: string;
+      centre?: { x: number; y: number; z: number };
+    }
   | { kind: "schema.define_type"; name: string; fields: Record<string, { type: string; default?: unknown; visibility?: string }> }
   | { kind: "schema.extend_type"; type: string; field: { name: string; type: string; default?: unknown; visibility?: string } }
   | {
@@ -153,7 +162,81 @@ function validateSpaceOp(registry: Registry, body: Extract<Patch, { kind: "space
     }
     return { ok: true, tier: 1 };
   }
+  if (body.op === "reclassify") {
+    if (typeof body.designation !== "string" || !isAnchorClass(body.class)) {
+      return fail("schema", "reclassify requires designation and class nexus|cairn|vantage|hollow");
+    }
+    const anchors = liveAnchors(registry);
+    const current = anchors.find((item) => item.designation === body.designation);
+    if (current === undefined) {
+      return fail("missing_path", `unknown anchor ${body.designation}`);
+    }
+    if (current.class === "nexus" && body.class !== "nexus" && nexusCount(anchors) <= 1) {
+      return fail("bounds", "cannot reclassify the last Nexus");
+    }
+    return { ok: true, tier: 1 };
+  }
+  if (body.op === "destroy_anchor") {
+    if (typeof body.designation !== "string") {
+      return fail("schema", "destroy_anchor requires designation");
+    }
+    const anchors = liveAnchors(registry);
+    const current = anchors.find((item) => item.designation === body.designation);
+    if (current === undefined) {
+      return fail("missing_path", `unknown anchor ${body.designation}`);
+    }
+    if (current.class === "nexus" && nexusCount(anchors) <= 1) {
+      return fail("bounds", "cannot destroy the last Nexus");
+    }
+    return { ok: true, tier: 1 };
+  }
+  if (body.op === "create_anchor") {
+    if (!isAnchorClass(body.class) || !isCentre(body.centre)) {
+      return fail("schema", "create_anchor requires class and integer centre");
+    }
+    const x = axisBound(registry, "x");
+    const y = axisBound(registry, "y");
+    const z = axisBound(registry, "z");
+    const at = body.centre;
+    if (at.x < 0 || at.x >= x || at.y < 0 || at.y >= y || at.z < 0 || at.z >= z) {
+      return fail("bounds", "centre out of bounds");
+    }
+    const designation = designationOf(at);
+    const anchors = liveAnchors(registry);
+    if (anchors.some((item) => item.designation === designation)) {
+      return fail("conflict", `anchor ${designation} exists`);
+    }
+    const minSep = registry.params["anchor_min_separation"]?.value ?? 12;
+    if (anchors.some((item) => cheby(item.centre, at) < minSep)) {
+      return fail("bounds", "too close to an existing anchor");
+    }
+    return { ok: true, tier: 1 };
+  }
   return fail("schema", "unknown space.op");
+}
+
+function isAnchorClass(value: unknown): value is (typeof ANCHOR_CLASSES)[number] {
+  return typeof value === "string" && (ANCHOR_CLASSES as readonly string[]).includes(value);
+}
+
+function isCentre(value: unknown): value is { x: number; y: number; z: number } {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const row = value as Record<string, unknown>;
+  return Number.isInteger(row["x"]) && Number.isInteger(row["y"]) && Number.isInteger(row["z"]);
+}
+
+function axisBound(registry: Registry, name: string): number {
+  return registry.space.axes.find((item) => item.name === name)?.size ?? 64;
+}
+
+function nexusCount(anchors: Array<{ class: string }>): number {
+  return anchors.filter((item) => item.class === "nexus").length;
+}
+
+function cheby(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
 }
 
 function validateAction(

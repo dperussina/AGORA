@@ -43,6 +43,13 @@ export interface Registry {
   space: {
     topology: "lattice";
     axes: Array<{ name: string; size: number; wrap: boolean; writable: boolean; lastAmendment?: number }>;
+    anchorClass?: Record<string, "nexus" | "cairn" | "vantage" | "hollow">;
+    extraAnchors?: Array<{
+      designation: string;
+      class: "nexus" | "cairn" | "vantage" | "hollow";
+      centre: { x: number; y: number; z: number };
+    }>;
+    removedAnchors?: string[];
   };
   types: Record<string, { fields: Record<string, { type: string; default?: unknown; visibility?: string }> }>;
   verbs: Record<

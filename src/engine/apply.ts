@@ -1,6 +1,7 @@
 import type { Registry } from "./registry.ts";
 import { seedRegistry } from "./registry.ts";
 import type { Patch } from "./validate.ts";
+import { designationOf } from "./geography.ts";
 
 export function applyPatch(registry: Registry, patch: Patch, proposalId: number): Registry {
   const next: Registry = structuredClone(registry);
@@ -30,8 +31,34 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
           axis.lastAmendment = proposalId;
         }
       }
-      if (patch.op === "add_axis" && typeof patch.axis === "object") {
+      if (patch.op === "add_axis" && typeof patch.axis === "object" && patch.axis !== null) {
         next.space.axes.push({ ...patch.axis, lastAmendment: proposalId });
+      }
+      if (patch.op === "reclassify" && patch.designation !== undefined && patch.class !== undefined) {
+        next.space.anchorClass = { ...next.space.anchorClass, [patch.designation]: patch.class as "nexus" | "cairn" | "vantage" | "hollow" };
+      }
+      if (patch.op === "destroy_anchor" && patch.designation !== undefined) {
+        const gone = new Set(next.space.removedAnchors ?? []);
+        gone.add(patch.designation);
+        next.space.removedAnchors = [...gone].sort();
+        next.space.extraAnchors = (next.space.extraAnchors ?? []).filter((item) => item.designation !== patch.designation);
+        if (next.space.anchorClass !== undefined) {
+          const rest = { ...next.space.anchorClass };
+          delete rest[patch.designation];
+          next.space.anchorClass = rest;
+        }
+      }
+      if (patch.op === "create_anchor" && patch.class !== undefined && patch.centre !== undefined) {
+        const designation = designationOf(patch.centre);
+        next.space.removedAnchors = (next.space.removedAnchors ?? []).filter((id) => id !== designation);
+        next.space.extraAnchors = [
+          ...(next.space.extraAnchors ?? []).filter((item) => item.designation !== designation),
+          {
+            designation,
+            class: patch.class as "nexus" | "cairn" | "vantage" | "hollow",
+            centre: { ...patch.centre },
+          },
+        ];
       }
       break;
     }

@@ -130,3 +130,4 @@ The surface is exactly: `whoami`, `rules`, `docket`, `history`, `observe`, `act`
 - Steward Halt / lift / bootstrap / postmortem are extra `speak` arguments accepted by the handler when the caller is the designated Steward (`009`). They are not an 11th tool. The published genesis `speak` schema lists inhabitant fields (`text`, `target`, `broadcast`, `channel`).
 - `whoami` also returns `provisional` phase (`genesis` / `residency`) when relevant (`009`).
 - `history` filters: `actor`, `type`, `proposal` (payload.proposalId), `entity` (actor / identityId / target). Paginated; default page 50, max bounded.
+- `inspect` targets: identity id, anchor designation / `ANCHOR:<id>`, `warden:<id>`, drift id, or `ent:<n>` after a creature vote (`010`). Warden / Drift / automaton replies include `personifies` and `createdBy`. Echoes are observational (`act` targeting `echo:` rejects). There is no quest tool.

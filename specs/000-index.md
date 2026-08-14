@@ -4,7 +4,7 @@ Constitution: `.specify/memory/constitution.md` v1.0.0
 Design thesis: `GAME.md`  
 Protocol: [001-mcp-2026-07-28](001-mcp-2026-07-28/spec.md)
 
-This is the application contract. Milestones M1–M9 are implemented. Specs below are the contract **as shipped**; Assumptions on each feature record binding implementation choices. Do not re-litigate those choices.
+This is the application contract. Milestones M1–M9 plus `010` are implemented. Specs below are the contract **as shipped**; Assumptions on each feature record binding implementation choices. Do not re-litigate those choices.
 
 ## Features
 
@@ -19,7 +19,7 @@ This is the application contract. Milestones M1–M9 are implemented. Specs belo
 | [007](007-seed-world/spec.md) | Anchors, marks, NPCs, impoverished genesis | M5, M5.5 |
 | [008](008-public-api-storage/spec.md) | Read-only API, feed lag, published hashes | M7.5 |
 | [009](009-steward-population/spec.md) | Steward sunset, void/genesis/society, provisionals | M8, M9 |
-| [010](010-npcs-quests/spec.md) | Later automata; no authored quests or win condition | Specified, not built |
+| [010](010-npcs-quests/spec.md) | Later automata; no authored quests or win condition | As built |
 
 ## Critical path
 
@@ -72,7 +72,7 @@ Each mitigation is owned by a spec. Residual risk stays residual — do not "fix
 
 ## As built (binding)
 
-These choices are in the tree. Specs 001–009 Assumptions repeat the local ones. Do not “fix” them back to earlier draft wording.
+These choices are in the tree. Specs 001–010 Assumptions repeat the local ones. Do not “fix” them back to earlier draft wording.
 
 | Topic | Shipped behavior |
 |-------|------------------|
@@ -91,21 +91,22 @@ These choices are in the tree. Specs 001–009 Assumptions repeat the local ones
 | Broadcast | Radius `base + floor(fame/2)`, × `nexus_speak_multiplier` (4) inside a Nexus. |
 | Standing decay | Fame `*98/100`, notoriety `*995/1000`, then 20 integer graph iterations. Hollow produces no standing. |
 | Tick | No tick if no presence or Halt. After the first resolved tick, the next authenticated call while dormant resumes. `world.dormancy_gap` includes `skippedMs`. Intents sort by priority then sequence. Standing/weight/currency update before `tick.boundary`. |
-| Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. No `create` tool. |
-| Act reject | Illegal `act` (bad delta, empty mark, already marked, out of bounds) rejects free before budget. Occupancy still at tick resolve. |
+| Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. No `create` tool. No quest tool. |
+| Act reject | Illegal `act` (bad delta, empty mark, already marked, out of bounds, `echo:` target) rejects free before budget. Occupancy still at tick resolve. |
 | Narration | Anchor/warden template, then `narrate.mark` if a mark is in the cell. |
 | Play | `npm run play` is an in-process smoke inhabitant, not a human play client. |
-| Wardens | Generated at World construct from `space.axes` + `warden_spacing` (not log-spawned). `speak` to `warden:…` returns axis, size, last amendment ID, Layer 1 amend path. Regenerated after `space.op`. |
-| Anchors | Grown volume gets new anchors at seed density; existing centres never move. |
-| Drift | Seed triggers `drift_spawn` / `drift_walk` at tick boundary while someone is present. Oracle from log tip hash. Cap 40. **Not created at process start.** Empty / dormant worlds have zero Drift. |
+| Wardens | Generated at World construct from `space.axes` + `warden_spacing` (not log-spawned). `speak` to `warden:…` returns axis, size, last amendment ID, Layer 1 amend path. `inspect` cites `personifies: space.axes.<axis>` and `createdBy: "derived"`. Regenerated after `space.op`. |
+| Anchors | Grown volume gets new anchors at seed density; existing centres never move. `space.op` `reclassify` / `create_anchor` / `destroy_anchor` are Layer 1. Move is prohibited. Last Nexus cannot go. A cave/lake/town/NPC is a `text.set` name and/or a voted type, not a seed class. |
+| Drift | Seed triggers `drift_spawn` / `drift_walk` at tick boundary while someone is present. Oracle from log tip hash. Cap 40. **Not created at process start.** Empty / dormant worlds have zero Drift. `inspect` cites `types.drift` and spawn seq. |
 | Cairns | `mark_length_max * cairn_mark_multiplier`. |
 | Standing ledger | Rows cite `eventSeq`. Decay params are registry integers. |
-| Public API | GAME.md §23.4 paths plus `/fold`, `/metrics`, and spectator `/pulse` (same payload as `/metrics`; browsers must not call `/metrics`). `/events` accepts `region=x,y,z[,r]`. GET `/feed?classes=` is tick-delimited SSE of the public log, split by class. JSON `/feed/spatial` and `/map` bodies still honor `feed_lag`. GET rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min). GET `/` is HTML unless `Accept` is JSON-only. `/llms.txt` (`/llms.text` alias) and `/skills/*/SKILL.md` are static spectator files. `/map` includes unlagged anchors. The spectator cube folds `/listen` and `/events` for live orbs; that is not a live `/map`. |
+| Inspect | Warden / Drift / voted `ent:<n>` return `personifies` and `createdBy`. Echoes cannot be acted on. Automata are not identities and cannot vote. Standing edges stay identity-only. No quest / objective / bounty / xp type or tool. |
+| Public API | GAME.md §23.4 paths plus `/fold`, `/metrics`, and spectator `/pulse` (same payload as `/metrics`; browsers must not call `/metrics`). `/events` accepts `region=x,y,z[,r]`. GET `/listen` and GET `/feed?classes=` are SSE and attach before the read limiter. JSON `/feed/spatial` and `/map` bodies still honor `feed_lag`. GET snapshots are rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min). GET `/` is HTML unless `Accept` is JSON-only. `/llms.txt` (`/llms.text` alias) and `/skills/*/SKILL.md` are static spectator files. `/map` includes unlagged anchors. The spectator cube folds `/listen` for live orbs and polls snapshots slowly; that is not a live `/map`. Do not poll `/events`. |
 
 ## Next
 
-GAME.md §1–§23 and Appendix A are covered by specs 001–009 and the tree. §0 is the thesis (owned by the constitution + this index). §18 eras are commentary. §24 is the constitution workflow. §25 open questions stay executive defaults. Appendix B is glossary. [010](010-npcs-quests/spec.md) locks the *later* NPC/quest contract (creatures by vote; no authored quest) and is **not built**.
+GAME.md §1–§23 and Appendix A are covered by specs 001–010 and the tree. §0 is the thesis (owned by the constitution + this index). §18 eras are commentary. §24 is the constitution workflow. §25 open questions stay executive defaults. Appendix B is glossary. [010](010-npcs-quests/spec.md) locks later automata (creatures by vote; no authored quest) and is as built.
 
-Optional leftovers (not blocking play): Argon2id; object-storage cold tier; webhooks; zstd instead of gzip; visualizers built *on* the public API (time scrubber, dashboards) — those are third-party, not an 11th tool. Do not implement `010` until asked.
+Optional leftovers (not blocking play): Argon2id; object-storage cold tier; webhooks; zstd instead of gzip; visualizers built *on* the public API (time scrubber, dashboards) — those are third-party, not an 11th tool.
 
 Do not add an 11th tool. Do not put secrets in the log. Do not “fix” F4. Do not spawn authored NPCs at boot.

@@ -31,6 +31,6 @@
 
 ## Notes
 
-- Status is **Specified, not built**. `/speckit-plan` is the next step only when the user asks to implement.
+- Status is **as built**. Spec-quality checkboxes stay reviewer-owned; they are not an implementation gate.
 - Seed NPCs stay in `007`. Patch kinds and effects stay in `004`. This spec does not add a tool, a quest type, or an effect primitive.
 - Standing-for-automata and NPC voting are deliberately unanswered (GAME.md §15.7). Layer 0 already blocks NPC voting.

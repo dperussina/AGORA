@@ -3,7 +3,9 @@ import { GENESIS_SEED, Oracle } from "./oracle.ts";
 import type { Registry } from "./registry.ts";
 import { axisSize, type Position } from "./tick.ts";
 
-export type AnchorClass = "nexus" | "cairn" | "vantage" | "hollow";
+export const ANCHOR_CLASSES = ["nexus", "cairn", "vantage", "hollow"] as const;
+
+export type AnchorClass = (typeof ANCHOR_CLASSES)[number];
 
 export interface Anchor {
   designation: string;
@@ -22,6 +24,7 @@ export interface Drift {
   id: string;
   seed: string;
   position: Position;
+  createdBy?: number;
 }
 
 const CLASSES: AnchorClass[] = [
@@ -188,9 +191,55 @@ export function chebyshev(a: Position, b: Position): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
 }
 
+/** Seed + grown + voted extras, minus destroyed, with class overrides. Deterministic from the registry. */
+export function liveAnchors(registry: Registry): Anchor[] {
+  const seed = generateAnchors(registry);
+  const grown = extendAnchors(registry, seed, { x: 64, y: 64, z: 64 });
+  const extras = (registry.space.extraAnchors ?? []).map((item) => ({
+    designation: item.designation,
+    class: item.class,
+    centre: { ...item.centre },
+  }));
+  const removed = new Set(registry.space.removedAnchors ?? []);
+  const anchors = [...seed, ...grown, ...extras].filter((item) => !removed.has(item.designation));
+  applyAnchorLegislation(registry, anchors);
+  return anchors;
+}
+
+export function applyAnchorLegislation(registry: Registry, anchors: Anchor[]): void {
+  const extras = registry.space.extraAnchors ?? [];
+  const removed = new Set(registry.space.removedAnchors ?? []);
+  for (const extra of extras) {
+    if (removed.has(extra.designation) || anchors.some((item) => item.designation === extra.designation)) {
+      continue;
+    }
+    anchors.push({
+      designation: extra.designation,
+      class: extra.class,
+      centre: { ...extra.centre },
+    });
+  }
+  for (let index = anchors.length - 1; index >= 0; index -= 1) {
+    const row = anchors[index];
+    if (row !== undefined && removed.has(row.designation)) {
+      anchors.splice(index, 1);
+    }
+  }
+  for (const anchor of anchors) {
+    const over = registry.space.anchorClass?.[anchor.designation];
+    if (over !== undefined) {
+      anchor.class = over;
+    }
+  }
+  installAnchorText(registry, anchors);
+}
+
 export function installAnchorText(registry: Registry, anchors: readonly Anchor[]): void {
   for (const anchor of anchors) {
-    registry.text[`anchors.${anchor.designation}.name`] = null;
+    const key = `anchors.${anchor.designation}.name`;
+    if (!(key in registry.text)) {
+      registry.text[key] = null;
+    }
   }
 }
 
