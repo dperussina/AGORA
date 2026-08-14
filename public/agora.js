@@ -1,5 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
+import {
+  MAT,
+  mesh,
+  cityArtifact,
+  cairnArtifact,
+  vantageArtifact,
+  hollowArtifact,
+  driftArtifact,
+  entityArtifact,
+} from "/artifacts.js";
 
 const origin = window.location.origin;
 const SIZE = 64;
@@ -8,65 +18,6 @@ const MAX_BODIES = 256;
 const MAX_MARKS = 512;
 const MAX_WARDENS = 256;
 const AGENT_HEIGHT = 2.75;
-
-function pbr(color, extra = {}) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.62,
-    metalness: 0.08,
-    envMapIntensity: 0.85,
-    ...extra,
-  });
-}
-
-const MAT = {
-  stone: pbr(0x806d4f, { roughness: 0.72, metalness: 0.04, flatShading: true }),
-  stoneDark: pbr(0x504c43, { roughness: 0.82, metalness: 0.08, flatShading: true }),
-  brass: pbr(0xb8924a, { roughness: 0.28, metalness: 0.78, emissive: 0x2c1f0c, emissiveIntensity: 0.16 }),
-  iron: pbr(0x334740, { roughness: 0.38, metalness: 0.62 }),
-  rock: pbr(0xb8c2c9, { roughness: 0.86, metalness: 0.02, flatShading: true }),
-  slate: pbr(0x202c34, { roughness: 0.48, metalness: 0.28 }),
-  deck: pbr(0x426f64, { roughness: 0.34, metalness: 0.38, emissive: 0x10241f, emissiveIntensity: 0.18 }),
-  rim: pbr(0x8f9da6, { roughness: 0.3, metalness: 0.52 }),
-  voidWall: pbr(0x151c22, {
-    roughness: 0.92,
-    metalness: 0,
-    transparent: true,
-    opacity: 0.88,
-    side: THREE.DoubleSide,
-  }),
-  drift: pbr(0x5e9a92, { roughness: 0.12, metalness: 0.68, emissive: 0x214d47, emissiveIntensity: 0.72 }),
-  entity: pbr(0xa07d3a, { roughness: 0.22, metalness: 0.58, emissive: 0x352408, emissiveIntensity: 0.28 }),
-  agent: pbr(0x334f4b, { roughness: 0.3, metalness: 0.3, emissive: 0x102622, emissiveIntensity: 0.3 }),
-  agentTrim: pbr(0x9fb5b0, { roughness: 0.24, metalness: 0.72 }),
-  lamp: pbr(0xffe4a8, { roughness: 0.14, metalness: 0.02, emissive: 0xe0c089, emissiveIntensity: 1.8 }),
-  energy: new THREE.MeshBasicMaterial({
-    color: 0xe0c089,
-    transparent: true,
-    opacity: 0.72,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  }),
-  echo: new THREE.MeshStandardMaterial({
-    color: 0x718692,
-    emissive: 0x30434d,
-    emissiveIntensity: 0.45,
-    roughness: 0.5,
-    metalness: 0.08,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false,
-  }),
-  markFlag: pbr(0xc4a574, { roughness: 0.38, metalness: 0.48, emissive: 0x34270e, emissiveIntensity: 0.22 }),
-};
-
-function mesh(geometry, material, x = 0, y = 0, z = 0) {
-  const item = new THREE.Mesh(geometry, material);
-  item.position.set(x, y, z);
-  item.castShadow = false;
-  item.receiveShadow = false;
-  return item;
-}
 
 function tagPick(node, kind, id) {
   node.traverse((child) => {
@@ -80,137 +31,6 @@ function tagPick(node, kind, id) {
 function identityTitle(id) {
   const name = world.names.get(id);
   return typeof name === "string" && name.length > 0 ? name : id;
-}
-
-function cityArtifact() {
-  const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(2.1, 2.32, 0.34, 12), MAT.stoneDark, 0, -0.3, 0));
-  g.add(mesh(new THREE.CylinderGeometry(1.72, 1.95, 0.18, 24), MAT.stone, 0, -0.04, 0));
-  const datum = mesh(new THREE.TorusGeometry(1.66, 0.065, 8, 48), MAT.brass, 0, 0.04, 0);
-  datum.rotation.x = Math.PI / 2;
-  g.add(datum);
-  g.add(mesh(new THREE.BoxGeometry(3.5, 0.12, 0.24), MAT.brass, 0, 0.16, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.24, 0.12, 3.5), MAT.brass, 0, 0.16, 0));
-  for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
-    const pylon = mesh(new THREE.CylinderGeometry(0.16, 0.24, 0.82, 6), MAT.iron);
-    pylon.position.set(Math.cos(angle) * 1.25, 0.52, Math.sin(angle) * 1.25);
-    g.add(pylon);
-  }
-  const pillar = mesh(new THREE.CylinderGeometry(0.16, 0.34, 2.55, 8), MAT.stone, 0, 1.42, 0);
-  g.add(pillar);
-  const core = mesh(new THREE.OctahedronGeometry(0.28, 0), MAT.lamp, 0, 2.86, 0);
-  g.add(core);
-  const crown = mesh(new THREE.TorusGeometry(0.54, 0.035, 6, 32), MAT.energy, 0, 2.86, 0);
-  crown.rotation.x = Math.PI / 2;
-  crown.userData.motion = "orbit";
-  g.add(crown);
-  return g;
-}
-
-function cairnArtifact() {
-  const g = new THREE.Group();
-  const stones = [
-    [1.15, 0, -0.18, 0, 0.2, 0.12, -0.15],
-    [0.82, 0.14, 0.22, -0.08, -0.35, 0.4, 0.2],
-    [0.58, -0.06, 0.62, 0.06, 0.5, -0.15, 0.35],
-    [0.38, 0.02, 0.98, 0, 0.15, 0.55, 0.1],
-  ];
-  for (const [s, x, y, z, rx, ry, rz] of stones) {
-    const rock = mesh(new THREE.IcosahedronGeometry(s * 0.55, 0), MAT.rock, x, y, z);
-    rock.rotation.set(rx, ry, rz);
-    rock.scale.set(1.15, 0.72, 0.95);
-    g.add(rock);
-  }
-  const binding = mesh(new THREE.TorusGeometry(0.72, 0.035, 6, 32), MAT.brass, 0, 0.48, 0);
-  binding.rotation.x = Math.PI / 2;
-  binding.rotation.z = 0.18;
-  binding.userData.motion = "orbit";
-  g.add(binding);
-  g.add(mesh(new THREE.TetrahedronGeometry(0.16, 0), MAT.lamp, 0.02, 1.34, 0));
-  return g;
-}
-
-function vantageArtifact() {
-  const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.12, 0.34, 4.1, 10), MAT.iron, 0, 1.82, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.75, 0.92, 0.18, 12), MAT.stoneDark, 0, -0.18, 0));
-  const ring = mesh(new THREE.TorusGeometry(0.86, 0.055, 10, 36), MAT.deck, 0, 3.55, 0);
-  ring.rotation.x = Math.PI / 2;
-  g.add(ring);
-  const meridian = mesh(new THREE.TorusGeometry(0.64, 0.035, 8, 32), MAT.brass, 0, 3.55, 0);
-  meridian.rotation.y = Math.PI / 2;
-  meridian.userData.motion = "gimbal";
-  g.add(meridian);
-  const sight = mesh(new THREE.TorusGeometry(0.25, 0.03, 8, 20), MAT.energy, 0, 3.55, 0.72);
-  sight.rotation.y = Math.PI / 2;
-  g.add(sight);
-  g.add(mesh(new THREE.IcosahedronGeometry(0.16, 1), MAT.lamp, 0, 3.55, 0));
-  return g;
-}
-
-function hollowArtifact() {
-  const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(1.82, 1.98, 0.24, 16), MAT.stoneDark, 0, -0.25, 0));
-  const well = mesh(new THREE.CylinderGeometry(1.58, 0.42, 2.15, 24, 1, true), MAT.voidWall, 0, -0.12, 0);
-  g.add(well);
-  const lip = mesh(new THREE.TorusGeometry(1.58, 0.11, 10, 40), MAT.rim, 0, 0.9, 0);
-  lip.rotation.x = Math.PI / 2;
-  g.add(lip);
-  const inner = mesh(new THREE.TorusGeometry(0.72, 0.025, 6, 32), MAT.energy, 0, -0.52, 0);
-  inner.rotation.x = Math.PI / 2;
-  inner.userData.motion = "pulse";
-  g.add(inner);
-  for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
-    const tooth = mesh(new THREE.TetrahedronGeometry(0.22, 0), MAT.rock);
-    tooth.position.set(Math.cos(angle) * 1.58, 1.08, Math.sin(angle) * 1.58);
-    tooth.rotation.y = -angle;
-    g.add(tooth);
-  }
-  return g;
-}
-
-function driftArtifact() {
-  const g = new THREE.Group();
-  const crystal = mesh(new THREE.IcosahedronGeometry(0.72, 1), MAT.drift);
-  crystal.scale.set(0.82, 1.45, 0.72);
-  g.add(crystal);
-  const cageGeometry = new THREE.IcosahedronGeometry(1.05, 0);
-  g.add(
-    new THREE.LineSegments(
-      new THREE.EdgesGeometry(cageGeometry),
-      new THREE.LineBasicMaterial({ color: 0x7ec8c4, transparent: true, opacity: 0.48 }),
-    ),
-  );
-  const orbit = mesh(new THREE.TorusGeometry(1.15, 0.025, 5, 40), MAT.energy);
-  orbit.rotation.x = Math.PI / 2.5;
-  orbit.rotation.y = Math.PI / 5;
-  orbit.userData.motion = "gimbal";
-  g.add(orbit);
-  for (const angle of [0, Math.PI * 2 / 3, Math.PI * 4 / 3]) {
-    const shard = mesh(new THREE.TetrahedronGeometry(0.2, 0), MAT.drift);
-    shard.position.set(Math.cos(angle) * 1.12, Math.sin(angle * 2) * 0.4, Math.sin(angle) * 1.12);
-    g.add(shard);
-  }
-  return g;
-}
-
-function entityArtifact() {
-  const g = new THREE.Group();
-  const core = mesh(new THREE.OctahedronGeometry(0.52, 1), MAT.entity);
-  g.add(core);
-  const cage = new THREE.IcosahedronGeometry(0.86, 0);
-  g.add(
-    new THREE.LineSegments(
-      new THREE.EdgesGeometry(cage),
-      new THREE.LineBasicMaterial({ color: 0xe0c089, transparent: true, opacity: 0.72 }),
-    ),
-  );
-  const ring = mesh(new THREE.TorusGeometry(0.98, 0.035, 6, 40), MAT.brass);
-  ring.rotation.x = Math.PI / 2.6;
-  ring.userData.motion = "gimbal";
-  g.add(ring);
-  g.add(mesh(new THREE.SphereGeometry(0.12, 10, 8), MAT.lamp, 0.98, 0, 0));
-  return g;
 }
 
 const PROTO = {

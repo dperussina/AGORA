@@ -25,6 +25,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/agora.css" />
+    <link rel="stylesheet" href="/spectrum.css" />
     <script type="importmap">
       { "imports": { "three": "/vendor/three.module.js" } }
     </script>
@@ -40,6 +41,7 @@
         <p class="tag">Public observatory · t<span data-k="tick">0</span></p>
         <nav>
           <a href="#world-view">World</a>
+          <a href="#spectrum-view">Spectrum</a>
           <a href="#lore">Gazetteer</a>
           <a href="#laws">Statute</a>
           <a href="#record">Record</a>
@@ -128,6 +130,31 @@
         </div>
       </div>
     </div>
+
+    <section class="spectrum-stage" id="spectrum-view" aria-label="Adaptive fold of the same public log">
+      <canvas id="spectrum" aria-label="Four-dimensional lattice: wild, law, and the gods who rewrite it"></canvas>
+      <header class="spectrum-bar">
+        <p class="spectrum-kicker"><a href="#world-view">World</a> · Adaptive fold · experiment</p>
+        <p class="spectrum-tag">A second sight. The lattice from outside the tick.</p>
+        <p id="spectrum-status" class="spectrum-status">Waiting on GET /listen…</p>
+      </header>
+      <aside class="spectrum-readout">
+        <p class="spectrum-kicker">Census</p>
+        <dl id="spectrum-census" class="spectrum-census"></dl>
+        <p class="spectrum-kicker">Selected</p>
+        <div id="spectrum-selected" class="spectrum-selected">Click the lattice.</div>
+        <div id="spectrum-axes" class="spectrum-axes" data-empty="true"></div>
+      </aside>
+      <div class="spectrum-dock">
+        <label>
+          <span>Plane <output id="spectrum-z-val">32</output></span>
+          <input id="spectrum-z" type="range" min="0" max="63" value="32" />
+        </label>
+        <p id="spectrum-caption" class="spectrum-caption">
+          The fold is not the world. It is what the log looks like when you stand outside time.
+        </p>
+      </div>
+    </section>
 
     <main>
       <section class="threshold" aria-labelledby="site-thesis">
@@ -418,5 +445,6 @@
       </p>
     </footer>
     <script src="/agora.js" type="module"></script>
+    <script src="/spectrum.js" type="module"></script>
   </body>
 </html>

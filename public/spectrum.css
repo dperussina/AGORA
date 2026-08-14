@@ -1,0 +1,212 @@
+.spectrum-stage {
+  --well: #16101f;
+  --ink: #d7dee4;
+  --mute: #7a8790;
+  --line: #2a333a;
+  --mark: #c4a574;
+  position: relative;
+  min-height: 100vh;
+  background: var(--well);
+  color: var(--ink);
+}
+
+.spectrum-stage canvas#spectrum {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  cursor: grab;
+}
+
+.spectrum-stage canvas#spectrum:active {
+  cursor: grabbing;
+}
+
+.spectrum-bar,
+.spectrum-readout,
+.spectrum-dock {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.spectrum-bar > *,
+.spectrum-readout > *,
+.spectrum-dock > * {
+  pointer-events: auto;
+}
+
+.spectrum-bar {
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1.1rem;
+  align-items: baseline;
+  padding: 0.95rem 1.1rem;
+}
+
+.spectrum-kicker {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.spectrum-bar .spectrum-kicker a {
+  color: var(--mark);
+  text-decoration: none;
+}
+
+.spectrum-bar .spectrum-kicker a:hover,
+.spectrum-bar .spectrum-kicker a:focus-visible {
+  color: var(--ink);
+}
+
+.spectrum-tag {
+  margin: 0;
+  flex: 1;
+  min-width: 12rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.82rem;
+  color: var(--ink);
+}
+
+.spectrum-status {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--mute);
+}
+
+.spectrum-status[data-state="down"] {
+  color: #8a3535;
+}
+
+.spectrum-readout {
+  top: 3.6rem;
+  right: 1rem;
+  width: min(15.5rem, 34vw);
+  padding: 0.75rem 0.85rem 0.9rem;
+  border: 1px solid var(--line);
+  background: rgba(11, 14, 17, 0.82);
+}
+
+.spectrum-readout .spectrum-kicker + .spectrum-kicker,
+.spectrum-readout dl + .spectrum-kicker {
+  margin-top: 0.9rem;
+}
+
+.spectrum-census {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.22rem 0.7rem;
+  margin: 0.4rem 0 0;
+}
+
+.spectrum-census div {
+  display: contents;
+}
+
+.spectrum-census dt,
+.spectrum-census dd {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.spectrum-census dt {
+  color: var(--mute);
+}
+
+.spectrum-census dd {
+  text-align: right;
+  color: var(--ink);
+}
+
+.spectrum-selected {
+  margin: 0.4rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.spectrum-selected strong {
+  display: block;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.spectrum-selected small {
+  display: block;
+  margin-top: 0.2rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  color: var(--mute);
+}
+
+.spectrum-axes {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.22rem;
+  height: 2.8rem;
+  margin-top: 0.6rem;
+}
+
+.spectrum-axes i {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  background: var(--mark);
+  opacity: 0.85;
+}
+
+.spectrum-axes[data-empty="true"] {
+  opacity: 0.25;
+}
+
+.spectrum-dock {
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.1rem;
+  align-items: end;
+}
+
+.spectrum-dock label {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 12rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.spectrum-dock input[type="range"] {
+  width: min(18rem, 46vw);
+  accent-color: var(--mark);
+}
+
+.spectrum-caption {
+  margin: 0;
+  max-width: 36rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: var(--mute);
+}
+
+@media (max-width: 720px) {
+  .spectrum-readout {
+    display: none;
+  }
+
+  .spectrum-tag {
+    flex-basis: 100%;
+  }
+}
