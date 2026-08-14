@@ -16,11 +16,13 @@ export interface Standing {
   notorietyDebt?: number;
 }
 
-export function emptyStanding(): Standing {
+export type NormalizedStanding = Standing & { fameDebt: number; notorietyDebt: number };
+
+export function emptyStanding(): NormalizedStanding {
   return { fame: 0, notoriety: 0, fameDebt: 0, notorietyDebt: 0 };
 }
 
-export function normalizeStanding(value: Standing): Standing {
+export function normalizeStanding(value: Standing): NormalizedStanding {
   return {
     fame: value.fame,
     notoriety: value.notoriety,
@@ -44,7 +46,7 @@ export interface LedgerRow {
 
 const ITERATIONS = 20;
 
-export function decayStanding(current: Standing, fameDecay = 2, notorietyDecay = 5): Standing {
+export function decayStanding(current: Standing, fameDecay = 2, notorietyDecay = 5): NormalizedStanding {
   const prior = normalizeStanding(current);
   const fameAccrued = prior.fameDebt + prior.fame * fameDecay;
   const fameLoss = Math.min(prior.fame, Math.floor(fameAccrued / 100));
@@ -66,9 +68,9 @@ export function assessStanding(
   tick: number,
   fameDecay = 2,
   notorietyDecay = 5,
-): { next: Map<string, Standing>; ledger: LedgerRow[] } {
+): { next: Map<string, NormalizedStanding>; ledger: LedgerRow[] } {
   const ids = new Set<string>([...prior.keys(), ...edges.flatMap((edge) => [edge.actorId, edge.witnessId])]);
-  const next = new Map<string, Standing>();
+  const next = new Map<string, NormalizedStanding>();
   for (const id of ids) {
     next.set(id, decayStanding(prior.get(id) ?? emptyStanding(), fameDecay, notorietyDecay));
   }
