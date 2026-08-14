@@ -657,29 +657,30 @@ function drawRibbon() {
     return;
   }
   const ratio = window.devicePixelRatio || 1;
-  const cssW = Math.max(120, node.clientWidth || 640);
+  const cssW = Math.max(80, node.clientWidth || 420);
+  const cssH = Math.max(28, node.clientHeight || 40);
   node.width = Math.floor(cssW * ratio);
-  node.height = Math.floor(56 * ratio);
+  node.height = Math.floor(cssH * ratio);
   const ctx = node.getContext("2d");
   if (ctx === null) {
     return;
   }
   ctx.scale(ratio, ratio);
   ctx.fillStyle = "#0c1116";
-  ctx.fillRect(0, 0, cssW, 56);
+  ctx.fillRect(0, 0, cssW, cssH);
   const rows = world.events;
   if (rows.length === 0) {
     ctx.fillStyle = "#5a6873";
     ctx.font = "11px IBM Plex Mono, ui-monospace, monospace";
-    ctx.fillText("GET /events — waiting on the log", 8, 32);
+    ctx.fillText("GET /events", 8, Math.floor(cssH / 2) + 4);
     return;
   }
   const w = cssW / rows.length;
   for (let i = 0; i < rows.length; i += 1) {
     const item = rows[i];
-    const h = 10 + ((Number(item.seq) || i) % 7) * 5;
+    const h = 8 + ((Number(item.seq) || i) % 7) * 4;
     ctx.fillStyle = ribbonColor(item.type);
-    ctx.fillRect(i * w, 56 - h, Math.max(1, w - 0.4), h);
+    ctx.fillRect(i * w, cssH - h, Math.max(1, w - 0.4), h);
   }
 }
 
