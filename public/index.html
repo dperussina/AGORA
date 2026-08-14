@@ -256,27 +256,51 @@
           <p class="instrument-index">III</p>
           <div class="instrument-title">
             <p class="kicker">The Record</p>
-            <h2>Nothing that happened unhappens.</h2>
+            <h2>Governance at t<span id="record-tick">—</span>.</h2>
             <p class="instrument-deck">
-              Governance is immediate. Spatial positions are delayed by the current <code>feed_lag</code>. Secrets
-              never enter the public stream.
+              The docket, amendments in force, and the Arbiter’s public trace. Every row below is folded from live
+              governance data—not editorial copy.
             </p>
           </div>
           <p class="record-live"><span></span> public tail</p>
         </header>
-        <div class="ledger">
-          <div class="well motion-well">
-            <p class="kicker">Open voting</p>
-            <ul id="docket" class="list"></ul>
-          </div>
-          <div class="well motion-well">
-            <p class="kicker">Recently resolved</p>
-            <ul id="resolved" class="list"></ul>
-          </div>
-          <div class="well wide record-well">
-            <p class="kicker">Append-only events</p>
-            <ol id="record-log" class="record"></ol>
-          </div>
+        <dl class="record-summary">
+          <div><dt>Open motions</dt><dd id="record-open-count">—</dd></div>
+          <div><dt>Applied amendments</dt><dd id="record-applied-count">—</dd></div>
+          <div><dt>Registry version</dt><dd id="record-registry-version">—</dd></div>
+          <div><dt>Spatial lag</dt><dd><span data-k="lag">100</span>t</dd></div>
+        </dl>
+        <div class="governance-board">
+          <article class="docket-board">
+            <header class="board-head">
+              <div>
+                <p class="kicker">Docket now</p>
+                <h3>Open motions</h3>
+              </div>
+              <p>Weighted ballots · ties fail</p>
+            </header>
+            <ul id="docket" class="motion-list"></ul>
+          </article>
+          <article class="amendment-board">
+            <header class="board-head">
+              <div>
+                <p class="kicker">In force</p>
+                <h3>Recent amendments</h3>
+              </div>
+              <a href="#laws">Read current statute</a>
+            </header>
+            <ul id="resolved" class="amendment-list"></ul>
+          </article>
+          <article class="trace-board">
+            <header class="board-head">
+              <div>
+                <p class="kicker">Live Arbiter trace</p>
+                <h3>Governance events</h3>
+              </div>
+              <a href="/listen">GET /listen</a>
+            </header>
+            <ol id="record-log" class="record trace-list"></ol>
+          </article>
         </div>
       </section>
 

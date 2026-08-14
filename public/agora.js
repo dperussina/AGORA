@@ -427,6 +427,139 @@ function addCage() {
 
 addCage();
 
+function particleTexture() {
+  const stamp = document.createElement("canvas");
+  stamp.width = 64;
+  stamp.height = 64;
+  const context = stamp.getContext("2d");
+  const glow = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+  glow.addColorStop(0, "rgba(255,255,255,1)");
+  glow.addColorStop(0.15, "rgba(255,247,214,0.9)");
+  glow.addColorStop(0.45, "rgba(116,171,166,0.34)");
+  glow.addColorStop(1, "rgba(116,171,166,0)");
+  context.fillStyle = glow;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(stamp);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function sequence(index, factor, offset = 0) {
+  return (index * factor + offset) % 1;
+}
+
+function orbitalTrack(radius, rise, twist, color) {
+  const points = [];
+  const steps = 160;
+  for (let i = 0; i <= steps; i += 1) {
+    const theta = (i / steps) * Math.PI * 2;
+    points.push(
+      new THREE.Vector3(
+        Math.cos(theta) * radius,
+        Math.sin(theta * twist) * rise,
+        Math.sin(theta) * radius,
+      ),
+    );
+  }
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(points),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.14, depthWrite: false }),
+  );
+}
+
+function addQuantumField() {
+  const field = new THREE.Group();
+  field.name = "cloud chamber";
+  const positions = [];
+  const colors = [];
+  const palette = [new THREE.Color(0x497f78), new THREE.Color(0x9a7844), new THREE.Color(0x718a9b)];
+  const count = reduced ? 220 : 560;
+  for (let i = 0; i < count; i += 1) {
+    const x = (sequence(i, 0.61803398875, 0.11) - 0.5) * SIZE * 1.55;
+    const y = (sequence(i, 0.75487766625, 0.37) - 0.5) * SIZE * 1.4;
+    const z = (sequence(i, 0.56984029099, 0.73) - 0.5) * SIZE * 1.55;
+    positions.push(x, y, z);
+    const color = palette[i % palette.length];
+    colors.push(color.r, color.g, color.b);
+  }
+  const dustGeometry = new THREE.BufferGeometry();
+  dustGeometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  dustGeometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  const dust = new THREE.Points(
+    dustGeometry,
+    new THREE.PointsMaterial({
+      size: reduced ? 0.42 : 0.58,
+      map: particleTexture(),
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.56,
+      alphaTest: 0.02,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  field.add(dust);
+
+  const tracks = new THREE.Group();
+  tracks.add(orbitalTrack(43, 9, 3, 0x4a7a68));
+  const second = orbitalTrack(39, 15, 2, 0x9a7844);
+  second.rotation.z = Math.PI * 0.38;
+  tracks.add(second);
+  const third = orbitalTrack(47, 7, 5, 0x6f8492);
+  third.rotation.x = Math.PI * 0.29;
+  tracks.add(third);
+  field.add(tracks);
+
+  const carrierCount = reduced ? 8 : 24;
+  const carrierPositions = new Float32Array(carrierCount * 3);
+  const carrierGeometry = new THREE.BufferGeometry();
+  carrierGeometry.setAttribute("position", new THREE.BufferAttribute(carrierPositions, 3));
+  const carriers = new THREE.Points(
+    carrierGeometry,
+    new THREE.PointsMaterial({
+      color: 0xe0c089,
+      size: 1.25,
+      map: particleTexture(),
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  field.add(carriers);
+  scene.add(field);
+  return { field, dust, tracks, carriers, carrierPositions, carrierCount };
+}
+
+const quantum = addQuantumField();
+
+function selectionField() {
+  const field = new THREE.Group();
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xc4a574,
+    transparent: true,
+    opacity: 0.42,
+    depthWrite: false,
+  });
+  const rings = [
+    [1.45, 0, 0],
+    [1.75, Math.PI / 2, Math.PI / 5],
+    [2.05, Math.PI / 3, Math.PI / 2],
+  ];
+  for (const [radius, x, y] of rings) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.025, 5, 64), material);
+    ring.rotation.set(x, y, 0);
+    field.add(ring);
+  }
+  field.visible = false;
+  scene.add(field);
+  return field;
+}
+
+const selectedField = selectionField();
+tickQuantum(0);
+
 const anchorsGroup = new THREE.Group();
 const driftsGroup = new THREE.Group();
 const entitiesGroup = new THREE.Group();
@@ -997,6 +1130,40 @@ function cellLockup(pos) {
   return text.length === 0 ? "" : text.replace(/, /g, "  ·  ");
 }
 
+function selectedPosition(selected) {
+  if (selected?.kind === "place") {
+    return world.anchors.find((row) => row.designation === selected.id)?.centre ?? null;
+  }
+  if (selected?.kind === "person") {
+    return bodyOf(selected.id);
+  }
+  if (selected?.kind === "echo") {
+    return world.bodies.find((row) => row.id === selected.id)?.position ?? null;
+  }
+  if (selected?.kind === "warden") {
+    return world.wardens.find((row) => row.id === selected.id)?.position ?? null;
+  }
+  if (selected?.kind === "drift") {
+    return world.drifts.find((row) => row.id === selected.id)?.position ?? null;
+  }
+  if (selected?.kind === "entity") {
+    return visibleEntities().find((row) => row.id === selected.id)?.position ?? null;
+  }
+  if (selected?.kind === "mark") {
+    return inscriptions().find((row) => `${row.position.x},${row.position.y},${row.position.z}` === selected.id)?.position ?? null;
+  }
+  return null;
+}
+
+function moveSelectionField(selected) {
+  const position = selectedPosition(selected);
+  selectedField.visible = position !== null;
+  if (position !== null) {
+    selectedField.position.copy(cell(position));
+    selectedField.position.y += 0.9;
+  }
+}
+
 function selectLore(selected, options = {}) {
   const caption = $("place-caption");
   const shouldFly = options.fly === true;
@@ -1168,6 +1335,7 @@ function selectLore(selected, options = {}) {
       caption.hidden = true;
     }
   }
+  moveSelectionField(current);
   markLoreHere();
 }
 
@@ -1663,11 +1831,35 @@ function aimSighting(event) {
   canvas.classList.toggle("aim", pickFromEvent(event) !== null);
 }
 
+function tickQuantum(now) {
+  const time = reduced ? 0 : now;
+  quantum.field.rotation.y = time * 0.000018;
+  quantum.dust.rotation.x = Math.sin(time * 0.00007) * 0.08;
+  quantum.tracks.rotation.y = -time * 0.000026;
+  quantum.tracks.rotation.z = Math.sin(time * 0.00004) * 0.06;
+  for (let i = 0; i < quantum.carrierCount; i += 1) {
+    const theta = time * (0.00011 + (i % 5) * 0.000008) + i * 2.3999632297;
+    const radius = 37 + Math.sin(theta * 3 + i) * 8;
+    const offset = i * 3;
+    quantum.carrierPositions[offset] = Math.cos(theta) * radius;
+    quantum.carrierPositions[offset + 1] = Math.sin(theta * 2 + i * 0.7) * 17;
+    quantum.carrierPositions[offset + 2] = Math.sin(theta) * radius;
+  }
+  quantum.carriers.geometry.attributes.position.needsUpdate = true;
+  if (selectedField.visible) {
+    selectedField.rotation.y = time * 0.00062;
+    selectedField.rotation.x = Math.sin(time * 0.0011) * 0.18;
+    const pulse = 1 + Math.sin(time * 0.004) * 0.08;
+    selectedField.scale.setScalar(pulse);
+  }
+}
+
 function frame(now) {
   tickFly(now);
   controls.update();
   if (!reduced) {
     tickSparks(now);
+    tickQuantum(now);
     const used = bodyMesh.count;
     for (let i = 0; i < used; i += 1) {
       bodyMesh.getMatrixAt(i, dummy.matrix);
@@ -1714,6 +1906,209 @@ function patchLabel(patch) {
   const path = typeof patch.path === "string" ? patch.path : "";
   const op = typeof patch.op === "string" ? patch.op : "";
   return [kind, path, op].filter(Boolean).join(" ");
+}
+
+function patchSubject(patch) {
+  if (patch === null || typeof patch !== "object") {
+    return "Unknown patch";
+  }
+  if (patch.kind === "action.define") {
+    return `Define verb “${patch.name ?? "unnamed"}”`;
+  }
+  if (patch.kind === "schema.define_type") {
+    return `Define type “${patch.name ?? "unnamed"}”`;
+  }
+  if (patch.kind === "schema.extend_type") {
+    return `Extend type “${patch.type ?? "unknown"}”`;
+  }
+  if (patch.kind === "text.set") {
+    const path = String(patch.path ?? "text");
+    if (path.endsWith(".name")) {
+      return `Name ${path.slice(0, -5)} “${clip(String(patch.value ?? ""), 32)}”`;
+    }
+    if (path.endsWith(".lore") || path === "world_lore" || path === "text.world_lore") {
+      return `Set lore at ${path.replace(/\.lore$/, "")}`;
+    }
+    return `Set ${path}`;
+  }
+  if (patch.kind === "param.set") {
+    return `Set ${patch.path ?? "parameter"} to ${patch.value ?? "—"}`;
+  }
+  if (patch.kind === "space.op") {
+    return `${patch.op ?? "Change"} lattice space`;
+  }
+  if (patch.kind === "rule.define_trigger") {
+    return `Define trigger “${patch.id ?? "unnamed"}”`;
+  }
+  if (patch.kind === "tier.move") {
+    return `Move ${patch.path ?? "path"} to Layer ${patch.tier ?? "—"}`;
+  }
+  if (patch.kind === "revert") {
+    return `Revert amendment #${patch.proposalId ?? "—"}`;
+  }
+  return patchLabel(patch) || "Patch";
+}
+
+function patchFacts(patch) {
+  if (patch === null || typeof patch !== "object") {
+    return "";
+  }
+  if (patch.kind === "action.define") {
+    return `cost ${patch.cost ?? "—"} · ${Object.keys(patch.params ?? {}).length} params · ${(patch.effects ?? []).length} effects`;
+  }
+  if (patch.kind === "schema.define_type") {
+    return `${Object.keys(patch.fields ?? {}).length} fields`;
+  }
+  if (patch.kind === "schema.extend_type") {
+    return patch.field?.name ? `field ${patch.field.name}` : "";
+  }
+  if (patch.kind === "text.set") {
+    return clip(String(patch.value ?? ""), 84);
+  }
+  if (patch.kind === "space.op") {
+    return [patch.axis, patch.size, patch.designation, patch.class].filter((part) => part !== undefined).join(" · ");
+  }
+  if (patch.kind === "rule.define_trigger") {
+    return `${patch.when ?? "event"} · ${(patch.effects ?? []).length} effects`;
+  }
+  return patchLabel(patch);
+}
+
+function publicName(id) {
+  const name = world.names.get(id);
+  if (typeof name === "string" && name.length > 0) {
+    return name;
+  }
+  return typeof id === "string" && id.length > 13 ? `${id.slice(0, 10)}…` : id || "unknown";
+}
+
+function ballotTotals(rows) {
+  const totals = { for: 0, against: 0, abstain: 0 };
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const position = row?.position;
+    if (!(position in totals)) {
+      continue;
+    }
+    const milli = Number(row.weightMilli);
+    totals[position] += Number.isFinite(milli) ? milli : 0;
+  }
+  return totals;
+}
+
+function motionCard(item) {
+  const li = document.createElement("li");
+  li.className = "motion-card";
+  const top = document.createElement("div");
+  top.className = "motion-top";
+  const number = document.createElement("span");
+  number.className = "motion-number";
+  number.textContent = `Motion #${item.id}`;
+  const layer = document.createElement("span");
+  layer.className = "motion-layer";
+  layer.textContent = `Layer ${item.tier}`;
+  top.append(number, layer);
+
+  const title = document.createElement("h4");
+  title.textContent = patchSubject(item.patch);
+  const facts = document.createElement("p");
+  facts.className = "motion-facts";
+  facts.textContent = patchFacts(item.patch);
+  const byline = document.createElement("p");
+  byline.className = "motion-byline";
+  byline.textContent = `Filed by ${publicName(item.authorId)} · resolves t${item.resolutionTick}`;
+
+  const totals = ballotTotals(item.tally);
+  const participation = totals.for + totals.against + totals.abstain;
+  const ballots = document.createElement("div");
+  ballots.className = "ballot-readout";
+  const track = document.createElement("div");
+  track.className = "ballot-track";
+  track.setAttribute("aria-label", `${item.tally?.length ?? 0} weighted ballots`);
+  for (const position of ["for", "against", "abstain"]) {
+    const segment = document.createElement("span");
+    segment.className = position;
+    segment.style.flexGrow = String(participation === 0 ? (position === "abstain" ? 1 : 0) : totals[position]);
+    track.append(segment);
+  }
+  const legend = document.createElement("p");
+  legend.className = "ballot-legend";
+  legend.textContent =
+    participation === 0
+      ? "No ballots cast"
+      : `${item.tally.length} ballots · for ${(totals.for / 1000).toFixed(1)} · against ${(totals.against / 1000).toFixed(1)} · abstain ${(totals.abstain / 1000).toFixed(1)}`;
+  ballots.append(track, legend);
+
+  const details = document.createElement("details");
+  details.className = "motion-patch";
+  const summary = document.createElement("summary");
+  summary.textContent = "Exact typed patch";
+  const pre = document.createElement("pre");
+  pre.textContent = nuanceLines(item.patch ?? {});
+  details.append(summary, pre);
+  li.append(top, title, facts, byline, ballots, details);
+  return li;
+}
+
+function amendmentRow(item) {
+  const li = document.createElement("li");
+  li.className = `amendment-row ${item.status ?? ""}`;
+  li.tabIndex = 0;
+  const number = document.createElement("span");
+  number.className = "amendment-number";
+  number.textContent = `#${item.id}`;
+  const copy = document.createElement("div");
+  const title = document.createElement("h4");
+  title.textContent = patchSubject(item.patch);
+  const facts = document.createElement("p");
+  facts.textContent = [patchFacts(item.patch), `by ${publicName(item.authorId)}`].filter(Boolean).join(" · ");
+  copy.append(title, facts);
+  const status = document.createElement("span");
+  status.className = "amendment-status";
+  status.textContent = item.failReason ? `${item.status}: ${item.failReason}` : item.status;
+  li.append(number, copy, status);
+  li.addEventListener("click", () => {
+    selectLaw({ kind: "applied", id: String(item.id) });
+    $("laws")?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  });
+  li.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      li.click();
+    }
+  });
+  return li;
+}
+
+function eventTone(type) {
+  if (type.startsWith("amendment.")) {
+    return "governance";
+  }
+  if (type.startsWith("credential.") || type.startsWith("identity.")) {
+    return "identity";
+  }
+  if (type.endsWith("_failed") || type === "coherence.revert") {
+    return "failure";
+  }
+  return "system";
+}
+
+function recordEvent(item) {
+  const li = document.createElement("li");
+  const type = typeof item.type === "string" ? item.type : "event";
+  li.className = `trace-event ${eventTone(type)}`;
+  const tick = document.createElement("time");
+  tick.textContent = `t${item.tick}`;
+  const copy = document.createElement("div");
+  const kind = document.createElement("span");
+  kind.className = "trace-type";
+  kind.textContent = type;
+  const message = document.createElement("p");
+  const prefix = `t${item.tick}  `;
+  const text = recordLine(item);
+  message.textContent = text.startsWith(prefix) ? text.slice(prefix.length) : text;
+  copy.append(kind, message);
+  li.append(tick, copy);
+  return li;
 }
 
 function fillList(id, rows, empty) {
@@ -2044,23 +2439,19 @@ async function refresh() {
       Array.isArray(standing.standing) ? standing.standing : [],
     );
     const pending = Array.isArray(docket.pending) ? docket.pending : [];
+    setText("record-tick", String(world.present));
+    setText("record-open-count", String(pending.length));
+    setText("record-applied-count", String(world.applied.length));
+    setText("record-registry-version", String(rules?.registry?.version ?? 0));
     fillList(
       "docket",
-      pending.map((item) => {
-        const votes = Array.isArray(item.tally) ? item.tally.length : 0;
-        return line(
-          `Motion ${item.id} · L${item.tier} · tick ${item.resolutionTick} · ${votes} ballot(s)`,
-          patchLabel(item.patch),
-        );
-      }),
+      pending.map((item) => motionCard(item)),
       "No motions on the docket.",
     );
     const resolved = Array.isArray(docket.resolved) ? docket.resolved : [];
     fillList(
       "resolved",
-      resolved.map((item) =>
-        line(`#${item.id} ${item.status}`, `${patchLabel(item.patch)}${item.failReason ? " · " + item.failReason : ""}`),
-      ),
+      resolved.map((item) => amendmentRow(item)),
       "Nothing has resolved yet.",
     );
   } catch {
@@ -2110,8 +2501,10 @@ function prependEvent(id, item) {
   if (empty) {
     empty.remove();
   }
-  const li = document.createElement("li");
-  li.textContent = recordLine(item);
+  const li = id === "record-log" ? recordEvent(item) : document.createElement("li");
+  if (id !== "record-log") {
+    li.textContent = recordLine(item);
+  }
   root.prepend(li);
   while (root.children.length > 40) {
     root.lastElementChild?.remove();

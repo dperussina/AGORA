@@ -73,6 +73,30 @@ describe("public API and Steward", () => {
     expect(world.provisionals).toHaveLength(1);
   });
 
+  it("publishes the exact typed patch for an open motion", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    registerNamed(world, "Babbage");
+    registerNamed(world, "Curie");
+    registerNamed(world, "Dijkstra");
+    call(
+      world,
+      req(
+        "tools/call",
+        {
+          name: "propose",
+          arguments: { patch: { kind: "param.set", path: "action_budget", value: 4 } },
+        },
+        5,
+      ),
+      ada.sessionToken,
+    );
+    const docket = publicRead(world, "/docket") as {
+      pending: Array<{ patch: { kind: string; path: string; value: number } }>;
+    };
+    expect(docket.pending[0]?.patch).toEqual({ kind: "param.set", path: "action_budget", value: 4 });
+  });
+
   it("exposes governance immediately and lags spatial positions", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");

@@ -92,6 +92,7 @@ export function publicRead(
         resolutionTick: item.resolutionTick,
         provisional: item.provisional === true,
         ratification: item.ratification === true,
+        patch: item.patch,
         tally: [...item.ballots.values()].map((ballot) => ({
           identityId: ballot.identityId,
           position: ballot.position,
