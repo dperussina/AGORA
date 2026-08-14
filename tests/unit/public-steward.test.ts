@@ -92,13 +92,22 @@ describe("public API and Steward", () => {
     expect((governance["events"] as Array<{ type: string }>).some((event) => event.type === "amendment.propose")).toBe(
       true,
     );
-    const map = publicRead(world, "/map");
-    expect(map["tick"]).toBe(0);
-    expect(map["bodies"]).toEqual([]);
-    expect((map["anchors"] as unknown[]).length).toBe(24);
-    expect((map["wardens"] as unknown[]).length).toBeGreaterThan(0);
-    expect(map["drifts"]).toEqual([]);
-    expect(map["entities"]).toEqual([]);
+    const map = publicRead(world, "/map") as {
+      tick: number;
+      bodies: unknown[];
+      anchors: Array<{ designation: string; name: string | null; lore: string | null }>;
+      wardens: unknown[];
+      drifts: unknown[];
+      entities: unknown[];
+    };
+    expect(map.tick).toBe(0);
+    expect(map.bodies).toEqual([]);
+    expect(map.anchors.length).toBe(24);
+    expect(map.anchors[0]).toHaveProperty("name");
+    expect(map.anchors[0]).toHaveProperty("lore");
+    expect(map.wardens.length).toBeGreaterThan(0);
+    expect(map.drifts).toEqual([]);
+    expect(map.entities).toEqual([]);
     expect(publicRead(world, "/rules")).toHaveProperty("registry");
     expect(publicRead(world, "/fold")).toMatchObject({ hash: "sha256" });
     expect(publicRead(world, "/registry/history")).toHaveProperty("applied");

@@ -136,6 +136,7 @@ export function publicRead(
         class: anchor.class,
         centre: anchor.centre,
         name: world.clerk.registry.text[`anchors.${anchor.designation}.name`] ?? null,
+        lore: world.clerk.registry.text[`anchors.${anchor.designation}.lore`] ?? null,
       })),
       wardens: world.wardens
         .filter((warden) => z === null || warden.position.z === Number(z))

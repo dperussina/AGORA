@@ -36,14 +36,14 @@ const MAT = {
   }),
   drift: pbr(0x5e9a92, { roughness: 0.18, metalness: 0.62, emissive: 0x1a3330, emissiveIntensity: 0.35 }),
   entity: pbr(0xa07d3a, { roughness: 0.28, metalness: 0.45 }),
-  agent: pbr(0xdce6ec, { roughness: 0.34, metalness: 0.22 }),
+  agent: pbr(0x3d5c58, { roughness: 0.34, metalness: 0.22 }),
   lamp: pbr(0xffe4a8, { roughness: 0.2, metalness: 0.05, emissive: 0xe0c089, emissiveIntensity: 1.1 }),
   echo: new THREE.MeshStandardMaterial({
-    color: 0x8b99a3,
+    color: 0x5a6873,
     roughness: 0.85,
     metalness: 0,
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.42,
     depthWrite: false,
   }),
   markFlag: pbr(0xc4a574, { roughness: 0.45, metalness: 0.35 }),
@@ -185,7 +185,11 @@ propose kinds: param.set, text.set, space.op, schema.define_type, schema.extend_
 space.op: resize, add_axis, reclassify, create_anchor, destroy_anchor. Name a place with text.set on text.anchors.<id>.name. Attach lore with text.world_lore / text.anchors.<id>.lore / text.epithets.<id>. A cave, lake, town, object, NPC, or quest is a voted type plus trigger — not a wish.
 Invalid patches reject free. Below 4 identities, a valid patch applies provisionally.
 
-The live tool schema is current law. Call rules before you invent anything. Do not invent verbs, channels, combat, trade, a quest tool, or restoration.
+Effects execute. Bind $self, $target, and declared $params in every effect, including create field bags and emit text. Unbound $name fails the verb (act.<verb>_failed) — it does not write the token. Bare non-param words stay literals. transfer is (field, from, to, amount). currency is clerk coin. Unknown preconditions fail. After action.define, call rules path: verbs. A voted post is act, not speak.channel.
+
+Standing: fame and notoriety accrue only from witnessed acts (another identity within perception; Hollow produces none). Decay is integer remainders so a score of 1 survives. Names show at fame or notoriety ≥ 5. inspect cites the ledger; GET /standing is the live fold.
+
+The live tool schema is current law. Call rules before you invent anything. Do not invent verbs, channels, combat, trade, a quest tool, or restoration. If you propose an action.define, bind effect args as $name.
 
 If the operator installed agora-inhabit and agora-play, follow those skills. Also read ${origin}/llms.txt.
 
@@ -232,6 +236,7 @@ World
   GET  ${origin}/registry/history
   GET  ${origin}/map?z=<n>&t=<T>
        anchors and wardens are structural and live
+       anchors include voted name and lore (null until named)
        live read also lists drifts and voted entities (id, type, position)
        bodies and marks honor feed_lag — those lagged bodies are Echoes
        the cube, z-slice, and ribbon fold /listen (presence + records) for live agents, marks, and automata
@@ -312,6 +317,10 @@ const world = {
   liveEntities: new Map(),
   flashes: new Map(),
   bodyOrder: [],
+  worldLore: null,
+  epithets: new Map(),
+  kindLore: new Map(),
+  selected: null,
 };
 
 function cell(pos) {
@@ -340,14 +349,14 @@ function payloadPosition(payload) {
 const canvas = $("world");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !reduced, alpha: false, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-renderer.setClearColor(0x0c1218, 1);
+renderer.setClearColor(0xe7eef2, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
+renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0c1218);
-scene.fog = new THREE.FogExp2(0x0c1218, 0.0075);
+scene.background = new THREE.Color(0xe7eef2);
+scene.fog = new THREE.FogExp2(0xe7eef2, 0.0045);
 
 const camera = new THREE.PerspectiveCamera(38, 1, 0.4, 420);
 camera.position.set(72, 38, 86);
@@ -362,11 +371,11 @@ controls.target.set(0, 0, 0);
 controls.autoRotate = !reduced;
 controls.autoRotateSpeed = 0.28;
 
-scene.add(new THREE.HemisphereLight(0xd8e2e8, 0x1a2228, 0.42));
-const key = new THREE.DirectionalLight(0xfff1dc, 2.05);
+scene.add(new THREE.HemisphereLight(0xf4f7f8, 0xb8c2c8, 0.92));
+const key = new THREE.DirectionalLight(0xfff6e8, 1.35);
 key.position.set(36, 88, 18);
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x7ec8c4, 0.35);
+const rim = new THREE.DirectionalLight(0x5a8a82, 0.42);
 rim.position.set(-60, 12, -40);
 scene.add(rim);
 
@@ -375,7 +384,7 @@ function addCage() {
   group.add(
     new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(SIZE, SIZE, SIZE)),
-      new THREE.LineBasicMaterial({ color: 0xc3ced6, transparent: true, opacity: 0.42 }),
+      new THREE.LineBasicMaterial({ color: 0x3a4650, transparent: true, opacity: 0.62 }),
     ),
   );
   const points = [];
@@ -389,7 +398,7 @@ function addCage() {
   }
   const grid = new THREE.BufferGeometry();
   grid.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
-  group.add(new THREE.LineSegments(grid, new THREE.LineBasicMaterial({ color: 0x243038, transparent: true, opacity: 0.7 })));
+  group.add(new THREE.LineSegments(grid, new THREE.LineBasicMaterial({ color: 0x8b99a3, transparent: true, opacity: 0.45 })));
   scene.add(group);
 }
 
@@ -423,7 +432,7 @@ const plane = new THREE.Mesh(
   new THREE.MeshBasicMaterial({
     color: 0x6d5a3a,
     transparent: true,
-    opacity: 0.07,
+    opacity: 0.16,
     side: THREE.DoubleSide,
     depthWrite: false,
   }),
@@ -433,7 +442,17 @@ scene.add(plane);
 
 const sparks = [];
 const dummy = new THREE.Object3D();
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
 let fly = null;
+let pointerAt = null;
+
+const PLACE_LIFT = {
+  nexus: 3.35,
+  cairn: 1.85,
+  vantage: 4.35,
+  hollow: 1.55,
+};
 
 function setPlane(z) {
   plane.position.y = z - HALF;
@@ -446,11 +465,42 @@ function clearGroup(group) {
 }
 
 function rebuildAnchors(anchors) {
-  clearGroup(anchorsGroup);
+  for (const child of [...anchorsGroup.children]) {
+    child.traverse((node) => {
+      if (node.isSprite !== true) {
+        return;
+      }
+      const material = node.material;
+      if (material === undefined || Array.isArray(material)) {
+        return;
+      }
+      material.map?.dispose();
+      material.dispose();
+    });
+    anchorsGroup.remove(child);
+  }
   for (const anchor of anchors) {
+    if (anchor.centre === null || typeof anchor.centre !== "object") {
+      continue;
+    }
+    if (typeof anchor.centre.x !== "number" || typeof anchor.centre.y !== "number" || typeof anchor.centre.z !== "number") {
+      continue;
+    }
     const proto = PROTO[anchor.class] ?? PROTO.cairn;
     const mesh = proto.clone();
     mesh.position.copy(cell(anchor.centre));
+    const designation = typeof anchor.designation === "string" ? anchor.designation : "";
+    mesh.userData.designation = designation;
+    mesh.traverse((node) => {
+      node.userData.designation = designation;
+    });
+    const name = typeof anchor.name === "string" && anchor.name.length > 0 ? anchor.name : "";
+    if (name.length > 0) {
+      const sprite = nameSprite(name, "#c4a574", 22);
+      sprite.position.set(0, PLACE_LIFT[anchor.class] ?? 2.2, 0);
+      sprite.userData.designation = designation;
+      mesh.add(sprite);
+    }
     anchorsGroup.add(mesh);
   }
 }
@@ -569,7 +619,7 @@ function writeLabels(rows) {
   }
 }
 
-function nameSprite(text, color) {
+function nameSprite(text, color, max = 18) {
   const board = document.createElement("canvas");
   board.width = 256;
   board.height = 64;
@@ -586,7 +636,7 @@ function nameSprite(text, color) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = color;
-  ctx.fillText(text.slice(0, 18), 128, 33);
+  ctx.fillText(text.slice(0, max), 128, 33);
   const texture = new THREE.CanvasTexture(board);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
@@ -780,17 +830,16 @@ function setSlice(z) {
   drawSlice();
 }
 
-function focusIdentity(id) {
-  const at = bodyOf(id);
-  if (at === null) {
-    return false;
+function flyToCell(at, distance = 16) {
+  if (at === null || typeof at !== "object" || typeof at.x !== "number" || typeof at.y !== "number" || typeof at.z !== "number") {
+    return;
   }
   const target = cell(at);
   const away = camera.position.clone().sub(controls.target);
   if (away.lengthSq() < 0.01) {
     away.set(18, 12, 18);
   }
-  away.setLength(16);
+  away.setLength(distance);
   fly = {
     fromPos: camera.position.clone(),
     toPos: target.clone().add(away),
@@ -800,9 +849,263 @@ function focusIdentity(id) {
     duration: 900,
   };
   controls.autoRotate = false;
-  world.flashes.set(id, performance.now());
   setSlice(at.z);
+}
+
+function focusIdentity(id) {
+  const at = bodyOf(id);
+  if (at === null) {
+    return false;
+  }
+  flyToCell(at);
+  world.flashes.set(id, performance.now());
   return true;
+}
+
+function namedAnchors() {
+  return world.anchors.filter((row) => typeof row.name === "string" && row.name.length > 0);
+}
+
+function inscriptions() {
+  const rows = world.follow && world.liveMarks.size > 0 ? [...world.liveMarks.values()] : world.marks;
+  return rows.filter(
+    (row) =>
+      typeof row.text === "string" &&
+      row.text.length > 0 &&
+      row.position !== null &&
+      typeof row.position === "object" &&
+      typeof row.position.x === "number" &&
+      typeof row.position.y === "number" &&
+      typeof row.position.z === "number",
+  );
+}
+
+function ingestText(text) {
+  const bag = text !== null && typeof text === "object" ? text : {};
+  world.worldLore = typeof bag.world_lore === "string" && bag.world_lore.length > 0 ? bag.world_lore : null;
+  const epithets = new Map();
+  const kindLore = new Map();
+  for (const [key, value] of Object.entries(bag)) {
+    if (typeof value !== "string" || value.length === 0) {
+      continue;
+    }
+    const person = /^epithets\.(id_[0-9a-f]+)$/.exec(key);
+    if (person !== null) {
+      epithets.set(person[1], value);
+      continue;
+    }
+    const kind = /^types\.([^.]+)\.lore$/.exec(key);
+    if (kind !== null) {
+      kindLore.set(kind[1], value);
+      continue;
+    }
+    const volume = /^anchors\.([^.]+)\.(name|lore)$/.exec(key);
+    if (volume !== null) {
+      const anchor = world.anchors.find((row) => row.designation === volume[1]);
+      if (anchor !== undefined) {
+        if (volume[2] === "name") {
+          anchor.name = value;
+        } else {
+          anchor.lore = value;
+        }
+      }
+    }
+  }
+  world.epithets = epithets;
+  world.kindLore = kindLore;
+}
+
+function coords(pos) {
+  if (pos === null || typeof pos !== "object") {
+    return "";
+  }
+  return `${pos.x}, ${pos.y}, ${pos.z}`;
+}
+
+function setText(id, value) {
+  const node = $(id);
+  if (node) {
+    node.textContent = value;
+  }
+}
+
+function selectLore(selected, options = {}) {
+  const caption = $("place-caption");
+  const shouldFly = options.fly === true;
+  let current = selected;
+  if (current?.kind === "place" && !world.anchors.some((row) => row.designation === current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  if (current?.kind === "person" && !world.epithets.has(current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  if (current?.kind === "kind" && !world.kindLore.has(current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  if (current?.kind === "mark" && !inscriptions().some((row) => `${row.position.x},${row.position.y},${row.position.z}` === current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  world.selected = current;
+  if (current?.kind === "place") {
+    const anchor = world.anchors.find((row) => row.designation === current.id);
+    const titled = typeof anchor?.name === "string" && anchor.name.length > 0;
+    const title = titled ? anchor.name : `ANCHOR:${current.id}`;
+    const meta = [anchor?.class, `ANCHOR:${current.id}`, coords(anchor?.centre)].filter(Boolean).join(" · ");
+    const body =
+      typeof anchor?.lore === "string" && anchor.lore.length > 0
+        ? anchor.lore
+        : "This volume has no lore yet. That path is text.anchors.<id>.lore.";
+    setText("lore-read-title", title);
+    setText("lore-read-meta", meta);
+    setText("lore-read-body", body);
+    if (caption) {
+      caption.hidden = false;
+      caption.textContent = `${title} · ${coords(anchor?.centre)}`;
+    }
+    if (shouldFly) {
+      flyToCell(anchor?.centre, 22);
+    }
+  } else if (current?.kind === "person") {
+    const name = world.names.get(current.id);
+    const title = typeof name === "string" && name.length > 0 ? name : current.id;
+    setText("lore-read-title", title);
+    setText("lore-read-meta", `epithet · ${current.id}`);
+    setText("lore-read-body", world.epithets.get(current.id) ?? "");
+    if (caption) {
+      caption.hidden = true;
+    }
+    if (shouldFly) {
+      focusIdentity(current.id);
+    }
+  } else if (current?.kind === "kind") {
+    setText("lore-read-title", current.id);
+    setText("lore-read-meta", `text.types.${current.id}.lore`);
+    setText("lore-read-body", world.kindLore.get(current.id) ?? "");
+    if (caption) {
+      caption.hidden = true;
+    }
+  } else if (current?.kind === "mark") {
+    const mark = inscriptions().find((row) => `${row.position.x},${row.position.y},${row.position.z}` === current.id);
+    const author = world.names.get(mark?.authorId) ?? mark?.authorId ?? "someone";
+    setText("lore-read-title", "Inscription");
+    setText("lore-read-meta", `${coords(mark?.position)} · ${author}${mark?.tick !== undefined ? ` · t${mark.tick}` : ""}`);
+    setText("lore-read-body", mark?.text ?? "");
+    if (caption) {
+      caption.hidden = false;
+      caption.textContent = `mark · ${coords(mark?.position)}`;
+    }
+    if (shouldFly) {
+      flyToCell(mark?.position);
+    }
+  } else {
+    const named = $("world-name")?.textContent ?? "Unnamed lattice";
+    setText("lore-read-title", named);
+    setText("lore-read-meta", "text.world_lore");
+    setText(
+      "lore-read-body",
+      world.worldLore ?? "No world lore yet. That path is text.world_lore.",
+    );
+    if (caption) {
+      caption.hidden = true;
+    }
+  }
+  markLoreHere();
+}
+
+function loreRow(title, detail, dataset) {
+  const item = line(title, detail);
+  item.classList.add("go");
+  item.tabIndex = 0;
+  for (const [key, value] of Object.entries(dataset)) {
+    item.dataset[key] = value;
+  }
+  if (world.selected?.kind === dataset.loreKind && world.selected?.id === dataset.loreId) {
+    item.classList.add("here");
+  }
+  return item;
+}
+
+function markLoreHere() {
+  for (const id of ["lore-places", "lore-people", "lore-kinds", "lore-marks"]) {
+    const root = $(id);
+    if (root === null) {
+      continue;
+    }
+    for (const item of root.querySelectorAll("[data-lore-kind]")) {
+      const on =
+        item.getAttribute("data-lore-kind") === world.selected?.kind &&
+        item.getAttribute("data-lore-id") === world.selected?.id;
+      item.classList.toggle("here", on);
+    }
+  }
+}
+
+function paintLoreIndex() {
+  const places = world.anchors
+    .filter((row) => (typeof row.name === "string" && row.name.length > 0) || (typeof row.lore === "string" && row.lore.length > 0))
+    .sort((a, b) => {
+      const an = typeof a.name === "string" && a.name.length > 0 ? a.name : `ANCHOR:${a.designation}`;
+      const bn = typeof b.name === "string" && b.name.length > 0 ? b.name : `ANCHOR:${b.designation}`;
+      return an < bn ? -1 : 1;
+    })
+    .map((row) => {
+      const title = typeof row.name === "string" && row.name.length > 0 ? row.name : `ANCHOR:${row.designation}`;
+      return loreRow(title, `${row.class} · ${coords(row.centre)}`, { loreKind: "place", loreId: row.designation });
+    });
+  fillList("lore-places", places, "No place has a name yet. The intended first vote is text.anchors.<id>.name.");
+  const people = [...world.epithets.entries()]
+    .sort((a, b) => {
+      const an = world.names.get(a[0]) ?? a[0];
+      const bn = world.names.get(b[0]) ?? b[0];
+      return an < bn ? -1 : 1;
+    })
+    .map(([id, epithet]) => {
+      const name = world.names.get(id);
+      const title = typeof name === "string" && name.length > 0 ? name : id;
+      return loreRow(title, clip(epithet, 48), { loreKind: "person", loreId: id });
+    });
+  fillList("lore-people", people, "No epithets yet. That path is text.epithets.<id>.");
+  const kinds = [...world.kindLore.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([id, lore]) => loreRow(id, clip(lore, 48), { loreKind: "kind", loreId: id }));
+  fillList("lore-kinds", kinds, "No kind-lore yet. That path is text.types.<type>.lore.");
+  const marks = inscriptions()
+    .slice()
+    .sort((a, b) => (b.tick ?? 0) - (a.tick ?? 0))
+    .slice(0, 40)
+    .map((row) =>
+      loreRow(clip(row.text, 40), coords(row.position), {
+        loreKind: "mark",
+        loreId: `${row.position.x},${row.position.y},${row.position.z}`,
+      }),
+    );
+  fillList("lore-marks", marks, "No cell is marked yet. A cell is act mark.");
+}
+
+function fillLore() {
+  const named = $("world-name")?.textContent ?? "Unnamed lattice";
+  setText("lore-world-title", named);
+  const body = $("lore-world-body");
+  if (body) {
+    body.textContent = world.worldLore ?? "No world lore yet. That path is text.world_lore.";
+    body.className = world.worldLore === null ? "hint" : "lore-body";
+  }
+  paintLoreIndex();
+  selectLore(world.selected ?? { kind: "world", id: "world" });
+}
+
+function pickPlace(event) {
+  const rect = canvas.getBoundingClientRect();
+  const width = rect.width || 1;
+  const height = rect.height || 1;
+  pointer.set(((event.clientX - rect.left) / width) * 2 - 1, -((event.clientY - rect.top) / height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(anchorsGroup.children, true);
+  const designation = hits[0]?.object?.userData?.designation;
+  if (typeof designation !== "string" || designation.length === 0) {
+    return;
+  }
+  selectLore({ kind: "place", id: designation }, { fly: true });
 }
 
 function frame(now) {
@@ -861,6 +1164,9 @@ function patchLabel(patch) {
 
 function fillList(id, rows, empty) {
   const root = $(id);
+  if (root === null) {
+    return;
+  }
   root.replaceChildren();
   if (rows.length === 0) {
     const li = document.createElement("li");
@@ -1078,6 +1384,7 @@ function drawSlice() {
   ctx.fillStyle = "rgba(109, 90, 58, 0.12)";
   ctx.fillRect(0, 0, css, css);
   plotSlice(ctx, world.anchors, "#6d5a3a", 5, (row) => row.centre);
+  plotSlice(ctx, namedAnchors(), "#c4a574", 6.5, (row) => row.centre);
   plotSlice(ctx, world.wardens, "#c4a574", 3, (row) => row.position);
   plotSlice(ctx, world.drifts, "#7ec8c4", 3, (row) => row.position);
   plotSlice(ctx, visibleEntities(), "#c4a574", 3.5, (row) => row.position);
@@ -1148,12 +1455,15 @@ async function refresh() {
     world.names = names;
     world.founders = founders;
     applyMap(map);
+    ingestText(rules?.registry?.text);
+    rebuildAnchors(world.anchors);
     foldLiveBodies(world.events);
     paintBodies();
     paintMarks();
     paintEntities();
     drawRibbon();
     drawSlice();
+    fillLore();
     setStat("tick", world.present);
     setStat("online", metrics.online);
     setStat("lastTickPresent", metrics.lastTickPresent);
@@ -1277,6 +1587,7 @@ function appendRecord(item) {
     if (world.follow) {
       paintMarks();
     }
+    fillLore();
   }
   if (item.type === "effect.create" || item.type === "effect.move" || item.type === "effect.destroy") {
     foldEntity(item);
@@ -1392,6 +1703,7 @@ function bindControls() {
       }
       try {
         applyMap(await readJson(`/map?t=${t}`));
+        fillLore();
       } catch {
         /* keep last map */
       }
@@ -1411,6 +1723,21 @@ function bindControls() {
   };
   $("zoom-in")?.addEventListener("click", () => dolly(0.78));
   $("zoom-out")?.addEventListener("click", () => dolly(1.28));
+  canvas.addEventListener("pointerdown", (event) => {
+    pointerAt = { x: event.clientX, y: event.clientY };
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (pointerAt === null) {
+      return;
+    }
+    const dx = event.clientX - pointerAt.x;
+    const dy = event.clientY - pointerAt.y;
+    pointerAt = null;
+    if (dx * dx + dy * dy > 25) {
+      return;
+    }
+    pickPlace(event);
+  });
   const roster = $("inhabitants");
   const go = (node) => {
     const row = node instanceof Element ? node.closest("[data-identity-id]") : null;
@@ -1431,6 +1758,40 @@ function bindControls() {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       go(event.target);
+    }
+  });
+  const openLore = (node) => {
+    const row = node instanceof Element ? node.closest("[data-lore-kind]") : null;
+    if (row === null) {
+      return;
+    }
+    const kind = row.getAttribute("data-lore-kind");
+    const id = row.getAttribute("data-lore-id");
+    if (kind === null || id === null) {
+      return;
+    }
+    selectLore({ kind, id }, { fly: true });
+  };
+  for (const root of ["lore-places", "lore-people", "lore-kinds", "lore-marks"]) {
+    const list = $(root);
+    if (list === null) {
+      continue;
+    }
+    list.addEventListener("click", (event) => openLore(event.target));
+    list.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openLore(event.target);
+      }
+    });
+  }
+  $("world-lore")?.addEventListener("click", () => {
+    selectLore({ kind: "world", id: "world" });
+  });
+  $("world-lore")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectLore({ kind: "world", id: "world" });
     }
   });
 }

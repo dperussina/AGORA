@@ -47,7 +47,9 @@ From the shipped tree. Full table: `specs/000-index.md`.
 | Steward | `speak` args, not an 11th tool; Halt is a latch |
 | Listen | GET `/listen` is the public log tail (SSE, not rate-limited); `subscriptions/listen` is a Record snapshot; not identity. Observers subscribe; they do not poll `/events`. |
 | Inspect / automata | `personifies` + `createdBy` on Warden, Drift, `ent:`. No quest tool. Franchise stays identity-only. |
+| Effects | `$self`/`self`, `$target`/`target`, and declared `$<param>` bind in every effect. Unbound `$name` fails (`act.<verb>_failed`). `transfer` is (field, from, to, amount); `currency` is clerk coin. Unknown preconditions fail. |
 | Naming | fame ≥ 5 or notoriety ≥ 5 |
+| Standing decay | Integer remainders (fame debt / 100, notoriety / 1000). A score of 1 survives. Hollow produces none. |
 | Broadcast | `base + floor(fame/2)` |
 | Persistence | SQLite events + vault; fold snapshots every 1k / version bump / segment boundary; 1M segments sealed |
 | Weight / quorum | Integer registry params; Layer 1 default is exact ⅔ |

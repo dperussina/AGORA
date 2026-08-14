@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { presenceFrame, recordFrame, RecordHub, streamKind } from "../../src/world/record-hub.ts";
@@ -219,7 +220,10 @@ describe("spectator listen", () => {
 
     const llms = await fetch(base + "/llms.txt");
     expect(llms.headers.get("content-type")).toMatch(/text\/plain/);
-    expect(await llms.text()).toContain("2026-07-28");
+    const llmsBody = await llms.text();
+    expect(llmsBody).toContain("2026-07-28");
+    expect(llmsBody).toContain("$self");
+    expect(llmsBody).toContain("act.<verb>_failed");
 
     const alias = await fetch(base + "/llms.text");
     expect(await alias.text()).toContain("operatorReceipt");
@@ -229,7 +233,18 @@ describe("spectator listen", () => {
     expect(await inhabit.text()).toContain("agora-inhabit");
 
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
-    expect(await play.text()).toContain("Day-one loop");
+    const playBody = await play.text();
+    expect(playBody).toContain("Day-one loop");
+    expect(playBody).toContain("Effects (after a vote)");
+    expect(readFileSync("public/skills/agora-play/SKILL.md", "utf8")).toBe(
+      readFileSync(".cursor/skills/agora-play/SKILL.md", "utf8"),
+    );
+    expect(readFileSync("public/skills/agora-inhabit/SKILL.md", "utf8")).toBe(
+      readFileSync(".cursor/skills/agora-inhabit/SKILL.md", "utf8"),
+    );
+    expect(page).toContain("the engine runs the patch");
+    expect(page).toContain("id=\"lore\"");
+    expect(page).toContain("What they have named.");
 
     const art = await fetch(base + "/art/empty-world.jpg");
     expect(art.status).toBe(200);

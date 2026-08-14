@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { publicRead } from "../../src/public/read.ts";
 import { generateAnchors, generateWardens, nexuses } from "../../src/engine/geography.ts";
 import { seedRegistry } from "../../src/engine/registry.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
@@ -333,6 +334,10 @@ describe("seed geography", () => {
       ada.sessionToken,
     ).result as { fields: { epithets: string } };
     expect(person.fields.epithets).toBe("The Cartographer");
+    const map = publicRead(world, "/map") as {
+      anchors: Array<{ designation: string; name: string | null; lore: string | null }>;
+    };
+    expect(map.anchors.find((row) => row.designation === nexus!.designation)?.lore).toContain("Hail");
   });
 
   it("spawns Drift from the seed trigger at the interval", () => {

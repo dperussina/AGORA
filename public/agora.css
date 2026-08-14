@@ -31,8 +31,8 @@ body {
 .stage {
   position: relative;
   min-height: 100vh;
-  background: var(--well);
-  color: var(--foam);
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .stage canvas {
@@ -54,6 +54,7 @@ body {
   z-index: 3;
   align-items: center;
   padding: 0.9rem 1.2rem;
+  background: rgba(231, 238, 242, 0.88);
   pointer-events: none;
 }
 
@@ -62,11 +63,11 @@ body {
 }
 
 .stage .mark {
-  color: var(--foam);
+  color: var(--ink);
 }
 
 .stage .mark img {
-  border-color: #2a343c;
+  border-color: var(--rule);
 }
 
 .stage .tag {
@@ -84,27 +85,27 @@ body {
 }
 
 .stage nav a {
-  color: #9aa8b2;
+  color: var(--mute);
 }
 
 .stage nav a:hover {
-  color: var(--foam);
+  color: var(--ink);
 }
 
 .stage nav a.btn {
-  color: var(--well);
-  background: var(--foam);
-  border-color: var(--foam);
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
   padding: 0.4rem 0.7rem;
   font-size: 0.78rem;
 }
 
 .stage nav a.btn:hover,
 .stage nav a.btn:focus-visible {
-  background: #c4a574;
-  border-color: #c4a574;
-  color: var(--well);
-  outline-color: var(--foam);
+  background: var(--brass);
+  border-color: var(--brass);
+  color: var(--paper);
+  outline-color: var(--ink);
 }
 
 .llms-door {
@@ -233,6 +234,18 @@ body {
   letter-spacing: 0.02em;
 }
 
+.place-caption {
+  margin: 0;
+  max-width: 22rem;
+  color: #c4a574;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 0.95rem;
+}
+
+.place-caption[hidden] {
+  display: none;
+}
+
 .tape {
   position: absolute;
   top: 3.6rem;
@@ -241,8 +254,9 @@ body {
   width: min(17rem, 32vw);
   max-height: calc(100vh - 11.5rem);
   overflow: auto;
-  padding: 0.4rem 0.2rem 0.4rem 0.55rem;
-  background: linear-gradient(90deg, transparent, rgba(16, 22, 28, 0.72) 18%);
+  padding: 0.55rem 0.65rem 0.55rem 0.75rem;
+  background: rgba(16, 22, 28, 0.82);
+  border: 1px solid #2a343c;
 }
 
 .tape .kicker {
@@ -613,6 +627,87 @@ a.btn.quiet {
   margin-top: 4.5rem;
 }
 
+.atlas .commons {
+  margin: 0 0 1.8rem;
+  padding-bottom: 1.4rem;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.atlas .commons h3 {
+  margin: 0 0 0.55rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  font-weight: 480;
+  letter-spacing: -0.03em;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.atlas-split {
+  display: grid;
+  gap: 1.6rem;
+}
+
+@media (min-width: 860px) {
+  .atlas-split {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 2.4rem;
+    align-items: start;
+  }
+
+  .atlas-read {
+    padding: 0 0 0 1.6rem;
+    border-top: 0;
+    border-left: 1px solid var(--rule);
+  }
+}
+
+.atlas-index {
+  display: grid;
+  gap: 1.4rem;
+}
+
+.atlas-index .list {
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.atlas-index .list li.go {
+  cursor: pointer;
+}
+
+.atlas-index .list li.go:hover,
+.atlas-index .list li.go:focus-visible {
+  color: var(--brass);
+}
+
+.atlas-index .list li.here strong {
+  color: var(--brass);
+}
+
+.atlas-read {
+  padding: 1.1rem 0 0;
+  border-top: 1px solid var(--rule);
+}
+
+.atlas-read h3 {
+  margin: 0 0 0.35rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  font-weight: 480;
+  letter-spacing: -0.03em;
+  text-transform: none;
+  color: var(--ink);
+}
+
+.lore-body {
+  margin: 1rem 0 0;
+  color: var(--ink);
+  font-size: 1.02rem;
+  white-space: pre-wrap;
+}
+
 .panel-head {
   display: flex;
   flex-wrap: wrap;
@@ -776,7 +871,6 @@ code {
   .tape {
     width: min(12rem, 42vw);
     max-height: calc(100vh - 12.5rem);
-    background: linear-gradient(90deg, transparent, rgba(16, 22, 28, 0.82) 28%);
   }
 
   .stats {
