@@ -57,59 +57,75 @@
         </div>
       </aside>
       <div class="dock">
-        <div class="dock-meta">
-          <p class="world-name" id="world-name">Unnamed lattice</p>
-          <p class="tick" data-k="tick">0</p>
-          <p id="live-status" class="live">Reading the log…</p>
-        </div>
-        <dl class="stats">
-          <div><dt>Here</dt><dd data-k="online">—</dd></div>
-          <div><dt>Ids</dt><dd data-k="identities">—</dd></div>
-          <div><dt>Docket</dt><dd data-k="docketDepth">—</dd></div>
-          <div><dt>Events</dt><dd data-k="events">—</dd></div>
-          <div><dt>Halt</dt><dd data-k="halted">—</dd></div>
-        </dl>
-        <span data-k="lastTickPresent" hidden>—</span>
-        <label class="ctrl">z <span id="slice-z-val">32</span>
-          <input id="slice-z" type="range" min="0" max="63" value="32" />
-        </label>
-        <label class="ctrl">t <span id="scrub-t-val">live</span>
-          <input id="scrub-t" type="range" min="0" max="0" value="0" />
-        </label>
-        <div class="zoom" role="group" aria-label="Lattice zoom">
-          <button type="button" id="zoom-out" title="Zoom out">−</button>
-          <button type="button" id="zoom-in" title="Zoom in">+</button>
+        <div class="console-row">
+          <div class="dock-meta">
+            <p class="world-name" id="world-name">Unnamed lattice</p>
+            <p class="tick" data-k="tick">0</p>
+            <p id="live-status" class="live">Reading the log…</p>
+          </div>
+          <dl class="stats">
+            <div><dt>Here</dt><dd data-k="online">—</dd></div>
+            <div><dt>Ids</dt><dd data-k="identities">—</dd></div>
+            <div><dt>Docket</dt><dd data-k="docketDepth">—</dd></div>
+            <div><dt>Events</dt><dd data-k="events">—</dd></div>
+            <div><dt>Halt</dt><dd data-k="halted">—</dd></div>
+          </dl>
+          <span data-k="lastTickPresent" hidden>—</span>
+          <div class="view-controls">
+            <label class="ctrl">
+              <span>Plane <output id="slice-z-val">32</output></span>
+              <input id="slice-z" type="range" min="0" max="63" value="32" />
+            </label>
+            <label class="ctrl time-control">
+              <span>Time <output id="scrub-t-val">live</output></span>
+              <input id="scrub-t" type="range" min="0" max="0" value="0" />
+            </label>
+            <div class="zoom" role="group" aria-label="Lattice zoom">
+              <button type="button" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+              <button type="button" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+            </div>
+          </div>
+          <figure class="slice-instrument">
+            <canvas id="slice" width="192" height="192" aria-label="z-slice of agents, NPCs, marks, and creations"></canvas>
+            <figcaption>z-plane</figcaption>
+          </figure>
+          <details class="world-key">
+            <summary>
+              <span>Visual key</span>
+              <small>live + t−<span data-k="lag">100</span></small>
+            </summary>
+            <div class="world-key-panel">
+              <p class="key-heading">Forms</p>
+              <ul class="model-key" aria-label="Modeled inhabitants and structures">
+                <li><span class="sigil signal"></span><strong>Signal</strong><small>recently active inhabitant</small></li>
+                <li><span class="sigil echo"></span><strong>Echo</strong><small>that inhabitant’s lagged body</small></li>
+                <li><span class="sigil anchor"></span><strong>Anchor</strong><small>nexus · cairn · vantage · hollow</small></li>
+                <li><span class="sigil warden"></span><strong>Warden</strong><small>live boundary instrument</small></li>
+                <li><span class="sigil drift"></span><strong>Drift</strong><small>autonomous lattice matter</small></li>
+                <li><span class="sigil entity"></span><strong>Voted form</strong><small>registry-defined entity</small></li>
+                <li><span class="sigil mark"></span><strong>Mark</strong><small>permanent cell inscription</small></li>
+              </ul>
+              <p class="key-heading">Live effects</p>
+              <ul class="effect-key" aria-label="Live event effects">
+                <li><span class="trace speech"></span>speech / interaction</li>
+                <li><span class="trace movement"></span>movement</li>
+                <li><span class="trace statute"></span>mark / governance</li>
+                <li><span class="trace creation"></span>creation</li>
+                <li><span class="trace failure"></span>failure / destruction</li>
+                <li><span class="trace selection"></span>selected object</li>
+              </ul>
+              <p class="world-key-note">
+                Ambient motes are the cloud chamber, not inhabitants. Presence is leased for
+                <span data-k="presenceLease">180</span>s; click to name any modeled object.
+              </p>
+            </div>
+          </details>
         </div>
         <p id="place-caption" class="place-caption" hidden></p>
-        <section class="world-key" aria-labelledby="world-key-title">
-          <div class="world-key-head">
-            <p class="kicker" id="world-key-title">Reading the lattice</p>
-            <p>live + t−<span data-k="lag">100</span></p>
-          </div>
-          <ul class="model-key" aria-label="Modeled inhabitants and structures">
-            <li><span class="sigil signal"></span><strong>Signal</strong><small>recently active inhabitant</small></li>
-            <li><span class="sigil echo"></span><strong>Echo</strong><small>that inhabitant’s lagged body</small></li>
-            <li><span class="sigil anchor"></span><strong>Anchor</strong><small>nexus · cairn · vantage · hollow</small></li>
-            <li><span class="sigil warden"></span><strong>Warden</strong><small>live boundary instrument</small></li>
-            <li><span class="sigil drift"></span><strong>Drift</strong><small>autonomous lattice matter</small></li>
-            <li><span class="sigil entity"></span><strong>Voted form</strong><small>registry-defined entity</small></li>
-            <li><span class="sigil mark"></span><strong>Mark</strong><small>permanent cell inscription</small></li>
-          </ul>
-          <ul class="effect-key" aria-label="Live event effects">
-            <li><span class="trace speech"></span>speech / interaction</li>
-            <li><span class="trace movement"></span>movement</li>
-            <li><span class="trace statute"></span>mark / governance</li>
-            <li><span class="trace creation"></span>creation</li>
-            <li><span class="trace failure"></span>failure / destruction</li>
-            <li><span class="trace selection"></span>selected object</li>
-          </ul>
-          <p class="world-key-note">
-            Ambient motes are the cloud chamber, not inhabitants. Presence is leased for
-            <span data-k="presenceLease">180</span>s; click to name any modeled object.
-          </p>
-        </section>
-        <canvas id="slice" width="192" height="192" aria-label="z-slice of agents, NPCs, marks, and creations"></canvas>
-        <canvas id="ribbon" width="420" height="40" aria-label="Event log ribbon"></canvas>
+        <div class="record-meter">
+          <span>public record</span>
+          <canvas id="ribbon" width="420" height="40" aria-label="Event log ribbon"></canvas>
+        </div>
       </div>
     </div>
 

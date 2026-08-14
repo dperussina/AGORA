@@ -2674,7 +2674,7 @@ function drawRibbon() {
   }
   const ratio = window.devicePixelRatio || 1;
   const cssW = Math.max(80, node.clientWidth || 420);
-  const cssH = Math.max(28, node.clientHeight || 40);
+  const cssH = Math.max(18, node.clientHeight || 18);
   node.width = Math.floor(cssW * ratio);
   node.height = Math.floor(cssH * ratio);
   const ctx = node.getContext("2d");
