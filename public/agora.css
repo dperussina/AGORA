@@ -1070,7 +1070,8 @@ code {
   }
 }
 
-/* Civic observatory */
+/* Superseded first-pass redesign; kept inert while the replacement settles. */
+@media not all {
 
 html {
   scroll-behavior: smooth;
@@ -1899,6 +1900,556 @@ main::before {
   .foot {
     padding-top: 2rem;
     padding-bottom: 2rem;
+  }
+}
+
+}
+
+/* Restrained observatory */
+
+html {
+  scroll-behavior: smooth;
+}
+
+.stage .bar {
+  display: flex;
+  align-items: center;
+  min-height: 3.6rem;
+  border-bottom: 1px solid rgba(20, 27, 34, 0.12);
+}
+
+.stage .tag {
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.stage nav {
+  gap: 0.9rem;
+}
+
+main {
+  max-width: 72rem;
+  padding-top: 0;
+}
+
+.threshold {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14rem;
+  gap: clamp(3rem, 8vw, 7rem);
+  align-items: end;
+  padding: clamp(5rem, 10vw, 8rem) 0 5rem;
+}
+
+.threshold-mark {
+  display: none;
+}
+
+.threshold-copy h1 {
+  max-width: 13ch;
+  margin: 0 0 1.5rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(3rem, 7vw, 5.4rem);
+  font-weight: 480;
+  letter-spacing: -0.055em;
+  line-height: 0.92;
+}
+
+.threshold-copy .lede {
+  max-width: 42rem;
+  color: var(--ink);
+  font-size: 1.12rem;
+}
+
+.threshold-actions,
+.operation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.6rem;
+}
+
+.threshold-facts {
+  margin: 0;
+  border-top: 2px solid var(--ink);
+}
+
+.threshold-facts div {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.threshold-facts dt,
+.threshold-facts dd {
+  margin: 0;
+}
+
+.threshold-facts dt {
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.threshold-facts dd {
+  margin-top: 0.2rem;
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.principles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.principles article {
+  padding: 2rem 1.6rem 2.2rem 0;
+}
+
+.principles article + article {
+  padding-left: 1.6rem;
+  border-left: 1px solid var(--rule);
+}
+
+.principle-code,
+.operation-number {
+  color: var(--brass);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+}
+
+.principles h2 {
+  max-width: 14ch;
+  margin: 1rem 0 0.7rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 480;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.principles p {
+  margin: 0;
+  color: var(--mute);
+  font-size: 0.92rem;
+}
+
+.instrument,
+.record-instrument,
+.operations {
+  margin-top: 6rem;
+  padding-top: 1.4rem;
+  border-top: 2px solid var(--ink);
+}
+
+.instrument-head {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: start;
+  padding-bottom: 2rem;
+}
+
+.instrument-index {
+  margin: 0;
+  color: var(--brass);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 1rem;
+}
+
+.instrument-title h2,
+.record-instrument .instrument-title h2,
+.operations-head h2 {
+  max-width: 16ch;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  font-weight: 480;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+}
+
+.instrument-deck {
+  max-width: 40rem;
+  margin: 0.8rem 0 0;
+  color: var(--mute);
+}
+
+.instrument-census {
+  margin: 0;
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.gazetteer-preface,
+.statute-preface {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.45fr) minmax(0, 1fr);
+  gap: 3rem;
+  padding: 2.4rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.gazetteer-preface h3,
+.statute-preface h3 {
+  grid-column: 1;
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
+  font-weight: 480;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  text-transform: none;
+}
+
+.gazetteer-preface .folio-preface-body,
+.statute-preface .folio-preface-body {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+}
+
+.instrument-body {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.8fr) minmax(0, 1.2fr);
+  margin-top: 1.5rem;
+}
+
+.folio-cat {
+  min-width: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.folio-index {
+  max-height: 32rem;
+}
+
+.reading-plate {
+  min-height: 32rem;
+  padding: clamp(2rem, 5vw, 3.5rem);
+  background: var(--well);
+  color: var(--foam);
+}
+
+.reading-plate h3 {
+  max-width: 13ch;
+  margin: 0;
+  color: var(--foam);
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2.4rem, 4.5vw, 3.8rem);
+  font-weight: 480;
+  letter-spacing: -0.05em;
+  line-height: 0.95;
+  text-transform: none;
+}
+
+.statute {
+  margin-right: -2rem;
+  margin-left: -2rem;
+  padding-right: 2rem;
+  padding-bottom: 2rem;
+  padding-left: 2rem;
+  border-top-color: #9a7844;
+  background: var(--well);
+  color: var(--foam);
+}
+
+.statute .instrument-title h2,
+.statute-preface h3 {
+  color: var(--foam);
+}
+
+.statute .instrument-deck,
+.statute .instrument-census,
+.statute-preface .folio-preface-body {
+  color: #8b99a3;
+}
+
+.statute-preface,
+.statute .folio-cat,
+.statute .folio-regs,
+.statute .folio-index li {
+  border-color: #2a343c;
+}
+
+.statute .folio-regs {
+  background: var(--well);
+}
+
+.statute .folio-reg {
+  color: #8b99a3;
+}
+
+.statute .folio-reg.on,
+.statute .folio-reg[aria-selected="true"] {
+  color: #c4a574;
+  border-bottom-color: #c4a574;
+}
+
+.statute .folio-index .idx-class,
+.statute .folio-index .idx-at {
+  color: #71808a;
+}
+
+.statute .folio-index strong {
+  color: var(--foam);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+}
+
+.law-plate {
+  border-left: 1px solid #2a343c;
+  background: #0c1116;
+}
+
+.record-live {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  margin: 0;
+  color: var(--signal);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.record-live span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--signal);
+}
+
+.record-instrument .ledger {
+  margin-top: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.record-instrument .well {
+  padding-top: 1.5rem;
+}
+
+.record-instrument .record {
+  max-height: 28rem;
+}
+
+.operations-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(16rem, 0.9fr);
+  gap: 3rem;
+  align-items: end;
+}
+
+.operations-head .kicker,
+.operations-head h2 {
+  grid-column: 1;
+}
+
+.operations-head p:last-child {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--mute);
+}
+
+.operations-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 1fr;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.operation {
+  min-width: 0;
+  padding: 1.8rem;
+  border-left: 1px solid var(--rule);
+}
+
+.operation:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.operation h3 {
+  max-width: 13ch;
+  margin: 1.2rem 0 0.8rem;
+  color: var(--ink);
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  font-weight: 480;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  text-transform: none;
+}
+
+.operation > p:not(.operation-number, .operation-links) {
+  color: var(--mute);
+  font-size: 0.92rem;
+}
+
+.operation details {
+  border-top: 1px solid var(--rule);
+}
+
+.operation details:first-of-type {
+  margin-top: 1.4rem;
+}
+
+.operation summary {
+  padding: 0.75rem 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.operation .sheet {
+  min-height: 0;
+  max-height: 18rem;
+  margin-bottom: 1rem;
+  font-size: 0.68rem;
+}
+
+.operation-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.4rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.operation-links a {
+  color: var(--brass);
+}
+
+.foot {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 3rem 4.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+.foot p:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+@media (max-width: 800px) {
+  .stage .bar {
+    padding: 0.7rem;
+  }
+
+  .stage .bar nav a:not(.btn) {
+    display: none;
+  }
+
+  .stage .bar nav {
+    margin-left: auto;
+  }
+
+  .stage .tag {
+    display: block;
+  }
+
+  main,
+  .foot {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .threshold,
+  .instrument-head,
+  .instrument-body,
+  .operations-head,
+  .operations-grid,
+  .gazetteer-preface,
+  .statute-preface {
+    display: block;
+  }
+
+  .threshold {
+    padding: 4rem 0;
+  }
+
+  .threshold-facts {
+    margin-top: 2.5rem;
+  }
+
+  .principles {
+    display: block;
+  }
+
+  .principles article,
+  .principles article + article {
+    padding: 1.8rem 0;
+    border-bottom: 1px solid var(--rule);
+    border-left: 0;
+  }
+
+  .instrument,
+  .record-instrument,
+  .operations {
+    margin-top: 4.5rem;
+  }
+
+  .instrument-index {
+    margin-bottom: 1rem;
+  }
+
+  .instrument-census,
+  .record-live {
+    margin-top: 1rem;
+  }
+
+  .gazetteer-preface .folio-preface-body,
+  .statute-preface .folio-preface-body {
+    margin-top: 1.5rem;
+  }
+
+  .folio-index {
+    max-height: 22rem;
+  }
+
+  .reading-plate {
+    min-height: 24rem;
+  }
+
+  .statute {
+    margin-right: -1rem;
+    margin-left: -1rem;
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .law-plate {
+    border-top: 1px solid #2a343c;
+    border-left: 0;
+  }
+
+  .operations-head p:last-child {
+    margin-top: 1rem;
+  }
+
+  .operation,
+  .operation:first-child {
+    padding: 1.8rem 0;
+    border-bottom: 1px solid var(--rule);
+    border-left: 0;
   }
 }
 
