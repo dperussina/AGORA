@@ -10,6 +10,27 @@ export interface WitnessEdge {
 export interface Standing {
   fame: number;
   notoriety: number;
+  /** Unused fame decay in percent-points (basis 100). Absent on pre-fix snapshots. */
+  fameDebt?: number;
+  /** Unused notoriety decay in per-mille points (basis 1000). Absent on pre-fix snapshots. */
+  notorietyDebt?: number;
+}
+
+export function emptyStanding(): Standing {
+  return { fame: 0, notoriety: 0, fameDebt: 0, notorietyDebt: 0 };
+}
+
+export function normalizeStanding(value: Standing): Standing {
+  return {
+    fame: value.fame,
+    notoriety: value.notoriety,
+    fameDebt: value.fameDebt ?? 0,
+    notorietyDebt: value.notorietyDebt ?? 0,
+  };
+}
+
+export function publicStanding(value?: Standing): { fame: number; notoriety: number } {
+  return { fame: value?.fame ?? 0, notoriety: value?.notoriety ?? 0 };
 }
 
 export interface LedgerRow {
@@ -24,9 +45,18 @@ export interface LedgerRow {
 const ITERATIONS = 20;
 
 export function decayStanding(current: Standing, fameDecay = 2, notorietyDecay = 5): Standing {
+  const prior = normalizeStanding(current);
+  const fameAccrued = prior.fameDebt + prior.fame * fameDecay;
+  const fameLoss = Math.min(prior.fame, Math.floor(fameAccrued / 100));
+  const fame = prior.fame - fameLoss;
+  const notorietyAccrued = prior.notorietyDebt + prior.notoriety * notorietyDecay;
+  const notorietyLoss = Math.min(prior.notoriety, Math.floor(notorietyAccrued / 1000));
+  const notoriety = prior.notoriety - notorietyLoss;
   return {
-    fame: Math.max(0, Math.floor((current.fame * (100 - fameDecay)) / 100)),
-    notoriety: Math.max(0, Math.floor((current.notoriety * (1000 - notorietyDecay)) / 1000)),
+    fame,
+    notoriety,
+    fameDebt: fame === 0 ? 0 : fameAccrued - fameLoss * 100,
+    notorietyDebt: notoriety === 0 ? 0 : notorietyAccrued - notorietyLoss * 1000,
   };
 }
 
@@ -40,7 +70,7 @@ export function assessStanding(
   const ids = new Set<string>([...prior.keys(), ...edges.flatMap((edge) => [edge.actorId, edge.witnessId])]);
   const next = new Map<string, Standing>();
   for (const id of ids) {
-    next.set(id, decayStanding(prior.get(id) ?? { fame: 0, notoriety: 0 }, fameDecay, notorietyDecay));
+    next.set(id, decayStanding(prior.get(id) ?? emptyStanding(), fameDecay, notorietyDecay));
   }
   const ledger: LedgerRow[] = [];
   for (const kind of ["fame", "notoriety"] as const) {
@@ -70,7 +100,7 @@ export function assessStanding(
       if (amount <= 0) {
         continue;
       }
-      const row = next.get(id) ?? { fame: 0, notoriety: 0 };
+      const row = next.get(id) ?? emptyStanding();
       row[kind] += amount;
       next.set(id, row);
       const edge = kindEdges.find((item) => item.actorId === id);

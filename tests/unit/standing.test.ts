@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessStanding, broadcastRadius, decayStanding } from "../../src/engine/standing.ts";
+import { assessStanding, broadcastRadius, decayStanding, emptyStanding } from "../../src/engine/standing.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -54,14 +54,50 @@ function registerNamed(world: World, name: string) {
 
 describe("standing", () => {
   it("decays in integer math and does not use standing as vote weight", () => {
-    expect(decayStanding({ fame: 100, notoriety: 1000 })).toEqual({ fame: 98, notoriety: 995 });
+    expect(decayStanding({ fame: 100, notoriety: 1000, fameDebt: 0, notorietyDebt: 0 })).toEqual({
+      fame: 98,
+      notoriety: 995,
+      fameDebt: 0,
+      notorietyDebt: 0,
+    });
+    expect(decayStanding({ fame: 1, notoriety: 1, fameDebt: 0, notorietyDebt: 0 })).toEqual({
+      fame: 1,
+      notoriety: 1,
+      fameDebt: 2,
+      notorietyDebt: 5,
+    });
     const assessed = assessStanding(
-      new Map([["a", { fame: 0, notoriety: 0 }]]),
+      new Map([["a", emptyStanding()]]),
       [{ actorId: "a", witnessId: "b", kind: "fame", eventSeq: 1 }],
       1,
     );
     expect((assessed.next.get("a")?.fame ?? 0) > 0).toBe(true);
     expect(broadcastRadius(10, true, 12, 4)).toBe((12 + 5) * 4);
+  });
+
+  it("lets single-witness fame accumulate instead of flooring to zero", () => {
+    let standing = new Map([["a", emptyStanding()]]);
+    for (let tick = 1; tick <= 5; tick++) {
+      standing = assessStanding(
+        standing,
+        [{ actorId: "a", witnessId: "b", kind: "fame", eventSeq: tick }],
+        tick,
+      ).next;
+    }
+    expect(standing.get("a")?.fame).toBe(5);
+  });
+
+  it("keeps a lone fame point across idle ticks until remainder decay lands", () => {
+    let standing = assessStanding(
+      new Map([["a", emptyStanding()]]),
+      [{ actorId: "a", witnessId: "b", kind: "fame", eventSeq: 1 }],
+      1,
+    ).next;
+    expect(standing.get("a")?.fame).toBe(1);
+    for (let tick = 2; tick <= 10; tick++) {
+      standing = assessStanding(standing, [], tick).next;
+    }
+    expect(standing.get("a")?.fame).toBe(1);
   });
 
   it("requires a witness and records a ledger", () => {
@@ -81,6 +117,12 @@ describe("standing", () => {
     expect(world.ledger.some((row) => row.actorId === ada.identityId && row.kind === "fame" && row.eventSeq >= 0)).toBe(
       true,
     );
+    for (let i = 0; i < 8; i++) {
+      call(world, req("tools/call", { name: "whoami", arguments: {} }, 10 + i), ada.sessionToken);
+      call(world, req("tools/call", { name: "whoami", arguments: {} }, 20 + i), bob.sessionToken);
+      world.advanceTick();
+    }
+    expect((world.standing.get(ada.identityId)?.fame ?? 0) > 0).toBe(true);
   });
 
   it("delivers positional speech and refuses channels", () => {

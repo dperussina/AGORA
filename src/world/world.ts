@@ -27,7 +27,15 @@ import {
 } from "../engine/geography.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
 import { runEffects, type Entity } from "../engine/effects.ts";
-import { assessStanding, broadcastRadius, type LedgerRow, type Standing, type WitnessEdge } from "../engine/standing.ts";
+import {
+  assessStanding,
+  broadcastRadius,
+  normalizeStanding,
+  publicStanding,
+  type LedgerRow,
+  type Standing,
+  type WitnessEdge,
+} from "../engine/standing.ts";
 import { foldWorld, occupancyAtTick } from "../engine/world-fold.ts";
 import type { WorldSnapshot } from "../persist/snapshot.ts";
 import {
@@ -836,7 +844,7 @@ export class World {
           position: { ...body, t: this.clerk.tick },
           sessions: this.identities.sessionCount(identity),
           ...this.fields.get(target),
-          standing: this.standing.get(target) ?? { fame: 0, notoriety: 0 },
+          standing: publicStanding(this.standing.get(target)),
           ledger: this.ledger.filter((row) => row.actorId === target).slice(-20),
           epithets: this.clerk.registry.text[`epithets.${target}`] ?? null,
         },
@@ -1660,7 +1668,7 @@ export class World {
     }
     this.standing.clear();
     for (const [id, value] of snapshot.standing) {
-      this.standing.set(id, value);
+      this.standing.set(id, normalizeStanding(value));
     }
     this.ledger.length = 0;
     this.ledger.push(...snapshot.ledger);

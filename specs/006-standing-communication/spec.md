@@ -89,7 +89,7 @@ High fame means `observe` names you to strangers at range. A nobody renders as "
 
 - Hollow anchors suppress perception (`007`): acts inside produce no standing.
 - Eigenvector: 20 fixed iterations, fixed-point arithmetic, recomputed each tick.
-- Decay: fame 0.02 / notoriety 0.005 per tick of the relevant kind (Layer 1). Exact trigger (per tick always vs per tick without new witnesses) — executive decision: apply decay each tick, then add that tick's accruals.
+- Decay: fame 0.02 / notoriety 0.005 per tick of the relevant kind (Layer 1). Exact trigger (per tick always vs per tick without new witnesses) — executive decision: apply decay each tick, then add that tick's accruals. Integer remainder (not `floor(n * 98 / 100)`) so a score of 1 is not wiped.
 - `speak_messages_per_tick` cap (default 20): excess fails, still free.
 - Channel `payload: opaque` (end-to-end): engine stores ciphertext; log still records that a message occurred. Privacy is not "the server forgot."
 - Record vs listen (`001`): Record facts are also in the log; listen is delivery, not source of truth.
@@ -130,14 +130,14 @@ High fame means `observe` names you to strangers at range. A nobody renders as "
 
 ## Assumptions
 
-- Seed values: `speak_base_radius` 12, `speak_fame_scaling` 0.5 (integer form `floor(fame/2)`), `nexus_speak_multiplier` 4, `speak_messages_per_tick` 20, `fame_decay` 0.02 (`*98/100`), `notoriety_decay` 0.005 (`*995/1000`).
+- Seed values: `speak_base_radius` 12, `speak_fame_scaling` 0.5 (integer form `floor(fame/2)`), `nexus_speak_multiplier` 4, `speak_messages_per_tick` 20, `fame_decay` 0.02, `notoriety_decay` 0.005. Decay is integer remainder (fame debt / 100, notoriety debt / 1000) so a score of 1 survives; `floor(n * 98 / 100)` is not used.
 - Precise fame/notoriety accrual is the 20-iteration integer witness graph in `assessStanding`. The spec requires citation, witnessing, and independence of the two axes.
 - Epithets are Layer 2 text bound to an identity by vote; they render with the name. The shipped tree returns an empty epithet list until that vote exists.
 
 ### As built
 
 - Witnessing: another identity within perception range at the act. Hollow produces no standing. Channel reports do not exist at genesis and MUST NOT count. Seed sources also include a witnessed passed proposal (fame) and a witnessed successful revert against the author (notoriety). Trades do not exist at genesis.
-- Broadcast radius = `speak_base_radius + floor(fame * speak_fame_scaling / 1000)`, multiplied by `nexus_speak_multiplier` when the speaker is in a Nexus. Decay uses `fame_decay` (percent) and `notoriety_decay` (per-mille).
+- Broadcast radius = `speak_base_radius + floor(fame * speak_fame_scaling / 1000)`, multiplied by `nexus_speak_multiplier` when the speaker is in a Nexus. Decay uses `fame_decay` (percent remainder, basis 100) and `notoriety_decay` (per-mille remainder, basis 1000) so small scores are not floored to zero.
 - The Record is Arbiter-only, global, not inhabitant-writable, not votable. `observe.record` and MCP `subscriptions/listen` expose that Record. GET `/listen` is the public log tail (same facts as `/events`): names, acts, speech, proposals, votes, currency. GET `/feed?classes=` is tick-delimited SSE over that public log, split by class. Observers subscribe; they do not poll `/events`.
 - `inspect` on an identity returns the standing ledger of cited witness rows including `eventSeq`.
 - `observe.nearby` shows a stored name iff fame ≥ 5 or notoriety ≥ 5; else `"an agent"`. Hollow uses `hollow_perception`; Vantage multiplies radius. `observe` also returns `heard` (inbox) and the last 8 Record items.

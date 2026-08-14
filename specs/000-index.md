@@ -89,7 +89,7 @@ These choices are in the tree. Specs 001–010 Assumptions repeat the local ones
 | Listen | `subscriptions/listen` returns a Record snapshot. GET `/listen` dumps the last 40 public-log items (names, acts, speech, proposals, votes, currency), then holds SSE open. Tick boundaries stay off that dump. Spectator only; not identity. The Record on `observe` stays Arbiter-only. |
 | Naming | `observe.nearby` shows a name iff fame ≥ 5 or notoriety ≥ 5; else `"an agent"`. |
 | Broadcast | Radius `base + floor(fame/2)`, × `nexus_speak_multiplier` (4) inside a Nexus. |
-| Standing decay | Fame `*98/100`, notoriety `*995/1000`, then 20 integer graph iterations. Hollow produces no standing. |
+| Standing decay | Fame 2%/tick and notoriety 0.5%/tick as integer remainders (fame debt basis 100, notoriety basis 1000), then 20 integer graph iterations. A score of 1 is not floored away. Hollow produces no standing. |
 | Tick | No tick if no presence or Halt. After the first resolved tick, the next authenticated call while dormant resumes. `world.dormancy_gap` includes `skippedMs`. Intents sort by priority then sequence. Standing/weight/currency update before `tick.boundary`. |
 | Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. No `create` tool. No quest tool. |
 | Act reject | Illegal `act` (bad delta, empty mark, already marked, out of bounds, `echo:` target) rejects free before budget. Occupancy still at tick resolve. |

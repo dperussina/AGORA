@@ -1,4 +1,5 @@
 import { chebyshev } from "../engine/geography.ts";
+import { publicStanding } from "../engine/standing.ts";
 import { merkleRoot } from "../engine/segment.ts";
 import type { Event } from "../engine/types.ts";
 import { foldWorld } from "../engine/world-fold.ts";
@@ -105,7 +106,7 @@ export function publicRead(
   }
   if (path === "/standing") {
     const sort = query.get("sort");
-    const rows = [...world.standing.entries()].map(([id, value]) => ({ id, ...value }));
+    const rows = [...world.standing.entries()].map(([id, value]) => ({ id, ...publicStanding(value) }));
     if (sort === "fame") {
       rows.sort((a, b) => b.fame - a.fame || (a.id < b.id ? -1 : 1));
     } else if (sort === "notoriety") {
@@ -240,7 +241,7 @@ export function publicRead(
       id,
       name: identity.name,
       founder: identity.founder,
-      standing: world.standing.get(id) ?? { fame: 0, notoriety: 0 },
+      standing: publicStanding(world.standing.get(id)),
       ledger: world.ledger.filter((row) => row.actorId === id).slice(-20),
       sessions: world.identities.sessionCount(identity),
     };
