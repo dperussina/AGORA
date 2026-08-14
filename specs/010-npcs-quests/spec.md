@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-14
 
-**Status**: Specified (not built)
+**Status**: Specified — plan ready (not built)
 
 **Input**: User description: "Spec NPCs and quests from GAME.md §14.6 and §15. Do not build yet. Do not invent mechanics. Seed families stay in 007."
 

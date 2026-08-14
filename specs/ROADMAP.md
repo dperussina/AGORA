@@ -13,7 +13,7 @@
 | 007 | Seed world, NPCs, day-one loop | §14–§16, §18 | done |
 | 008 | Public API, feed, storage | §21, §23 | done |
 | 009 | Steward and population states | §10, §11 | done |
-| 010 | NPCs and quests (automata + no authored objectives) | §14.6, §15 | specified (not built) |
+| 010 | NPCs and quests (automata + no authored objectives) | §14.6, §15 | specified + planned (not built) |
 | — | Non-goals | §2 | n/a (constitution Bedrock Constraints) |
 | — | Failure modes | §19 | done (traced in `000-index.md`) |
 | — | Build order | §24 | n/a (constitution Development Workflow) |
