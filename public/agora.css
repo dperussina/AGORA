@@ -68,6 +68,51 @@ body {
   color: var(--foam);
 }
 
+.brand {
+  position: absolute;
+  top: 4.6rem;
+  left: 1.6rem;
+  z-index: 4;
+  max-width: 30rem;
+}
+
+.wordmark {
+  margin: 0 0 0.35rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(3.4rem, 8vw, 5.8rem);
+  font-weight: 480;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
+  color: var(--foam);
+}
+
+.brand-line {
+  margin: 0 0 0.75rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(1.15rem, 2.3vw, 1.5rem);
+  color: #c4a574;
+}
+
+.brand .lede {
+  margin: 0 0 1.2rem;
+  color: #c5d0d6;
+}
+
+.stage .btn {
+  border-color: var(--foam);
+}
+
+.stage .btn.quiet {
+  color: var(--foam);
+}
+
+.zoom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
 .hud {
   position: absolute;
   left: 1.6rem;
@@ -75,6 +120,13 @@ body {
   z-index: 3;
   width: min(34rem, calc(100% - 20rem));
   pointer-events: auto;
+}
+
+.world-name {
+  margin: 0 0 0.35rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.15rem;
+  color: var(--foam);
 }
 
 .hud .kicker {
@@ -87,11 +139,8 @@ body {
   color: var(--foam);
 }
 
-.hud h1 {
-  margin: 0 0 0.35rem;
-  font-size: clamp(1.4rem, 3vw, 2rem);
-  max-width: 22ch;
-  color: var(--foam);
+.llms-door {
+  margin-top: 0;
 }
 
 .hud .stats {
@@ -419,10 +468,13 @@ a.btn.quiet {
   vertical-align: middle;
 }
 
+.dot.player { background: #7ec8c4; box-shadow: 0 0 6px #7ec8c4; }
 .dot.nexus { background: var(--brass); }
-.dot.cairn { background: var(--ink); }
+.dot.cairn { background: var(--foam); }
 .dot.vantage { background: var(--signal); }
-.dot.hollow { background: var(--mute); }
+.dot.hollow { background: #1a2228; box-shadow: inset 0 0 0 1px #5a6873; }
+.dot.warden { background: #141b22; box-shadow: inset 0 0 0 1px #6d5a3a; }
+.dot.drift { background: #3d5248; }
 
 .split {
   display: grid;
@@ -609,9 +661,14 @@ code {
     padding-right: 1.2rem;
   }
 
+  .brand,
   .hud {
     width: calc(100% - 2.2rem);
     left: 1.1rem;
+  }
+
+  .brand {
+    top: 4.2rem;
   }
 
   .tape {

@@ -136,6 +136,19 @@ export function publicRead(
         centre: anchor.centre,
         name: world.clerk.registry.text[`anchors.${anchor.designation}.name`] ?? null,
       })),
+      wardens: world.wardens
+        .filter((warden) => z === null || warden.position.z === Number(z))
+        .map((warden) => ({
+          id: warden.id,
+          axis: warden.axis,
+          face: warden.face,
+          position: warden.position,
+        })),
+      drifts: t === null
+        ? world.drifts
+            .filter((drift) => z === null || drift.position.z === Number(z))
+            .map((drift) => ({ id: drift.id, position: drift.position }))
+        : [],
     };
   }
   if (path === "/events" || path === "/history") {
