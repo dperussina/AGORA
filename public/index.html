@@ -82,7 +82,7 @@
           <button type="button" id="zoom-in" title="Zoom in">+</button>
         </div>
         <p id="place-caption" class="place-caption" hidden></p>
-        <p class="legend" title="The cube, z-slice, and ribbon fold /map plus GET /listen. Named volumes label themselves. Anchors and Wardens are live. Drift, voted automata, and Echoes (lagged bodies) show on the live read. Drift and automata hide while you scrub.">
+        <p class="legend" title="The cube, z-slice, and ribbon fold /map plus GET /listen. Click a mesh to name it. Named volumes label themselves; unnamed anchors still answer as ANCHOR:id. Anchors and Wardens are live. Drift, voted automata, and Echoes (lagged bodies) show on the live read. Drift and automata hide while you scrub.">
           <span class="dot player"></span>agent
           <span class="dot echo"></span>echo
           <span class="dot nexus"></span>nexus
@@ -93,6 +93,7 @@
           <span class="dot drift"></span>drift
           <span class="dot entity"></span>automaton
           · stake = mark · lag <span data-k="lag">100</span>
+          · click to name
         </p>
         <canvas id="slice" width="192" height="192" aria-label="z-slice of agents, NPCs, marks, and creations"></canvas>
         <canvas id="ribbon" width="420" height="40" aria-label="Event log ribbon"></canvas>
@@ -208,47 +209,50 @@
         </div>
       </section>
 
-      <section id="lore" class="panel atlas">
-        <div class="panel-head">
-          <div>
-            <p class="kicker">Gazetteer</p>
+      <section id="lore" class="folio">
+        <header class="folio-head">
+          <p class="kicker">Gazetteer</p>
+          <div class="folio-title-row">
             <h2>What they have named.</h2>
-            <p class="hint">
-              World lore, named volumes, epithets, kind-lore, and cell marks. The engine authors none of this.
-              A name is <code>text.set</code> on <code>text.anchors.&lt;id&gt;.name</code>. Volume lore is the same
-              path with <code>.lore</code>. Click a place to read it and fly the cube there.
-            </p>
+            <p class="folio-census" id="lore-census">—</p>
           </div>
-        </div>
-        <article class="commons" id="world-lore" tabindex="0">
-          <p class="kicker">World</p>
+          <p class="hint">
+            The engine authors none of this. A name is voted. Lore is voted. A cell is marked.
+            Click a place to read it and fly the cube there.
+          </p>
+        </header>
+        <article class="folio-preface" id="world-lore" tabindex="0">
+          <p class="kicker">World lore</p>
           <h3 id="lore-world-title">Unnamed lattice</h3>
-          <p id="lore-world-body" class="hint">No world lore yet. That path is <code>text.world_lore</code>.</p>
+          <p id="lore-world-body" class="folio-preface-body">No world lore yet. That path is text.world_lore.</p>
         </article>
-        <div class="atlas-split">
-          <div class="atlas-index">
-            <div>
-              <h3>Named places</h3>
-              <ul id="lore-places" class="list"></ul>
+        <div class="folio-body">
+          <nav class="folio-cat" aria-label="Lore catalog">
+            <div class="folio-regs" role="tablist">
+              <button type="button" class="folio-reg on" role="tab" data-reg="places" aria-selected="true">
+                Places <span id="lore-n-places" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="people" aria-selected="false">
+                People <span id="lore-n-people" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="kinds" aria-selected="false">
+                Kinds <span id="lore-n-kinds" class="n">0</span>
+              </button>
+              <button type="button" class="folio-reg" role="tab" data-reg="marks" aria-selected="false">
+                Marks <span id="lore-n-marks" class="n">0</span>
+              </button>
             </div>
-            <div>
-              <h3>People</h3>
-              <ul id="lore-people" class="list"></ul>
-            </div>
-            <div>
-              <h3>Kinds</h3>
-              <ul id="lore-kinds" class="list"></ul>
-            </div>
-            <div>
-              <h3>Inscriptions</h3>
-              <ul id="lore-marks" class="list"></ul>
-            </div>
-          </div>
-          <article class="atlas-read" id="lore-read" aria-live="polite">
-            <p class="kicker">Reading</p>
+            <ul id="lore-places" class="folio-index" role="tabpanel"></ul>
+            <ul id="lore-people" class="folio-index" role="tabpanel" hidden></ul>
+            <ul id="lore-kinds" class="folio-index" role="tabpanel" hidden></ul>
+            <ul id="lore-marks" class="folio-index" role="tabpanel" hidden></ul>
+          </nav>
+          <article class="folio-plate" id="lore-read" aria-live="polite" data-kind="world">
+            <p class="kicker" id="lore-read-kind">World</p>
+            <p class="folio-at" id="lore-read-at"></p>
             <h3 id="lore-read-title">Select a place</h3>
-            <p id="lore-read-meta" class="hint">Named volumes label themselves on the cube. Unnamed anchors stay silent.</p>
-            <p id="lore-read-body" class="lore-body">
+            <p id="lore-read-meta" class="folio-plate-meta">Named volumes label themselves on the cube. Unnamed anchors stay silent.</p>
+            <p id="lore-read-body" class="folio-plate-body">
               The intended first vote is naming a place. Lore stacks: world, then the volume, then the cell mark.
             </p>
           </article>

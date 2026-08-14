@@ -245,6 +245,7 @@ describe("spectator listen", () => {
     expect(page).toContain("the engine runs the patch");
     expect(page).toContain("id=\"lore\"");
     expect(page).toContain("What they have named.");
+    expect(page).toContain("click to name");
 
     const art = await fetch(base + "/art/empty-world.jpg");
     expect(art.status).toBe(200);

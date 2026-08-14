@@ -46,6 +46,10 @@ body {
   cursor: grabbing;
 }
 
+.stage canvas.aim {
+  cursor: pointer;
+}
+
 .stage .bar {
   position: absolute;
   top: 0;
@@ -627,84 +631,261 @@ a.btn.quiet {
   margin-top: 4.5rem;
 }
 
-.atlas .commons {
-  margin: 0 0 1.8rem;
-  padding-bottom: 1.4rem;
+.folio {
+  margin-top: 5.5rem;
+  padding-top: 1.8rem;
+  border-top: 1px solid var(--rule);
+}
+
+.folio-head .hint {
+  margin: 0.7rem 0 0;
+  max-width: 38rem;
+}
+
+.folio-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+}
+
+.folio-title-row h2 {
+  max-width: 16ch;
+}
+
+.folio-census {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+
+.folio-preface {
+  margin: 2.4rem 0 0;
+  padding: 0 0 2.2rem;
   border-bottom: 1px solid var(--rule);
   cursor: pointer;
 }
 
-.atlas .commons h3 {
-  margin: 0 0 0.55rem;
+.folio-preface:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 6px;
+}
+
+.folio-preface h3 {
+  margin: 0 0 0.85rem;
   font-family: "Fraunces", Georgia, serif;
-  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
+  font-size: clamp(2.1rem, 5vw, 3.6rem);
   font-weight: 480;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
   text-transform: none;
   color: var(--ink);
+  max-width: 12ch;
 }
 
-.atlas-split {
+.folio-preface-body {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--ink);
+  font-size: 1.12rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.folio-preface-body.hint {
+  color: var(--mute);
+}
+
+.folio-body {
   display: grid;
   gap: 1.6rem;
+  margin-top: 1.8rem;
 }
 
-@media (min-width: 860px) {
-  .atlas-split {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    gap: 2.4rem;
-    align-items: start;
-  }
-
-  .atlas-read {
-    padding: 0 0 0 1.6rem;
-    border-top: 0;
-    border-left: 1px solid var(--rule);
+@media (min-width: 900px) {
+  .folio-body {
+    grid-template-columns: minmax(17rem, 0.78fr) minmax(0, 1.22fr);
+    gap: 0;
+    align-items: stretch;
   }
 }
 
-.atlas-index {
-  display: grid;
-  gap: 1.4rem;
+.folio-cat {
+  min-width: 0;
 }
 
-.atlas-index .list {
-  max-height: 14rem;
-  overflow: auto;
+.folio-regs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border-bottom: 1px solid var(--rule);
 }
 
-.atlas-index .list li.go {
+.folio-reg {
+  appearance: none;
+  margin: 0;
+  padding: 0.55rem 0.85rem 0.6rem 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--mute);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
 }
 
-.atlas-index .list li.go:hover,
-.atlas-index .list li.go:focus-visible {
-  color: var(--brass);
+.folio-reg + .folio-reg {
+  margin-left: 0.85rem;
 }
 
-.atlas-index .list li.here strong {
-  color: var(--brass);
-}
-
-.atlas-read {
-  padding: 1.1rem 0 0;
-  border-top: 1px solid var(--rule);
-}
-
-.atlas-read h3 {
-  margin: 0 0 0.35rem;
-  font-family: "Fraunces", Georgia, serif;
-  font-size: clamp(1.45rem, 2.4vw, 2rem);
-  font-weight: 480;
-  letter-spacing: -0.03em;
+.folio-reg .n {
+  margin-left: 0.35rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0;
   text-transform: none;
-  color: var(--ink);
 }
 
-.lore-body {
-  margin: 1rem 0 0;
+.folio-reg.on,
+.folio-reg[aria-selected="true"] {
+  color: var(--brass);
+  border-bottom-color: var(--brass);
+}
+
+.folio-reg:hover,
+.folio-reg:focus-visible {
   color: var(--ink);
-  font-size: 1.02rem;
+  outline: none;
+}
+
+.folio-reg:focus-visible {
+  border-bottom-color: var(--ink);
+}
+
+.folio-index {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 32rem;
+  overflow: auto;
+}
+
+.folio-index li {
+  display: grid;
+  grid-template-columns: 5.2rem 7.2rem minmax(0, 1fr);
+  gap: 0.4rem 0.7rem;
+  align-items: baseline;
+  padding: 0.72rem 0.2rem 0.72rem 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.92rem;
+}
+
+.folio-index li:first-child {
+  border-top: 0;
+}
+
+.folio-index .idx-class,
+.folio-index .idx-at {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--mute);
+}
+
+.folio-index strong {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 480;
+  letter-spacing: -0.02em;
+}
+
+.folio-index li.go {
+  cursor: pointer;
+}
+
+.folio-index li.go:hover,
+.folio-index li.go:focus-visible {
+  color: var(--brass);
+  outline: none;
+}
+
+.folio-index li.go:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.folio-index li.go:hover strong,
+.folio-index li.go:focus-visible strong,
+.folio-index li.here strong {
+  color: var(--brass);
+}
+
+.folio-index .empty {
+  display: block;
+  grid-column: 1 / -1;
+  color: var(--mute);
+  font-size: 0.88rem;
+}
+
+.folio-plate {
+  background: var(--well);
+  color: var(--foam);
+  padding: 1.8rem 1.6rem 2.2rem;
+  min-height: 24rem;
+}
+
+@media (min-width: 900px) {
+  .folio-plate {
+    padding: 2.4rem 2.6rem 2.8rem;
+  }
+}
+
+.folio-plate .kicker {
+  color: #c4a574;
+}
+
+.folio-at {
+  margin: 0.35rem 0 0.9rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+  color: #c4a574;
+}
+
+.folio-at[hidden] {
+  display: none;
+}
+
+.folio-plate h3 {
+  margin: 0;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: clamp(2rem, 4.4vw, 3.5rem);
+  font-weight: 480;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  text-transform: none;
+  color: var(--foam);
+  max-width: 12ch;
+}
+
+.folio-plate-meta {
+  margin: 0.85rem 0 0;
+  color: #8b99a3;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.folio-plate-body {
+  margin: 1.6rem 0 0;
+  max-width: 34rem;
+  color: var(--foam);
+  font-size: 1.12rem;
+  line-height: 1.55;
   white-space: pre-wrap;
 }
 

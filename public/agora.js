@@ -57,6 +57,20 @@ function mesh(geometry, material, x = 0, y = 0, z = 0) {
   return item;
 }
 
+function tagPick(node, kind, id) {
+  node.traverse((child) => {
+    child.userData.pickKind = kind;
+    child.userData.pickId = id;
+  });
+  node.userData.pickKind = kind;
+  node.userData.pickId = id;
+}
+
+function identityTitle(id) {
+  const name = world.names.get(id);
+  return typeof name === "string" && name.length > 0 ? name : id;
+}
+
 function cityArtifact() {
   const g = new THREE.Group();
   g.add(mesh(new THREE.CylinderGeometry(2.05, 2.15, 0.28, 24), MAT.stone, 0, -0.28, 0));
@@ -317,6 +331,9 @@ const world = {
   liveEntities: new Map(),
   flashes: new Map(),
   bodyOrder: [],
+  echoOrder: [],
+  wardenOrder: [],
+  markOrder: [],
   worldLore: null,
   epithets: new Map(),
   kindLore: new Map(),
@@ -426,6 +443,13 @@ const wardenMesh = instanced(new THREE.BoxGeometry(0.85, 3.1, 0.16), MAT.slate, 
 const wardenBoss = instanced(new THREE.CircleGeometry(0.2, 16), MAT.brass, MAX_WARDENS);
 const markPost = instanced(new THREE.CylinderGeometry(0.055, 0.07, 1.85, 8), MAT.iron, MAX_MARKS);
 const markFlag = instanced(new THREE.BoxGeometry(0.82, 0.4, 0.045), MAT.markFlag, MAX_MARKS);
+bodyMesh.userData.pickKind = "person";
+lampMesh.userData.pickKind = "person";
+echoMesh.userData.pickKind = "echo";
+wardenMesh.userData.pickKind = "warden";
+wardenBoss.userData.pickKind = "warden";
+markPost.userData.pickKind = "mark";
+markFlag.userData.pickKind = "mark";
 
 const plane = new THREE.Mesh(
   new THREE.PlaneGeometry(SIZE, SIZE),
@@ -494,11 +518,13 @@ function rebuildAnchors(anchors) {
     mesh.traverse((node) => {
       node.userData.designation = designation;
     });
+    tagPick(mesh, "place", designation);
     const name = typeof anchor.name === "string" && anchor.name.length > 0 ? anchor.name : "";
     if (name.length > 0) {
       const sprite = nameSprite(name, "#c4a574", 22);
       sprite.position.set(0, PLACE_LIFT[anchor.class] ?? 2.2, 0);
       sprite.userData.designation = designation;
+      tagPick(sprite, "place", designation);
       mesh.add(sprite);
     }
     anchorsGroup.add(mesh);
@@ -506,6 +532,7 @@ function rebuildAnchors(anchors) {
 }
 
 function rebuildWardens(rows) {
+  world.wardenOrder = rows.slice(0, MAX_WARDENS).map((row) => row.id);
   writeInstances(wardenMesh, rows, (object, row) => {
     const at = cell(row.position);
     object.position.copy(at);
@@ -528,6 +555,7 @@ function rebuildDrifts(rows) {
   for (const drift of rows) {
     const mesh = PROTO.drift.clone();
     mesh.position.copy(cell(drift.position));
+    tagPick(mesh, "drift", typeof drift.id === "string" ? drift.id : "");
     driftsGroup.add(mesh);
   }
 }
@@ -540,11 +568,13 @@ function rebuildEntities(rows) {
     }
     const mesh = PROTO.entity.clone();
     mesh.position.copy(cell(entity.position));
+    tagPick(mesh, "entity", typeof entity.id === "string" ? entity.id : "");
     entitiesGroup.add(mesh);
   }
 }
 
 function writeEchoes(rows) {
+  world.echoOrder = rows.slice(0, MAX_BODIES).map((row) => row.id);
   writeInstances(echoMesh, rows, (object, row) => {
     object.position.copy(cell(row.position));
     object.position.y += 1.28;
@@ -615,6 +645,7 @@ function writeLabels(rows) {
     const sprite = nameSprite(label, world.founders.has(row.id) ? "#c4a574" : "#dce6ec");
     sprite.position.copy(cell(row.position));
     sprite.position.y += AGENT_HEIGHT + 0.35;
+    tagPick(sprite, "person", row.id);
     labelsGroup.add(sprite);
   }
 }
@@ -727,6 +758,11 @@ function paintEntities() {
 }
 
 function writeMarks(rows) {
+  world.markOrder = rows.slice(0, MAX_MARKS).map((row) =>
+    row.position !== null && typeof row.position === "object"
+      ? `${row.position.x},${row.position.y},${row.position.z}`
+      : "",
+  );
   writeInstances(markPost, rows, (object, row) => {
     object.position.copy(cell(row.position));
     object.position.y += 0.72;
@@ -929,6 +965,32 @@ function setText(id, value) {
   }
 }
 
+function setPlate(kind, title, meta, body, at) {
+  const plate = $("lore-read");
+  if (plate) {
+    plate.dataset.kind = kind;
+  }
+  setText("lore-read-kind", kind);
+  setText("lore-read-title", title);
+  setText("lore-read-meta", meta);
+  setText("lore-read-body", body);
+  const atNode = $("lore-read-at");
+  if (atNode) {
+    if (typeof at === "string" && at.length > 0) {
+      atNode.hidden = false;
+      atNode.textContent = at;
+    } else {
+      atNode.hidden = true;
+      atNode.textContent = "";
+    }
+  }
+}
+
+function cellLockup(pos) {
+  const text = coords(pos);
+  return text.length === 0 ? "" : text.replace(/, /g, "  ·  ");
+}
+
 function selectLore(selected, options = {}) {
   const caption = $("place-caption");
   const shouldFly = options.fly === true;
@@ -936,8 +998,15 @@ function selectLore(selected, options = {}) {
   if (current?.kind === "place" && !world.anchors.some((row) => row.designation === current.id)) {
     current = { kind: "world", id: "world" };
   }
-  if (current?.kind === "person" && !world.epithets.has(current.id)) {
-    current = { kind: "world", id: "world" };
+  if (current?.kind === "person") {
+    const known =
+      world.names.has(current.id) ||
+      world.epithets.has(current.id) ||
+      bodyOf(current.id) !== null ||
+      world.bodyOrder.includes(current.id);
+    if (!known) {
+      current = { kind: "world", id: "world" };
+    }
   }
   if (current?.kind === "kind" && !world.kindLore.has(current.id)) {
     current = { kind: "world", id: "world" };
@@ -945,19 +1014,30 @@ function selectLore(selected, options = {}) {
   if (current?.kind === "mark" && !inscriptions().some((row) => `${row.position.x},${row.position.y},${row.position.z}` === current.id)) {
     current = { kind: "world", id: "world" };
   }
+  if (current?.kind === "echo" && !world.bodies.some((row) => row.id === current.id) && !world.echoOrder.includes(current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  if (current?.kind === "warden" && !world.wardens.some((row) => row.id === current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  if (current?.kind === "drift" && !world.drifts.some((row) => row.id === current.id)) {
+    current = { kind: "world", id: "world" };
+  }
+  if (current?.kind === "entity" && !visibleEntities().some((row) => row.id === current.id)) {
+    current = { kind: "world", id: "world" };
+  }
   world.selected = current;
   if (current?.kind === "place") {
     const anchor = world.anchors.find((row) => row.designation === current.id);
     const titled = typeof anchor?.name === "string" && anchor.name.length > 0;
     const title = titled ? anchor.name : `ANCHOR:${current.id}`;
-    const meta = [anchor?.class, `ANCHOR:${current.id}`, coords(anchor?.centre)].filter(Boolean).join(" · ");
+    const meta = [anchor?.class, `ANCHOR:${current.id}`].filter(Boolean).join(" · ");
     const body =
       typeof anchor?.lore === "string" && anchor.lore.length > 0
         ? anchor.lore
         : "This volume has no lore yet. That path is text.anchors.<id>.lore.";
-    setText("lore-read-title", title);
-    setText("lore-read-meta", meta);
-    setText("lore-read-body", body);
+    setPlate(anchor?.class ?? "volume", title, meta, body, cellLockup(anchor?.centre));
+    showLoreRegister("places");
     if (caption) {
       caption.hidden = false;
       caption.textContent = `${title} · ${coords(anchor?.centre)}`;
@@ -966,30 +1046,108 @@ function selectLore(selected, options = {}) {
       flyToCell(anchor?.centre, 22);
     }
   } else if (current?.kind === "person") {
-    const name = world.names.get(current.id);
-    const title = typeof name === "string" && name.length > 0 ? name : current.id;
-    setText("lore-read-title", title);
-    setText("lore-read-meta", `epithet · ${current.id}`);
-    setText("lore-read-body", world.epithets.get(current.id) ?? "");
+    const title = identityTitle(current.id);
+    const epithet = world.epithets.get(current.id);
+    setPlate(
+      "inhabitant",
+      title,
+      current.id,
+      typeof epithet === "string" && epithet.length > 0 ? epithet : "No epithet yet. That path is text.epithets.<id>.",
+      cellLockup(bodyOf(current.id)),
+    );
+    showLoreRegister("people");
     if (caption) {
-      caption.hidden = true;
+      caption.hidden = false;
+      caption.textContent = `${title} · inhabitant`;
     }
     if (shouldFly) {
       focusIdentity(current.id);
     }
+  } else if (current?.kind === "echo") {
+    const row = world.bodies.find((item) => item.id === current.id);
+    const title = identityTitle(current.id);
+    setPlate(
+      "echo",
+      title,
+      current.id,
+      "This is an Echo — a lagged body. Observational. Not an inhabitant at this t.",
+      cellLockup(row?.position),
+    );
+    if (caption) {
+      caption.hidden = false;
+      caption.textContent = `${title} · echo`;
+    }
+    if (shouldFly) {
+      flyToCell(row?.position);
+    }
+  } else if (current?.kind === "warden") {
+    const row = world.wardens.find((item) => item.id === current.id);
+    setPlate(
+      "warden",
+      current.id,
+      [row?.axis, row?.face].filter(Boolean).join(" · "),
+      "This is a Warden. It stands on a lattice face. Hail it with speak.",
+      cellLockup(row?.position),
+    );
+    if (caption) {
+      caption.hidden = false;
+      caption.textContent = `Warden · ${[row?.axis, row?.face].filter(Boolean).join(" ")}`;
+    }
+    if (shouldFly) {
+      flyToCell(row?.position, 22);
+    }
+  } else if (current?.kind === "drift") {
+    const row = world.drifts.find((item) => item.id === current.id);
+    setPlate(
+      "drift",
+      current.id,
+      "drift",
+      "This is Drift. No verb reaches it yet.",
+      cellLockup(row?.position),
+    );
+    if (caption) {
+      caption.hidden = false;
+      caption.textContent = `Drift · ${current.id}`;
+    }
+    if (shouldFly) {
+      flyToCell(row?.position);
+    }
+  } else if (current?.kind === "entity") {
+    const row = visibleEntities().find((item) => item.id === current.id);
+    const type = typeof row?.type === "string" && row.type.length > 0 ? row.type : "automaton";
+    const lore = world.kindLore.get(type);
+    setPlate(
+      "automaton",
+      type,
+      current.id,
+      typeof lore === "string" && lore.length > 0 ? lore : "No kind-lore yet. That path is text.types.<type>.lore.",
+      cellLockup(row?.position),
+    );
+    showLoreRegister("kinds");
+    if (caption) {
+      caption.hidden = false;
+      caption.textContent = `${type} · automaton`;
+    }
+    if (shouldFly) {
+      flyToCell(row?.position);
+    }
   } else if (current?.kind === "kind") {
-    setText("lore-read-title", current.id);
-    setText("lore-read-meta", `text.types.${current.id}.lore`);
-    setText("lore-read-body", world.kindLore.get(current.id) ?? "");
+    setPlate("kind", current.id, `text.types.${current.id}.lore`, world.kindLore.get(current.id) ?? "", "");
+    showLoreRegister("kinds");
     if (caption) {
       caption.hidden = true;
     }
   } else if (current?.kind === "mark") {
     const mark = inscriptions().find((row) => `${row.position.x},${row.position.y},${row.position.z}` === current.id);
     const author = world.names.get(mark?.authorId) ?? mark?.authorId ?? "someone";
-    setText("lore-read-title", "Inscription");
-    setText("lore-read-meta", `${coords(mark?.position)} · ${author}${mark?.tick !== undefined ? ` · t${mark.tick}` : ""}`);
-    setText("lore-read-body", mark?.text ?? "");
+    setPlate(
+      "mark",
+      "Inscription",
+      `${author}${mark?.tick !== undefined ? ` · t${mark.tick}` : ""}`,
+      mark?.text ?? "",
+      cellLockup(mark?.position),
+    );
+    showLoreRegister("marks");
     if (caption) {
       caption.hidden = false;
       caption.textContent = `mark · ${coords(mark?.position)}`;
@@ -999,12 +1157,7 @@ function selectLore(selected, options = {}) {
     }
   } else {
     const named = $("world-name")?.textContent ?? "Unnamed lattice";
-    setText("lore-read-title", named);
-    setText("lore-read-meta", "text.world_lore");
-    setText(
-      "lore-read-body",
-      world.worldLore ?? "No world lore yet. That path is text.world_lore.",
-    );
+    setPlate("world", named, "text.world_lore", world.worldLore ?? "No world lore yet. That path is text.world_lore.", "64³");
     if (caption) {
       caption.hidden = true;
     }
@@ -1012,17 +1165,40 @@ function selectLore(selected, options = {}) {
   markLoreHere();
 }
 
-function loreRow(title, detail, dataset) {
-  const item = line(title, detail);
+function indexRow(kind, id, klass, at, title) {
+  const item = document.createElement("li");
   item.classList.add("go");
   item.tabIndex = 0;
-  for (const [key, value] of Object.entries(dataset)) {
-    item.dataset[key] = value;
-  }
-  if (world.selected?.kind === dataset.loreKind && world.selected?.id === dataset.loreId) {
+  item.dataset.loreKind = kind;
+  item.dataset.loreId = id;
+  const a = document.createElement("span");
+  a.className = "idx-class";
+  a.textContent = klass;
+  const b = document.createElement("span");
+  b.className = "idx-at";
+  b.textContent = at;
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  item.append(a, b, strong);
+  if (world.selected?.kind === kind && world.selected?.id === id) {
     item.classList.add("here");
   }
   return item;
+}
+
+function showLoreRegister(name) {
+  for (const id of ["places", "people", "kinds", "marks"]) {
+    const list = $(`lore-${id}`);
+    const btn = document.querySelector(`[data-reg="${id}"]`);
+    const on = id === name;
+    if (list) {
+      list.hidden = !on;
+    }
+    if (btn) {
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    }
+  }
 }
 
 function markLoreHere() {
@@ -1041,18 +1217,25 @@ function markLoreHere() {
 }
 
 function paintLoreIndex() {
+  const named = namedAnchors();
   const places = world.anchors
-    .filter((row) => (typeof row.name === "string" && row.name.length > 0) || (typeof row.lore === "string" && row.lore.length > 0))
+    .slice()
     .sort((a, b) => {
-      const an = typeof a.name === "string" && a.name.length > 0 ? a.name : `ANCHOR:${a.designation}`;
-      const bn = typeof b.name === "string" && b.name.length > 0 ? b.name : `ANCHOR:${b.designation}`;
+      const aNamed = typeof a.name === "string" && a.name.length > 0;
+      const bNamed = typeof b.name === "string" && b.name.length > 0;
+      if (aNamed !== bNamed) {
+        return aNamed ? -1 : 1;
+      }
+      const an = aNamed ? a.name : `ANCHOR:${a.designation}`;
+      const bn = bNamed ? b.name : `ANCHOR:${b.designation}`;
       return an < bn ? -1 : 1;
     })
     .map((row) => {
-      const title = typeof row.name === "string" && row.name.length > 0 ? row.name : `ANCHOR:${row.designation}`;
-      return loreRow(title, `${row.class} · ${coords(row.centre)}`, { loreKind: "place", loreId: row.designation });
+      const titled = typeof row.name === "string" && row.name.length > 0;
+      const title = titled ? row.name : `ANCHOR:${row.designation}`;
+      return indexRow("place", row.designation, row.class ?? "volume", coords(row.centre), title);
     });
-  fillList("lore-places", places, "No place has a name yet. The intended first vote is text.anchors.<id>.name.");
+  fillList("lore-places", places, "No anchors on this map.");
   const people = [...world.epithets.entries()]
     .sort((a, b) => {
       const an = world.names.get(a[0]) ?? a[0];
@@ -1062,24 +1245,27 @@ function paintLoreIndex() {
     .map(([id, epithet]) => {
       const name = world.names.get(id);
       const title = typeof name === "string" && name.length > 0 ? name : id;
-      return loreRow(title, clip(epithet, 48), { loreKind: "person", loreId: id });
+      return indexRow("person", id, "epithet", clip(epithet, 28), title);
     });
   fillList("lore-people", people, "No epithets yet. That path is text.epithets.<id>.");
   const kinds = [...world.kindLore.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([id, lore]) => loreRow(id, clip(lore, 48), { loreKind: "kind", loreId: id }));
+    .map(([id, lore]) => indexRow("kind", id, "type", clip(lore, 28), id));
   fillList("lore-kinds", kinds, "No kind-lore yet. That path is text.types.<type>.lore.");
   const marks = inscriptions()
     .slice()
     .sort((a, b) => (b.tick ?? 0) - (a.tick ?? 0))
     .slice(0, 40)
     .map((row) =>
-      loreRow(clip(row.text, 40), coords(row.position), {
-        loreKind: "mark",
-        loreId: `${row.position.x},${row.position.y},${row.position.z}`,
-      }),
+      indexRow("mark", `${row.position.x},${row.position.y},${row.position.z}`, "mark", coords(row.position), clip(row.text, 36)),
     );
   fillList("lore-marks", marks, "No cell is marked yet. A cell is act mark.");
+  setText("lore-n-places", String(places.length));
+  setText("lore-n-people", String(people.length));
+  setText("lore-n-kinds", String(kinds.length));
+  setText("lore-n-marks", String(marks.length));
+  const unnamed = Math.max(0, world.anchors.length - named.length);
+  setText("lore-census", `${named.length} named · ${unnamed} unnamed`);
 }
 
 function fillLore() {
@@ -1088,24 +1274,77 @@ function fillLore() {
   const body = $("lore-world-body");
   if (body) {
     body.textContent = world.worldLore ?? "No world lore yet. That path is text.world_lore.";
-    body.className = world.worldLore === null ? "hint" : "lore-body";
+    body.className = world.worldLore === null ? "folio-preface-body hint" : "folio-preface-body";
   }
   paintLoreIndex();
   selectLore(world.selected ?? { kind: "world", id: "world" });
 }
 
-function pickPlace(event) {
+function pointerFromEvent(event) {
   const rect = canvas.getBoundingClientRect();
   const width = rect.width || 1;
   const height = rect.height || 1;
   pointer.set(((event.clientX - rect.left) / width) * 2 - 1, -((event.clientY - rect.top) / height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(anchorsGroup.children, true);
-  const designation = hits[0]?.object?.userData?.designation;
-  if (typeof designation !== "string" || designation.length === 0) {
+  raycaster.camera = camera;
+}
+
+function hitsAt(event) {
+  pointerFromEvent(event);
+  const groups = [anchorsGroup, driftsGroup, entitiesGroup, labelsGroup];
+  const meshes = [bodyMesh, lampMesh, echoMesh, wardenMesh, wardenBoss, markPost, markFlag].filter((mesh) => mesh.count > 0);
+  const hits = [...raycaster.intersectObjects(groups, true), ...raycaster.intersectObjects(meshes, false)];
+  hits.sort((a, b) => a.distance - b.distance);
+  return hits;
+}
+
+function selectionFromHit(hit) {
+  const obj = hit.object;
+  const designation = obj.userData?.designation;
+  if (typeof designation === "string" && designation.length > 0) {
+    return { kind: "place", id: designation };
+  }
+  const pickKind = obj.userData?.pickKind;
+  const pickId = obj.userData?.pickId;
+  if (typeof pickKind === "string" && typeof pickId === "string" && pickId.length > 0) {
+    return { kind: pickKind, id: pickId };
+  }
+  const instanceId = hit.instanceId;
+  if (typeof instanceId !== "number" || instanceId < 0) {
+    return null;
+  }
+  if (obj === bodyMesh || obj === lampMesh) {
+    const id = world.bodyOrder[instanceId];
+    return typeof id === "string" && id.length > 0 ? { kind: "person", id } : null;
+  }
+  if (obj === echoMesh) {
+    const id = world.echoOrder[instanceId];
+    return typeof id === "string" && id.length > 0 ? { kind: "echo", id } : null;
+  }
+  if (obj === wardenMesh || obj === wardenBoss) {
+    const id = world.wardenOrder[instanceId];
+    return typeof id === "string" && id.length > 0 ? { kind: "warden", id } : null;
+  }
+  if (obj === markPost || obj === markFlag) {
+    const id = world.markOrder[instanceId];
+    return typeof id === "string" && id.length > 0 ? { kind: "mark", id } : null;
+  }
+  return null;
+}
+
+function pickSighting(event) {
+  const hit = hitsAt(event)[0];
+  const selected = hit === undefined ? null : selectionFromHit(hit);
+  if (selected === null) {
     return;
   }
-  selectLore({ kind: "place", id: designation }, { fly: true });
+  selectLore(selected, { fly: true });
+}
+
+function aimSighting(event) {
+  const hit = hitsAt(event)[0];
+  const selected = hit === undefined ? null : selectionFromHit(hit);
+  canvas.classList.toggle("aim", selected !== null);
 }
 
 function frame(now) {
@@ -1723,6 +1962,15 @@ function bindControls() {
   };
   $("zoom-in")?.addEventListener("click", () => dolly(0.78));
   $("zoom-out")?.addEventListener("click", () => dolly(1.28));
+  canvas.addEventListener("pointermove", (event) => {
+    if (pointerAt !== null) {
+      return;
+    }
+    aimSighting(event);
+  });
+  canvas.addEventListener("pointerleave", () => {
+    canvas.classList.remove("aim");
+  });
   canvas.addEventListener("pointerdown", (event) => {
     pointerAt = { x: event.clientX, y: event.clientY };
   });
@@ -1736,7 +1984,7 @@ function bindControls() {
     if (dx * dx + dy * dy > 25) {
       return;
     }
-    pickPlace(event);
+    pickSighting(event);
   });
   const roster = $("inhabitants");
   const go = (node) => {
@@ -1745,9 +1993,10 @@ function bindControls() {
       return;
     }
     const id = row.getAttribute("data-identity-id");
-    if (id === null || !focusIdentity(id)) {
+    if (id === null) {
       return;
     }
+    selectLore({ kind: "person", id }, { fly: true });
     for (const item of roster.querySelectorAll(".here")) {
       item.classList.remove("here");
     }
@@ -1792,6 +2041,16 @@ function bindControls() {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       selectLore({ kind: "world", id: "world" });
+    }
+  });
+  document.querySelector(".folio-regs")?.addEventListener("click", (event) => {
+    const btn = event.target instanceof Element ? event.target.closest("[data-reg]") : null;
+    if (btn === null) {
+      return;
+    }
+    const name = btn.getAttribute("data-reg");
+    if (name !== null) {
+      showLoreRegister(name);
     }
   });
 }
