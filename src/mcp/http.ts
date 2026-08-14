@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { publicRead } from "../public/read.ts";
-import { recordFrame, streamKind } from "../world/record-hub.ts";
+import { presenceFrame, recordFrame, streamKind } from "../world/record-hub.ts";
 import { httpStatusFor, negotiatedProtocolHeader } from "../world/rpc.ts";
 import { World, type McpRequest } from "../world/world.ts";
 
@@ -156,6 +156,8 @@ function attachListen(world: World, req: IncomingMessage, res: ServerResponse): 
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
+  const bodies = [...world.bodies.entries()].map(([id, position]) => ({ id, position }));
+  res.write(presenceFrame(bodies));
   for (const item of world.listenLog.slice(-40)) {
     res.write(recordFrame(item));
   }

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
-import { recordFrame, RecordHub, streamKind } from "../../src/world/record-hub.ts";
+import { presenceFrame, recordFrame, RecordHub, streamKind } from "../../src/world/record-hub.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -119,6 +119,64 @@ describe("spectator listen", () => {
       now: 1,
     });
     expect(seen.some((frame) => frame.includes("credential.mint_root"))).toBe(true);
+  });
+
+  it("seeds listen with current public bodies so the cube can fold agents", async () => {
+    const world = new World();
+    const challenge = world.handle({
+      body: req("tools/call", { name: "whoami", arguments: {} }),
+      now: 1,
+    });
+    const creds = world.handle({
+      body: req("tools/call", {
+        name: "whoami",
+        arguments: {},
+        inputResponses: { intent: "register" },
+        requestState: (challenge.result as { requestState: string }).requestState,
+      }),
+      now: 1,
+    }).result as { sessionToken: string; identityId: string };
+    const nameAsk = world.handle({
+      body: req("tools/call", { name: "whoami", arguments: {} }),
+      now: 2,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    world.handle({
+      body: req("tools/call", {
+        name: "whoami",
+        arguments: {},
+        inputResponses: { name: "Ada" },
+        requestState: (nameAsk.result as { requestState: string }).requestState,
+      }),
+      now: 2,
+      authorization: `Bearer ${creds.sessionToken}`,
+    });
+    const at = world.bodies.get(creds.identityId);
+    expect(at).toBeDefined();
+    const { createMcpServer } = await import("../../src/mcp/http.ts");
+    const server = createMcpServer(world);
+    await new Promise<void>((resolve) => {
+      server.listen(0, resolve);
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      server.close();
+      throw new Error("no port");
+    }
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${address.port}/listen`, { signal: controller.signal });
+    const reader = res.body?.getReader();
+    if (reader === undefined) {
+      server.close();
+      throw new Error("no listen body");
+    }
+    const first = await reader.read();
+    const text = new TextDecoder().decode(first.value);
+    expect(text).toContain("event: presence");
+    expect(text).toContain(creds.identityId);
+    expect(text).toContain(presenceFrame([{ id: creds.identityId, position: at! }]).split("\n")[0]);
+    controller.abort();
+    server.close();
   });
 
   it("does not treat a listen connection as identity", () => {

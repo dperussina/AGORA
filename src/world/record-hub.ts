@@ -23,6 +23,11 @@ export function recordFrame(item: RecordItem): string {
   return `event: record\ndata: ${JSON.stringify(item)}\n\n`;
 }
 
+/** Fold of public spawn/move. `/map` still lags; the cube needs a seed or orbs never appear. */
+export function presenceFrame(bodies: Array<{ id: string; position: { x: number; y: number; z: number } }>): string {
+  return `event: presence\ndata: ${JSON.stringify({ bodies })}\n\n`;
+}
+
 /** Spectator fan-out. Not identity. Not a write path. */
 export class RecordHub {
   private readonly listeners = new Set<(frame: string) => boolean>();
