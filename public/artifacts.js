@@ -129,6 +129,25 @@ export const MAT = {
     emissive: 0xffc878,
     emissiveIntensity: 1.4,
   }),
+  aquaCanopy: physical(0xa8fff4, {
+    roughness: 0.06,
+    metalness: 0.04,
+    transmission: 0.4,
+    thickness: 0.25,
+    transparent: true,
+    opacity: 0.88,
+    emissive: 0x00ffd4,
+    emissiveIntensity: 1.8,
+  }),
+  aquaFlame: new THREE.MeshBasicMaterial({
+    color: 0x00ffd4,
+    transparent: true,
+    opacity: 0.42,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }),
+  aqua: new THREE.MeshBasicMaterial({ color: 0x00ffd4 }),
   vault: physical(0xd4dce2, { roughness: 0.28, metalness: 0.62, clearcoat: 0.35, emissive: 0x14181c, emissiveIntensity: 0.18 }),
   holo: new THREE.MeshBasicMaterial({
     color: 0xff6a28,
@@ -434,14 +453,14 @@ function landerHull(skin, canopy, lit) {
     g.add(fin);
   }
   if (lit) {
-    g.add(mesh(new THREE.SphereGeometry(0.1, 10, 8), MAT.lamp, 0, 0.38, 0));
-    const wake = mesh(new THREE.ConeGeometry(0.2, 0.48, 10, 1, true), MAT.godFlame, 0, -0.08, 0);
+    g.add(mesh(new THREE.SphereGeometry(0.1, 10, 8), MAT.aqua, 0, 0.38, 0));
+    const wake = mesh(new THREE.ConeGeometry(0.2, 0.48, 10, 1, true), MAT.aquaFlame, 0, -0.08, 0);
     wake.rotation.x = Math.PI;
     g.add(wake);
-    const corona = mesh(new THREE.SphereGeometry(0.26, 12, 10), MAT.godFlame, 0, 0.38, 0);
+    const corona = mesh(new THREE.SphereGeometry(0.26, 12, 10), MAT.aquaFlame, 0, 0.38, 0);
     corona.userData.motion = "pulse";
     g.add(corona);
-    bellyLight(g, MAT.navWarm, -0.14, 0.08);
+    bellyLight(g, MAT.aqua, -0.14, 0.08);
   } else {
     const wake = mesh(new THREE.ConeGeometry(0.16, 0.36, 8, 1, true), MAT.echo, 0, -0.04, 0);
     wake.rotation.x = Math.PI;
@@ -452,7 +471,7 @@ function landerHull(skin, canopy, lit) {
 }
 
 export function godArtifact() {
-  return landerHull(MAT.hull, MAT.canopy, true);
+  return landerHull(MAT.hull, MAT.aquaCanopy, true);
 }
 
 export function echoArtifact() {

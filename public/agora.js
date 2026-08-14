@@ -2066,7 +2066,22 @@ function tickArtifactMotions(now) {
   }
 }
 
+let worldVisible = true;
+let worldInView = true;
+let foldInView = false;
+function syncWorldVisible() {
+  worldVisible = worldInView && !foldInView;
+}
+window.agoraPauseWorld = (pause) => {
+  foldInView = Boolean(pause);
+  syncWorldVisible();
+};
+
 function frame(now) {
+  requestAnimationFrame(frame);
+  if (!worldVisible) {
+    return;
+  }
   tickFly(now);
   controls.update();
   if (!reduced) {
@@ -2110,7 +2125,6 @@ function frame(now) {
     tickArtifactMotions(now);
   }
   renderer.render(scene, camera);
-  requestAnimationFrame(frame);
 }
 
 function setStat(key, value) {
@@ -3085,4 +3099,14 @@ bindControls();
 refresh();
 window.setInterval(refresh, 30_000);
 listen();
+const worldStage = $("world-view");
+if (worldStage) {
+  new IntersectionObserver(
+    (entries) => {
+      worldInView = entries.some((entry) => entry.isIntersecting);
+      syncWorldVisible();
+    },
+    { threshold: 0.08 },
+  ).observe(worldStage);
+}
 requestAnimationFrame(frame);

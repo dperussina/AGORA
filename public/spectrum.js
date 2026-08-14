@@ -125,13 +125,12 @@ if (!(canvas instanceof HTMLCanvasElement) || stage === null) {
 
 const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !reduced, alpha: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.15));
 renderer.setClearColor(0x16101f, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x16101f);
@@ -298,7 +297,7 @@ const GLOW_DOT = spriteMat(LIGHT_MAP, 0xe8d2a4, 0.55);
 
 const LIT_KINDS = ["identity", "echo", "entity", "mark", "anchor", "drift"];
 const LAMP_TINT = {
-  identity: 0xffd080,
+  identity: 0x00ffd4,
   echo: 0x6ec8e8,
   entity: 0xffc44d,
   mark: 0xff6a28,
@@ -309,7 +308,7 @@ const LAMP_TINT = {
   hollow: 0xff1a14,
   anchor: 0xffd4a0,
 };
-const LAMP_COUNT = 28;
+const LAMP_COUNT = 10;
 const lamps = Array.from({ length: LAMP_COUNT }, () => {
   const lamp = new THREE.PointLight(0xffd4a0, 0, 16, 2);
   lamp.castShadow = false;
@@ -502,6 +501,8 @@ const state = {
   streamLive: false,
   dirty: true,
   picks: [],
+  movers: [],
+  prints: { volumes: "", relics: "", gods: "", wardens: "" },
 };
 
 function occupantKey(kind, id, extra = "") {
@@ -573,13 +574,7 @@ function foldEntity(item) {
   return at;
 }
 
-function ripple(position, type) {
-  if (position === null) {
-    return;
-  }
-  state.residue.push({ position, type: type ?? "event", born: performance.now() });
-  state.dirty = true;
-}
+function ripple(_position, _type) {}
 
 function listOf(kind) {
   return [...state.occupants.values()].filter((row) => row.kind === kind && row.position);
@@ -621,7 +616,14 @@ function buildWakes(godsAt) {
 
 function clearGroup(group) {
   while (group.children.length > 0) {
-    group.remove(group.children[0]);
+    const child = group.children[0];
+    child.traverse((node) => {
+      if (node.userData.label && node.material) {
+        node.material.map?.dispose();
+        node.material.dispose();
+      }
+    });
+    group.remove(child);
   }
 }
 
@@ -639,18 +641,89 @@ function placeForm(kind, row, place) {
   } else {
     node.position.copy(cell(row.position));
   }
-  node.traverse((child) => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-    }
-  });
   if (place !== undefined) {
     place(node);
   }
   adornGlow(node, row);
+  labelForm(node, row);
   tag(node, row);
   return node;
+}
+
+function nameSprite(text, color, max = 18) {
+  const board = document.createElement("canvas");
+  board.width = 320;
+  board.height = 72;
+  const ctx = board.getContext("2d");
+  if (ctx === null) {
+    return new THREE.Sprite();
+  }
+  ctx.clearRect(0, 0, board.width, board.height);
+  const wash = ctx.createLinearGradient(20, 0, 300, 0);
+  wash.addColorStop(0, "rgba(8, 12, 18, 0.88)");
+  wash.addColorStop(1, "rgba(18, 28, 36, 0.7)");
+  ctx.fillStyle = wash;
+  ctx.beginPath();
+  ctx.moveTo(30, 10);
+  ctx.lineTo(292, 10);
+  ctx.lineTo(306, 24);
+  ctx.lineTo(306, 52);
+  ctx.lineTo(292, 66);
+  ctx.lineTo(30, 66);
+  ctx.lineTo(16, 52);
+  ctx.lineTo(16, 24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.62;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(38, 38, 4, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.font = "500 24px 'IBM Plex Mono', ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(text.slice(0, max), 172, 38);
+  const texture = new THREE.CanvasTexture(board);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(4.45, 1, 1);
+  sprite.userData.label = true;
+  return sprite;
+}
+
+function placeTitle(row) {
+  if (row.kind === "anchor") {
+    const voted = typeof row.name === "string" ? row.name.trim() : "";
+    return voted.length > 0 ? voted : `ANCHOR:${row.id}`;
+  }
+  if (row.kind === "identity") {
+    const named = state.names.get(row.id);
+    return typeof named === "string" && named.length > 0 ? named : "agent";
+  }
+  return "";
+}
+
+function labelForm(node, row) {
+  const title = placeTitle(row);
+  if (title.length === 0) {
+    return;
+  }
+  const lift = {
+    nexus: 3.9,
+    cairn: 2.7,
+    vantage: 0.72,
+    hollow: 2.35,
+    identity: 1.2,
+  };
+  const color = row.kind === "identity" ? "#00ffd4" : "#e8d2a4";
+  const sprite = nameSprite(title, color, row.kind === "anchor" ? 22 : 18);
+  sprite.position.y = lift[row.type] ?? lift[row.kind] ?? 1.4;
+  node.add(sprite);
 }
 
 function adornGlow(node, row) {
@@ -675,7 +748,7 @@ function adornGlow(node, row) {
     mark: 2.2,
     drift: 1.8,
     entity: 2.0,
-    identity: 2.4,
+    identity: 4.8,
     echo: 2.1,
   };
   halo.position.y = glowY[row.type] ?? glowY[row.kind] ?? 0.55;
@@ -755,7 +828,6 @@ function tag(node, row) {
   node.traverse((child) => {
     child.userData.row = row;
   });
-  state.picks.push(node);
 }
 
 function buildVolumes() {
@@ -813,14 +885,6 @@ function buildRelics() {
       relics.add(node);
     }
   }
-  const now = performance.now();
-  state.residue = state.residue.filter((item) => now - item.born < 1400);
-  for (const item of state.residue) {
-    const chip = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.08, 0.95), MAT.residue);
-    chip.position.copy(cell(item.position));
-    chip.castShadow = true;
-    relics.add(chip);
-  }
 }
 
 function buildGods() {
@@ -845,14 +909,88 @@ function buildGods() {
   }
 }
 
-function paint() {
+function collectPicks() {
   state.picks = [];
-  const godsAt = godCenters();
-  buildWakes(godsAt);
-  buildVolumes();
-  buildRelics();
-  buildGods();
-  buildWardens();
+  for (const root of [volumes, relics, gods, wardens]) {
+    for (const child of root.children) {
+      state.picks.push(child);
+    }
+  }
+}
+
+function collectMovers() {
+  state.movers = [];
+  for (const root of [volumes, relics, gods, wardens, fields]) {
+    root.traverse((node) => {
+      if (node.userData.motion || node.userData.worldOrbit) {
+        state.movers.push(node);
+      }
+    });
+  }
+}
+
+function syncLiving() {
+  const at = new Map();
+  for (const child of gods.children) {
+    const row = child.userData.row;
+    if (row) {
+      at.set(`${row.kind}:${row.id}`, child);
+    }
+  }
+  for (const row of listOf("identity")) {
+    const node = at.get(`identity:${row.id}`);
+    if (node) {
+      node.position.copy(cell(row.position));
+      node.userData.row = row;
+    }
+  }
+}
+
+function paint() {
+  const volumesPrint = listOf("anchor")
+    .map((row) => `${row.id}:${row.type}:${row.name ?? ""}`)
+    .sort()
+    .join("|");
+  const wardensPrint = listOf("warden")
+    .map((row) => row.id)
+    .sort()
+    .join("|");
+  const relicsPrint = [...listOf("mark"), ...listOf("drift"), ...listOf("entity")]
+    .map((row) => `${row.kind}:${row.id}:${row.position.x},${row.position.y},${row.position.z}`)
+    .sort()
+    .join("|");
+  const godsPrint = [...listOf("identity"), ...listOf("echo")]
+    .map((row) => `${row.kind}:${row.id}:${state.names.get(row.id) ?? ""}`)
+    .sort()
+    .join("|");
+  let rebuilt = false;
+  if (volumesPrint !== state.prints.volumes) {
+    buildVolumes();
+    state.prints.volumes = volumesPrint;
+    rebuilt = true;
+  }
+  if (wardensPrint !== state.prints.wardens) {
+    buildWardens();
+    state.prints.wardens = wardensPrint;
+    rebuilt = true;
+  }
+  if (relicsPrint !== state.prints.relics) {
+    buildRelics();
+    state.prints.relics = relicsPrint;
+    rebuilt = true;
+  }
+  if (godsPrint !== state.prints.gods) {
+    buildGods();
+    buildWakes(godCenters());
+    state.prints.gods = godsPrint;
+    rebuilt = true;
+  } else {
+    syncLiving();
+  }
+  if (rebuilt) {
+    collectMovers();
+  }
+  collectPicks();
   const census = { identity: 0, echo: 0, mark: 0, anchor: 0, warden: 0, drift: 0, entity: 0 };
   for (const row of state.occupants.values()) {
     census[row.kind] = (census[row.kind] ?? 0) + 1;
@@ -882,6 +1020,7 @@ function applyMap(map) {
       id: String(row.designation ?? "anchor"),
       type: String(row.class ?? "anchor"),
       position: row.centre,
+      name: typeof row.name === "string" ? row.name : "",
     });
   }
   for (const row of map.wardens ?? []) {
@@ -924,11 +1063,20 @@ function writeCensus(census) {
     return;
   }
   root.replaceChildren();
+  const labels = {
+    identity: "inhabitants",
+    echo: "echoes",
+    entity: "things",
+    mark: "marks",
+    anchor: "places",
+    warden: "wardens",
+    drift: "drift",
+  };
   for (const kind of ["identity", "echo", "entity", "mark", "anchor", "warden", "drift"]) {
     const row = document.createElement("div");
     const dt = document.createElement("dt");
     const dd = document.createElement("dd");
-    dt.textContent = kind;
+    dt.textContent = labels[kind];
     dd.textContent = String(census[kind] ?? 0);
     row.append(dt, dd);
     root.append(row);
@@ -954,11 +1102,11 @@ function writeSelected(hit) {
     return;
   }
   const spec = spectrumOf(hit, state.types, state.standing);
-  const name = state.names.get(hit.id);
   const title = document.createElement("strong");
-  title.textContent = name || hit.type || hit.kind;
+  title.textContent = placeTitle(hit) || hit.type || hit.kind;
   const meta = document.createElement("small");
-  meta.textContent = `${hit.kind} · ${hit.id} · ${hit.position.x},${hit.position.y},${hit.position.z}`;
+  const at = hit.position ? `${hit.position.x}, ${hit.position.y}, ${hit.position.z}` : "";
+  meta.textContent = hit.kind === "anchor" ? `${hit.type} · ${at}` : at;
   box.replaceChildren(title, meta);
   axes.replaceChildren();
   axes.dataset.empty = spec.axes.length === 0 ? "true" : "false";
@@ -968,7 +1116,7 @@ function writeSelected(hit) {
     axes.append(bar);
   }
   if (caption) {
-    caption.textContent = `${hit.kind}/${hit.type ?? "—"} · ${spec.axes.length} public axes`;
+    caption.textContent = placeTitle(hit) || hit.type || "A place in the fold.";
   }
 }
 
@@ -1050,7 +1198,7 @@ async function refresh() {
     applyMap(map);
     state.dirty = true;
     if (status) {
-      status.textContent = metrics.halted ? "World halted." : `t${state.tick}`;
+      status.textContent = metrics.halted ? "The world is still." : `Tick ${state.tick}`;
       status.dataset.state = metrics.halted ? "down" : "up";
     }
     if (state.selected) {
@@ -1061,7 +1209,7 @@ async function refresh() {
     }
   } catch {
     if (status) {
-      status.textContent = "Could not read the public log.";
+      status.textContent = "The fold is out of reach.";
       status.dataset.state = "down";
     }
   }
@@ -1141,7 +1289,11 @@ function aimLamps() {
       }
       return { row, world, d: camera.position.distanceToSquared(world) };
     })
-    .sort((a, b) => a.d - b.d);
+    .sort((a, b) => {
+      const rank = (row) => (row.kind === "identity" ? 0 : 1);
+      const order = rank(a.row) - rank(b.row);
+      return order !== 0 ? order : a.d - b.d;
+    });
   for (let i = 0; i < LAMP_COUNT; i += 1) {
     const lamp = lamps[i];
     const hit = ranked[i];
@@ -1163,7 +1315,7 @@ function aimLamps() {
     };
     lamp.position.y += lift[hit.row.type] ?? lift[hit.row.kind] ?? 1.1;
     lamp.color.setHex(LAMP_TINT[hit.row.type] ?? LAMP_TINT[hit.row.kind] ?? 0xffd4a0);
-    lamp.intensity = hit.row.kind === "identity" ? 240 : hit.row.kind === "anchor" ? 190 : 120;
+    lamp.intensity = hit.row.kind === "identity" ? 320 : hit.row.kind === "anchor" ? 140 : 90;
   }
 }
 
@@ -1172,7 +1324,7 @@ function tick() {
   if (!state.onScreen) {
     return;
   }
-  if (state.dirty || state.residue.length > 0) {
+  if (state.dirty) {
     paint();
   }
   if (!reduced) {
@@ -1180,8 +1332,7 @@ function tick() {
     const now = performance.now();
     cosmos.rotation.y += 0.00018;
     aimLamps();
-    for (const root of [volumes, relics, gods, wardens, fields]) {
-      root.traverse((node) => {
+    for (const node of state.movers) {
         if (node.userData.worldOrbit && node.userData.row) {
           const seat = orbitSeat(node.userData.row.position, now);
           node.position.copy(seat);
@@ -1209,7 +1360,6 @@ function tick() {
             node.scale.copy(rest).multiplyScalar(0.88 + n * 0.18);
           }
         }
-      });
     }
   } else {
     aimLamps();
@@ -1242,6 +1392,9 @@ window.addEventListener("resize", resize);
 new IntersectionObserver(
   (entries) => {
     state.onScreen = entries.some((entry) => entry.isIntersecting);
+    if (typeof window.agoraPauseWorld === "function") {
+      window.agoraPauseWorld(state.onScreen);
+    }
   },
   { threshold: 0.08 },
 ).observe(stage);
