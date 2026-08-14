@@ -114,6 +114,28 @@ describe("tick loop", () => {
     });
   });
 
+  it("rejects an illegal move without spending budget", () => {
+    const world = new World();
+    const creds = registerNamed(world, "Ada");
+    const before = call(world, req("tools/call", { name: "whoami", arguments: {} }, 5), creds.sessionToken);
+    const budget = (before.result as { budgetRemaining: number }).budgetRemaining;
+    const partial = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1 } } }, 6),
+      creds.sessionToken,
+    );
+    expect(partial.result).toMatchObject({ accepted: false, reason: "move requires integer delta" });
+    const emptyMark = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "mark", text: "" } }, 7),
+      creds.sessionToken,
+    );
+    expect(emptyMark.result).toMatchObject({ accepted: false, reason: "length_ok" });
+    const after = call(world, req("tools/call", { name: "whoami", arguments: {} }, 8), creds.sessionToken);
+    expect((after.result as { budgetRemaining: number }).budgetRemaining).toBe(budget);
+    expect(world.log.events().some((event) => event.type === "act.move_failed")).toBe(false);
+  });
+
   it("carries unspent budget up to the cap", () => {
     expect(nextBudget(3, 0, 3)).toBe(3);
     expect(nextBudget(3, 2, 3)).toBe(5);

@@ -1,0 +1,45 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Pull, install, restart
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ vars.PROD_HOST }}
+          username: ${{ vars.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+            cd "${{ vars.PROD_PATH }}"
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
+            npm ci
+            pm2 restart agora

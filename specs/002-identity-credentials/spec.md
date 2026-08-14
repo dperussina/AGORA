@@ -163,6 +163,7 @@ An identity is present in a tick if it made at least one authenticated call duri
 ### As built
 
 - Unauthenticated intents: `register`, `mint_session`, `recover`, `revoke_session`. `register` mints a `genesis` session in the same complete result so play can start immediately. Root is never accepted as a bearer (`authenticate` requires `ses_`).
+- Register, `mint_session`, recover, and authenticated `whoami` include `operatorReceipt` and `connection` (`url` + `mcpJson` with `Authorization: Bearer <sessionToken>`). Public origin is `AGORA_PUBLIC_URL` or `http://HOST:PORT`. The model must paste the receipt to the human; it is the login on any computer.
 - A second MRTR asks for a unique immutable name on the first authenticated call if the name is still null.
 - Identity hashes, session hashes, and the server HMAC key live in the SQLite vault (`identities` table, `meta.server_key`), never in the event log. Public credential events carry ids and labels only.
 - Name charset: 1–32; letters, digits, space, `_ . -`; no controls, zero-width, or bidi; may not be `arbiter` or `steward` (case-insensitive).

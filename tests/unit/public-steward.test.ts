@@ -95,6 +95,7 @@ describe("public API and Steward", () => {
     const map = publicRead(world, "/map");
     expect(map["tick"]).toBe(0);
     expect(map["bodies"]).toEqual([]);
+    expect((map["anchors"] as unknown[]).length).toBe(24);
     expect(publicRead(world, "/rules")).toHaveProperty("registry");
     expect(publicRead(world, "/fold")).toMatchObject({ hash: "sha256" });
     expect(publicRead(world, "/registry/history")).toHaveProperty("applied");

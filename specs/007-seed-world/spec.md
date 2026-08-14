@@ -130,10 +130,11 @@ No trade, property, combat, resources, inventory, erasure, or objectives. Expect
 
 ### As built
 
-- Geography seed is `agora-genesis-v0`. 24 anchors, radius 2, min separation 12. Wardens use spacing 16 and regenerate after `space.op`. Grown volume receives new anchors at the same density; existing centres never move. Drift spawn/walk are seed `registry.triggers` (`drift_spawn`, `drift_walk`); Oracle seed is the log tip hash. Population cap 40.
+- Geography seed is `agora-genesis-v0`. 24 anchors and Wardens are generated in memory at World construct from the registry (deterministic; not per-entity spawn events). Radius 2, min separation 12. Wardens use spacing 16 and regenerate after `space.op`. Grown volume receives new anchors at the same density; existing centres never move.
+- Drift is **not** created at process start. `drift_spawn` / `drift_walk` fire at `tick_boundary` only when `advanceTick` runs with presence (dormant worlds do not tick). Oracle seed is the log tip hash. Population cap 40; spawn interval 25. A freshly served world at tick 0 with no live session has Wardens and unnamed anchors, zero Drift, zero Echoes.
 - Founder spawns in the first Nexus by designation order. Later identities spawn in a Nexus by lowest occupancy (they often do not share a cell with the Founder).
 - Genesis `act` verbs: `move`, `wait`, `mark`. Custom verbs after legislation run the closed effect interpreter.
 - Echoes: at most 24 named actors in a render, then aggregate. Observational `t` shows marks created at or before that tick. No NPC model. No Steward voice-as-NPC.
-- Wardens answer `speak(target: warden:…)` with axis, size, last amendment ID, amend path, and Layer 1. Templates live in `text.narrate.*`.
+- Wardens answer `speak(target: warden:…)` with axis, size, last amendment ID, amend path, and Layer 1. Templates live in `text.narrate.*`. `observe` narration appends `narrate.mark` when a mark is present inside an anchor or on a Warden cell.
 - Cairns multiply `mark_length_max` by `cairn_mark_multiplier` (default 4). Hollow uses `hollow_perception` (default 0).
 - Seed registry includes `weight_cap_ticks`, `residency_period`, `space.topology: lattice`, and the 24 blank `text.anchors.*.name` paths.

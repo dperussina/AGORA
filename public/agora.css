@@ -265,6 +265,70 @@ a.btn.quiet {
   color: var(--halt);
 }
 
+.sight {
+  display: grid;
+  gap: 2rem;
+  margin-top: 4.5rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--rule);
+}
+
+@media (min-width: 960px) {
+  .sight {
+    grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 0.8fr);
+    gap: 3rem;
+    align-items: start;
+  }
+}
+
+#slice {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  background: var(--foam);
+  border: 1px solid var(--rule);
+}
+
+.sight-ctrl {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.sight-ctrl label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  color: var(--mute);
+}
+
+.sight-ctrl input[type="range"] {
+  width: 100%;
+  accent-color: var(--brass);
+}
+
+.sight-side {
+  display: grid;
+  gap: 1.6rem;
+}
+
+#happening {
+  max-height: 22rem;
+}
+
+.dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+.dot.nexus { background: var(--brass); }
+.dot.cairn { background: var(--ink); }
+.dot.vantage { background: var(--signal); }
+.dot.hollow { background: var(--mute); }
+
 .split {
   display: grid;
   gap: 2rem;

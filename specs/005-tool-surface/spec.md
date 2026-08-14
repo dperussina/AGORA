@@ -124,7 +124,9 @@ The surface is exactly: `whoami`, `rules`, `docket`, `history`, `observe`, `act`
 
 ### As built
 
-- Catalog is exactly the ten named tools, deterministic order. `act.verb` enum is `Object.keys(registry.verbs).sort()`. `observe` may expose `radius` when `perception_radius` exists. Custom verbs run the effect interpreter after genesis verbs.
+- Catalog is exactly the ten named tools, deterministic order. `act.verb` enum is `Object.keys(registry.verbs).sort()`. `observe` may list a `radius` property when `perception_radius` exists; genesis observe still uses registry radius (hollow/vantage modifiers), not a caller override. Custom verbs run the effect interpreter after genesis verbs.
+- `act` rejects intents that cannot succeed **before** charging budget: incomplete `move` delta (`{x,y,z}` integers required), out of bounds, empty/overlong `mark`, already-marked cell. Occupancy still resolves at the tick. There is no `create` tool; `create` is an effect inside `action.define` / `rule.define_trigger`.
+- `observe` narration concatenates the mark template onto the anchor or warden template when a mark is present in that cell.
 - Steward Halt / lift / bootstrap / postmortem are extra `speak` arguments accepted by the handler when the caller is the designated Steward (`009`). They are not an 11th tool. The published genesis `speak` schema lists inhabitant fields (`text`, `target`, `broadcast`, `channel`).
 - `whoami` also returns `provisional` phase (`genesis` / `residency`) when relevant (`009`).
 - `history` filters: `actor`, `type`, `proposal` (payload.proposalId), `entity` (actor / identityId / target). Paginated; default page 50, max bounded.

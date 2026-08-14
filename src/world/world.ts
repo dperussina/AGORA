@@ -677,24 +677,56 @@ export class World {
     if (typeof verb !== "string" || this.clerk.registry.verbs[verb] === undefined) {
       return { accepted: false, reason: "unknown verb" };
     }
+    const blocked = this.actWouldFail(identityId, verb, args);
+    if (blocked !== null) {
+      return { accepted: false, reason: blocked };
+    }
     const cost = this.clerk.registry.verbs[verb].cost;
     const remaining = this.budgets.get(identityId) ?? 0;
     if (remaining < cost) {
       return { accepted: false, reason: "insufficient budget" };
     }
     this.budgets.set(identityId, remaining - cost);
-    const delta = asDelta(args["delta"]);
-      this.intents.push({
+    this.intents.push({
       seq: this.intentSeq,
       identityId,
       verb,
       priority: 0,
-      delta,
+      delta: asDelta(args["delta"]),
       text: typeof args["text"] === "string" ? args["text"] : undefined,
       target: typeof args["target"] === "string" ? args["target"] : undefined,
     });
     this.intentSeq += 1;
     return { accepted: true, verb, cost, budgetRemaining: remaining - cost, resolvesAt: this.clerk.tick + 1 };
+  }
+
+  /** Rejects intents that cannot succeed, before budget is spent. Occupancy still resolves at the tick. */
+  private actWouldFail(identityId: string, verb: string, args: Record<string, unknown>): string | null {
+    if (verb === "move") {
+      const delta = asDelta(args["delta"]);
+      if (delta === undefined) {
+        return "move requires integer delta";
+      }
+      const moved = applyMove(this.bodyOf(identityId), delta, this.clerk.registry);
+      return moved.ok ? null : moved.reason;
+    }
+    if (verb === "mark") {
+      const text = typeof args["text"] === "string" ? args["text"] : "";
+      const at = this.bodyOf(identityId);
+      if (text.length === 0 || text.length > this.markMaxAt(at)) {
+        return "length_ok";
+      }
+      if (this.marks.has(cellKey(at))) {
+        return "cell_unmarked";
+      }
+    }
+    return null;
+  }
+
+  private markMaxAt(at: Position): number {
+    const base = this.clerk.registry.params["mark_length_max"]?.value ?? 280;
+    const cairnMult = this.clerk.registry.params["cairn_mark_multiplier"]?.value ?? 4;
+    return this.anchorAt(at)?.class === "cairn" ? base * cairnMult : base;
   }
 
   private resolveIntent(intent: Intent): void {
@@ -725,9 +757,7 @@ export class World {
     if (intent.verb === "mark") {
       const text = intent.text ?? "";
       const at = this.bodyOf(intent.identityId);
-      const base = this.clerk.registry.params["mark_length_max"]?.value ?? 280;
-      const cairnMult = this.clerk.registry.params["cairn_mark_multiplier"]?.value ?? 4;
-      const max = this.anchorAt(at)?.class === "cairn" ? base * cairnMult : base;
+      const max = this.markMaxAt(at);
       const key = cellKey(at);
       if (text.length === 0 || text.length > max) {
         this.append("act.mark_failed", intent.identityId, { reason: "length_ok" });
@@ -1249,16 +1279,21 @@ export class World {
     hereCount: number,
     wardenHere = false,
   ): string {
+    const inscribed = this.clerk.registry.text["narrate.mark"] ?? "A mark is inscribed here.";
     if (wardenHere) {
-      return this.clerk.registry.text["narrate.warden"] ?? "Axis edge. Amend space.axes at Layer 1.";
+      const edge = this.clerk.registry.text["narrate.warden"] ?? "Axis edge. Amend space.axes at Layer 1.";
+      return mark !== null ? `${edge} ${inscribed}` : edge;
     }
     if (anchor !== undefined) {
       const name = this.clerk.registry.text[`anchors.${anchor.designation}.name`];
       const label = name ?? `ANCHOR:${anchor.designation}`;
-      return (this.clerk.registry.text["narrate.anchor"] ?? "Inside {label}, a {class}.").replace("{label}", label).replace("{class}", anchor.class);
+      const inside = (this.clerk.registry.text["narrate.anchor"] ?? "Inside {label}, a {class}.")
+        .replace("{label}", label)
+        .replace("{class}", anchor.class);
+      return mark !== null ? `${inside} ${inscribed}` : inside;
     }
     if (mark !== null) {
-      return this.clerk.registry.text["narrate.mark"] ?? "A mark is inscribed here.";
+      return inscribed;
     }
     if (hereCount > 1) {
       return this.clerk.registry.text["narrate.occupied"] ?? "Others occupy this cell.";

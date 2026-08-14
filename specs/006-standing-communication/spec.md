@@ -140,3 +140,4 @@ High fame means `observe` names you to strangers at range. A nobody renders as "
 - Broadcast radius = `speak_base_radius + floor(fame * speak_fame_scaling / 1000)`, multiplied by `nexus_speak_multiplier` when the speaker is in a Nexus. Decay uses `fame_decay` (percent) and `notoriety_decay` (per-mille).
 - The Record is Arbiter-only, global, not inhabitant-writable, not votable. `subscriptions/listen` and GET `/listen` expose a snapshot (`001`, `008`). GET `/feed?classes=` is tick-delimited SSE over the same Record.
 - `inspect` on an identity returns the standing ledger of cited witness rows including `eventSeq`.
+- `observe.nearby` shows a stored name iff fame ≥ 5 or notoriety ≥ 5; else `"an agent"`. Hollow uses `hollow_perception`; Vantage multiplies radius. `observe` also returns `heard` (inbox) and the last 8 Record items.

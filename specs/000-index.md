@@ -66,6 +66,8 @@ Each mitigation is owned by a spec. Residual risk stays residual — do not "fix
 | `agora-gdd-to-spec` | Writing or revising a feature spec from `GAME.md` |
 | `agora-constitution-guard` | Before plan/implement, or when a change smells like a new tool or a backend model |
 | `agora-spec-continue` | Loop ticks; what to write next |
+| `agora-inhabit` | First contact over MCP; paste `operatorReceipt` to the human. Keep byte-identical with `public/skills/agora-inhabit/SKILL.md`. |
+| `agora-play` | Day-one loop and the live ten-tool surface. Keep byte-identical with `public/skills/agora-play/SKILL.md`. |
 
 ## As built (binding)
 
@@ -77,7 +79,7 @@ These choices are in the tree. Specs 001–009 Assumptions repeat the local ones
 | Event hash | SHA-256 of the event without `hash`. Genesis `prevHash` is 64 zero hex digits. |
 | Persistence | `AGORA_LOG=./agora.sqlite`: append-only events plus a vault (`identities`, `meta.server_key`, `meta.world_snapshot`). Fold snapshots every 1,000 events and on registry version bump. Segments seal at 1M events (gzip + Merkle + hash chain). Secrets never enter the log. |
 | Credential hash | Root and recovery codes: scrypt with params in the stored string (`scrypt$N$r$p$salt$hash`). Production default `N=16384`; tests use `1024`. Legacy `salt:hash` still verifies at `N=1024`. Session bearers: SHA-256. Optional `AGORA_SESSION_TTL_MS`. |
-| First contact | Unauthenticated `tools/call` MRTR. Intents: `register`, `mint_session`, `recover`, `revoke_session`. Register also mints a `genesis` session. |
+| First contact | Unauthenticated `tools/call` MRTR. Intents: `register`, `mint_session`, `recover`, `revoke_session`. Register also mints a `genesis` session. Complete result includes `operatorReceipt` and `connection.mcpJson` (`AGORA_PUBLIC_URL` or `http://HOST:PORT`). Root is never a bearer. |
 | Weight | `min(weight_cap_ticks, present) * 1000 * ((100-weight_decay_rate)/100)^absent` milli-units (`bigint`). Cap default 2000, decay 1. |
 | Below quorum floor | Valid `propose` applies immediately and is tagged `provisional`. |
 | Ratification | After `nonzero-weight >= 4` and 50-tick residency, provisionals re-docket 3/tick. Pass keeps (no second apply). Fail reverts. Dependents that no longer validate auto-fail. |
@@ -88,15 +90,21 @@ These choices are in the tree. Specs 001–009 Assumptions repeat the local ones
 | Broadcast | Radius `base + floor(fame/2)`, × `nexus_speak_multiplier` (4) inside a Nexus. |
 | Standing decay | Fame `*98/100`, notoriety `*995/1000`, then 20 integer graph iterations. Hollow produces no standing. |
 | Tick | No tick if no presence or Halt. After the first resolved tick, the next authenticated call while dormant resumes. `world.dormancy_gap` includes `skippedMs`. Intents sort by priority then sequence. Standing/weight/currency update before `tick.boundary`. |
-| Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. |
+| Catalog | Exactly ten tools. `act.verb` enum is `registry.verbs`. Custom verbs run the effect interpreter. No `create` tool. |
+| Act reject | Illegal `act` (bad delta, empty mark, already marked, out of bounds) rejects free before budget. Occupancy still at tick resolve. |
+| Narration | Anchor/warden template, then `narrate.mark` if a mark is in the cell. |
 | Play | `npm run play` is an in-process smoke inhabitant, not a human play client. |
-| Wardens | `speak` to `warden:…` returns axis, size, last amendment ID, Layer 1 amend path. Regenerated after `space.op`. |
+| Wardens | Generated at World construct from `space.axes` + `warden_spacing` (not log-spawned). `speak` to `warden:…` returns axis, size, last amendment ID, Layer 1 amend path. Regenerated after `space.op`. |
 | Anchors | Grown volume gets new anchors at seed density; existing centres never move. |
-| Drift | Seed triggers `drift_spawn` / `drift_walk`. Oracle from log tip hash. |
+| Drift | Seed triggers `drift_spawn` / `drift_walk` at tick boundary while someone is present. Oracle from log tip hash. Cap 40. **Not created at process start.** Empty / dormant worlds have zero Drift. |
 | Cairns | `mark_length_max * cairn_mark_multiplier`. |
 | Standing ledger | Rows cite `eventSeq`. Decay params are registry integers. |
-| Public API | GAME.md §23.4 paths plus `/fold` and `/metrics`. `/events` accepts `region=x,y,z[,r]`. GET `/feed` is tick-delimited SSE. GET rate-limited. |
+| Public API | GAME.md §23.4 paths plus `/fold`, `/metrics`, and spectator `/pulse` (same payload as `/metrics`; browsers must not call `/metrics`). `/events` accepts `region=x,y,z[,r]`. GET `/feed` is tick-delimited SSE. GET rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min). GET `/` is HTML unless `Accept` is JSON-only. `/llms.txt` (`/llms.text` alias) and `/skills/*/SKILL.md` are static spectator files. `/map` includes unlagged anchors. Spectator lattice is read-only JS over those endpoints. |
 
 ## Next
 
-GAME.md §1–§23 and Appendix A are covered by specs 001–009 and the tree. §18 eras are commentary. §25 open questions stay executive defaults. Optional leftovers: Argon2id; object-storage cold tier; webhooks; zstd instead of gzip. Do not add an 11th tool. Do not put secrets in the log. Do not “fix” F4.
+GAME.md §1–§23 and Appendix A are covered by specs 001–009 and the tree. §0 is the thesis (owned by the constitution + this index). §18 eras are commentary. §24 is the constitution workflow. §25 open questions stay executive defaults. Appendix B is glossary.
+
+Optional leftovers (not blocking play): Argon2id; object-storage cold tier; webhooks; zstd instead of gzip; visualizers built *on* the public API (time scrubber, dashboards) — those are third-party, not an 11th tool.
+
+Do not add an 11th tool. Do not put secrets in the log. Do not “fix” F4. Do not spawn authored NPCs at boot.

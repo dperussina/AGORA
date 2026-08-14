@@ -86,17 +86,17 @@ describe("seed geography", () => {
     );
     world.advanceTick();
     call(world, req("tools/call", { name: "whoami", arguments: {} }, 6), ada.sessionToken);
-    call(
+    const second = call(
       world,
       req("tools/call", { name: "act", arguments: { verb: "mark", text: "again" } }, 7),
       ada.sessionToken,
     );
+    expect(second.result).toMatchObject({ accepted: false, reason: "cell_unmarked" });
     world.advanceTick();
     const seen = call(world, req("tools/call", { name: "observe", arguments: {} }, 8), ada.sessionToken);
     expect((seen.result as { mark: { text: string } }).mark.text).toBe("first trace");
-    expect(
-      world.log.events().some((event) => event.type === "act.mark_failed" && event.payload["reason"] === "cell_unmarked"),
-    ).toBe(true);
+    expect((seen.result as { narration: string }).narration).toMatch(/a nexus/i);
+    expect((seen.result as { narration: string }).narration).toMatch(/mark is inscribed/i);
   });
 
   it("renders Echoes when observational t is in the past", () => {

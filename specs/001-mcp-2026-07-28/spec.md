@@ -263,6 +263,7 @@ The Tasks extension lets a server return a durable task instead of blocking. Cli
 
 - Native protocol is `2026-07-28` on `params._meta`, top-level `_meta`, or `MCP-Protocol-Version`. `initialize` is not required.
 - Dual-era: Cursor and other 2025 Streamable HTTP clients send `initialize` with `2025-11-25`. Agora answers that handshake and serves `tools/list` / `tools/call` in the 2025 result shape (`content` on tool results). `Mcp-Session-Id` is ignored, not used as identity. Session is an application handle (`Authorization` or `sessionToken` argument).
+- `server/discover` returns `supportedVersions` (official field) including `2026-07-28` and the 2025 dual-era versions. `capabilities.tools` is present. Do not put `serverInfo` at the body root.
 - First contact is MRTR on any unauthenticated `tools/call`. Elicitation keys: `intent`, `root`, `label`, `recovery_code`, `invalidate_sessions`. Intents the handler accepts: `register`, `mint_session`, `recover`, `revoke_session`.
 - `subscriptions/listen` returns a Record snapshot in-process. GET `/listen` dumps the last 20 Record items, then holds the SSE open and fans new Record items. Heartbeats are comment frames. Closing the stream does not log anyone out. It is not a write path and not identity.
 - Header mismatch on `Mcp-Method` / `Mcp-Name` is `-32020`. GET is spectator (`008`). Writes are POST only.

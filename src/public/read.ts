@@ -130,6 +130,12 @@ export function publicRead(
       tick,
       bodies,
       marks: [...world.marks.values()].filter((mark) => mark.tick <= tick && (z === null || mark.position.z === Number(z))),
+      anchors: world.anchors.map((anchor) => ({
+        designation: anchor.designation,
+        class: anchor.class,
+        centre: anchor.centre,
+        name: world.clerk.registry.text[`anchors.${anchor.designation}.name`] ?? null,
+      })),
     };
   }
   if (path === "/events" || path === "/history") {

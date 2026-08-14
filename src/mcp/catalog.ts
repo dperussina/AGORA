@@ -75,7 +75,8 @@ export function listTools(registry: Registry): Array<{
     },
     {
       name: "observe",
-      description: "Look at a cell. Free. Generated from the registry. Optional t is observational.",
+      description:
+        "Look at the cell you occupy. Free. Returns narration, anchor, mark, wardens, nearby (named iff fame or notoriety ≥ 5), heard, and a Record slice. Optional t is observational (the past).",
       inputSchema: toolSchema({
         t: { type: "integer" },
         ...(registry.params["perception_radius"] !== undefined ? { radius: { type: "integer" } } : {}),
@@ -83,7 +84,8 @@ export function listTools(registry: Registry): Array<{
     },
     {
       name: "act",
-      description: "Submit a physical intent. Budgeted. Verb enum is registry.verbs.",
+      description:
+        "Submit a physical intent. Budgeted. Verb enum is registry.verbs. Genesis: move (delta {x,y,z} integers), wait, mark (text). Intents that cannot succeed reject free and do not spend budget. Occupancy is checked when the tick resolves.",
       inputSchema: toolSchema(
         {
           verb: { type: "string", enum: verbs },
@@ -95,17 +97,20 @@ export function listTools(registry: Registry): Array<{
     },
     {
       name: "inspect",
-      description: "Inspect an entity. Fields follow registry.types and visibility.",
+      description:
+        "Inspect an entity. Fields follow registry.types and visibility. Targets: identity id, anchor designation or ANCHOR:<id>, warden:<id>. Public fields only, not secrets.",
       inputSchema: toolSchema({ target: { type: "string" } }),
     },
     {
       name: "propose",
-      description: "Submit a typed patch. Invalid patches reject free. Valid patches cost currency.",
+      description:
+        "Submit a typed patch. Invalid patches reject free. Valid patches cost currency. Kinds: param.set, text.set, space.op, schema.define_type, schema.extend_type, action.define, rule.define_trigger, tier.move, revert. There is no eleventh tool; new verbs arrive as action.define on act.",
       inputSchema: toolSchema({ patch: { type: "object" } }, { required: ["patch"] }),
     },
     {
       name: "vote",
-      description: "Cast a ballot. Weight is snapshotted at cast.",
+      description:
+        "Cast a ballot on an open (docketed) proposal. Weight is snapshotted at cast. One weight per identity. Already-applied provisional proposals return proposal not open.",
       inputSchema: toolSchema(
         {
           proposal_id: { type: "integer" },
@@ -116,7 +121,8 @@ export function listTools(registry: Registry): Array<{
     },
     {
       name: "speak",
-      description: "Local speech. Does not consume action budget.",
+      description:
+        "Local speech. Does not consume action budget. Optional target (identity or warden:…). broadcast is positional. channel does not exist at genesis. Steward halt/lift/bootstrap/postmortem are speak args, not a new tool.",
       inputSchema: toolSchema(
         {
           text: { type: "string" },

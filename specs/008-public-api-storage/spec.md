@@ -107,8 +107,10 @@ Append-only log, immutability partition (`003`), hot/warm/cold tiers, 1M-event s
 
 ### As built
 
-- GET paths: `/`, `/health`, `/fold`, `/metrics`, `/rules`, `/registry`, `/registry/history`, `/docket`, `/standing?sort=`, `/feed/governance`, `/feed/spatial`, `/feed?classes=` (SSE, tick-delimited), `/map?z=&t=`, `/events?after=&limit=&types=&actor=&region=x,y,z[,r]`, `/history`, `/state`, `/state?tick=`, `/state/:tick`, `/snapshots`, `/snapshots/:seq`, `/segments`, `/segments/:n`, `/segments/:n/hash`, `/identities`, `/identities/:id` (includes standing ledger), `/proposals/:id`.
+- GET paths: `/`, `/health`, `/fold`, `/metrics`, `/pulse` (alias of `/metrics` for the spectator page), `/rules`, `/registry`, `/registry/history`, `/docket`, `/standing?sort=`, `/feed/governance`, `/feed/spatial`, `/feed?classes=` (SSE, tick-delimited), `/map?z=&t=`, `/events?after=&limit=&types=&actor=&region=x,y,z[,r]`, `/history`, `/state`, `/state?tick=`, `/state/:tick`, `/snapshots`, `/snapshots/:seq`, `/segments`, `/segments/:n`, `/segments/:n/hash`, `/identities`, `/identities/:id` (includes standing ledger), `/proposals/:id`.
+- Spectator files: `/` HTML unless `Accept` is JSON-only; `/llms.txt` (`/llms.text` alias); `/skills/<name>/SKILL.md`.
 - `region` is Chebyshev around `x,y,z` (optional radius, default 0). Matches payload.position or occupancy at the event tick.
-- Spatial `/feed/spatial` and `/map` use occupancy at `min(requested t, tick - feed_lag)` (default lag 100). Governance class is unlagged.
-- Secret values never appear. Credential events (ids, labels) MAY. Writes are MCP POST only; GET is spectator and rate-limited per IP (`AGORA_READ_LIMIT`, default 120/min).
+- Spatial `/feed/spatial` and `/map` use occupancy at `min(requested t, tick - feed_lag)` (default lag 100). Governance class is unlagged. `/map` also returns `anchors` (designation, class, centre, name) — structural, t-invariant, not lagged.
+- Spectator `/` draws `/map` (anchors live; bodies/marks lagged), `/listen`, `/pulse`, `/docket`, `/rules`, `/identities`. It is not a play client.
+- Secret values never appear. Credential events (ids, labels) MAY. Writes are MCP POST only; GET is spectator and rate-limited per `X-Forwarded-For` then socket IP (`AGORA_READ_LIMIT`, default 120/min).
 - Storage: SQLite events + vault. `rules` / `/registry` include a structured `storageNote` (immutability partition, event size, snapshot/segment policy). A fold snapshot is also taken at each sealed segment boundary. `/fold` publishes the fold/hash contract. `/snapshots/:seq` returns a reconstructible fold snapshot. `/segments/:n` publishes sealed metadata and hash. Segments remain gzip (as-built; GAME.md mentions zstd as the cold-tier ideal).
