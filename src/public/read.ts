@@ -149,6 +149,15 @@ export function publicRead(
             .filter((drift) => z === null || drift.position.z === Number(z))
             .map((drift) => ({ id: drift.id, position: drift.position }))
         : [],
+      entities: t === null
+        ? [...world.entities.values()]
+            .filter((entity) => entity.position !== undefined && (z === null || entity.position.z === Number(z)))
+            .map((entity) => ({
+              id: entity.id,
+              type: entity.type,
+              position: entity.position,
+            }))
+        : [],
     };
   }
   if (path === "/events" || path === "/history") {

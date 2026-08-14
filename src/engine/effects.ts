@@ -44,13 +44,14 @@ function applyEffect(item: Effect, ctx: EffectContext): void {
     case "create": {
       const type = String(args[0] ?? "entity");
       const id = ctx.nextId();
+      const position = asPosition(args[1]);
       ctx.entities.set(id, {
         id,
         type,
         fields: asFieldBag(args[2]),
-        position: asPosition(args[1]),
+        position,
       });
-      ctx.emit("effect.create", { id, type });
+      ctx.emit("effect.create", position === undefined ? { id, type } : { id, type, ...position });
       break;
     }
     case "destroy": {
@@ -71,6 +72,7 @@ function applyEffect(item: Effect, ctx: EffectContext): void {
           y: entity.position.y + delta.y,
           z: entity.position.z + delta.z,
         };
+        ctx.emit("effect.move", { id: ref, ...entity.position });
       }
       break;
     }

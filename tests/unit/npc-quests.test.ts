@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TOOL_NAMES } from "../../src/mcp/catalog.ts";
 import { seedRegistry } from "../../src/engine/registry.ts";
+import { publicRead } from "../../src/public/read.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -132,7 +133,11 @@ describe("npc and quest guard", () => {
     call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken);
     world.advanceTick();
     const id = [...world.entities.keys()][0];
+    expect(id).toBeDefined();
     expect(id).toMatch(/^ent:/);
+    if (id === undefined) {
+      return;
+    }
     const seen = call(
       world,
       req("tools/call", { name: "inspect", arguments: { target: id } }),
@@ -142,7 +147,27 @@ describe("npc and quest guard", () => {
     expect(seen.fields.personifies).toBe("types.mote");
     expect(seen.fields.hue).toBe("ash");
     expect(typeof seen.fields.createdBy).toBe("number");
-    expect(world.log.events().some((event) => event.type === "effect.create" && event.payload["id"] === id)).toBe(true);
+    const created = world.log.events().find((event) => event.type === "effect.create" && event.payload["id"] === id);
+    expect(created).toBeDefined();
+    expect(created!.payload["createdBy"]).toBe(created!.seq);
+    expect(created!.payload["x"]).toBe(3);
+    expect(created!.payload["y"]).toBe(4);
+    expect(created!.payload["z"]).toBe(5);
+    expect(seen.fields.createdBy).toBe(created!.seq);
+    const map = publicRead(world, "/map") as {
+      entities: Array<{ id: string; type: string; position: { x: number; y: number; z: number } }>;
+    };
+    expect(map.entities).toEqual([{ id, type: "mote", position: { x: 3, y: 4, z: 5 } }]);
+
+    const replay = new World(world.log);
+    replay.hydrate(world.capture());
+    const restored = replay.entities.get(id);
+    expect(restored).toBeDefined();
+    expect(restored!.id).toBe(id);
+    expect(restored!.type).toBe("mote");
+    expect(restored!.position).toEqual({ x: 3, y: 4, z: 5 });
+    expect(restored!.createdBy).toBe(created!.seq);
+    expect(restored!.fields["hue"]).toBe("ash");
   });
 
   it("cites a trigger when it sets a field", () => {

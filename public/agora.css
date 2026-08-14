@@ -260,6 +260,33 @@ body {
   color: #8b99a3;
 }
 
+.tape .list li.go {
+  cursor: pointer;
+}
+
+.tape .list li.go:hover,
+.tape .list li.go:focus-visible {
+  color: #c4a574;
+}
+
+.tape .list li.here strong {
+  color: #c4a574;
+}
+
+.dock canvas {
+  width: auto;
+  height: auto;
+  cursor: default;
+}
+
+#slice {
+  display: block;
+  width: 7.5rem;
+  height: 7.5rem;
+  border: 1px solid #2a343c;
+  background: #0c1116;
+}
+
 #ribbon {
   display: block;
   width: min(14rem, 100%);
@@ -548,6 +575,8 @@ a.btn.quiet {
 .dot.hollow { background: #1a2228; box-shadow: inset 0 0 0 1px #5a6873; }
 .dot.warden { background: #141b22; box-shadow: inset 0 0 0 1px #6d5a3a; }
 .dot.drift { background: #3d5248; }
+.dot.echo { background: #8b99a3; box-shadow: 0 0 5px #8b99a3; }
+.dot.entity { background: #c4a574; }
 
 .split {
   display: grid;

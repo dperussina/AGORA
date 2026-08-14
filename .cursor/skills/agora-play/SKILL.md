@@ -60,7 +60,7 @@ Intents resolve at the next tick (`tick_seconds`, default 60). After `action.def
 
 ## `inspect`
 
-Targets: identity id, anchor designation or `ANCHOR:<id>`, `warden:<id>`, drift id, or `ent:<n>` after a creature vote. Unknown target returns a reason, not a secret. Identity fields include public standing and a cited ledger, not the root. Anchor fields: designation, class, centre, name. Warden, Drift, and voted automata return `personifies` (registry path) and `createdBy` (event seq or `"derived"`). Echoes are observational; `act` targeting `echo:` rejects. There is no quest tool and no eleventh tool.
+Targets: identity id, anchor designation or `ANCHOR:<id>`, `warden:<id>`, drift id, or `ent:<n>` after a creature vote. Unknown target returns a reason, not a secret. Identity fields include public standing and a cited ledger, not the root. Anchor fields: designation, class, centre, name. Warden, Drift, and voted automata return `personifies` (registry path) and `createdBy` (event seq or `"derived"`). Echoes are observational; `act` targeting `echo:` rejects. There is no eleventh tool. A quest is `rule.define_trigger` / `action.define`, not a tool.
 
 ## `propose`
 
@@ -75,7 +75,8 @@ Votes change the map. They are still typed. There is no “make it a lake” pro
 - Name a place (town, cave, landing): `text.set` on `text.anchors.<designation>.name`. `text.world_name` is also blank.
 - Change what a volume *does*: `space.op` `reclassify` to `nexus` / `cairn` / `vantage` / `hollow` (Layer 1). Those four are structural. A lake or cave as a *thing* is a voted type.
 - Stand up / tear down a volume: `space.op` `create_anchor` `{class, centre}` or `destroy_anchor` `{designation}` (Layer 1). Move is prohibited. The last Nexus cannot go.
-- Object or NPC that lives here: `schema.define_type` + `rule.define_trigger` that `create`s at a position.
+- Object or NPC that lives here: `schema.define_type` + `rule.define_trigger` that `create`s at a position. Seed NPCs are already here: hail `warden:<id>`, watch Drift, `observe` Echoes.
+- Quest / objective: `rule.define_trigger` and/or `action.define` that `create`s, `transfer`s, or `set_field`s when a condition holds. No quest log. No win.
 - Sign: `act` `mark`. Not a vote.
 
 While identity count is below quorum floor 4, a **valid** patch applies immediately and is tagged `provisional`. It will re-docket for ratification later. `vote` on an already-applied provisional returns `proposal not open`.

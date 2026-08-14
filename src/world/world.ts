@@ -804,7 +804,6 @@ export class World {
         entities: this.entities,
         emit: (name, payload) => {
           this.append(name, intent.identityId, { ...payload, identityId: intent.identityId });
-          this.noteCreated(payload["id"]);
           this.witness(intent.identityId, name === "effect.destroy" ? "notoriety" : "fame");
         },
         nextId: () => {
@@ -1366,7 +1365,6 @@ export class World {
           entities: this.entities,
           emit: (name, payload) => {
             this.append(name, "ARBITER", { ...payload, triggerId: id });
-            this.noteCreated(payload["id"]);
           },
           nextId: () => {
             this.entitySeq += 1;
@@ -1499,18 +1497,21 @@ export class World {
     };
   }
 
-  private noteCreated(id: unknown): void {
+  private noteCreated(id: unknown, seq: number): void {
     if (typeof id !== "string") {
       return;
     }
     const entity = this.entities.get(id);
     if (entity !== undefined) {
-      entity.createdBy = this.log.tip()?.seq ?? -1;
+      entity.createdBy = seq;
     }
   }
 
   private append(type: string, actor: string, payload: Record<string, unknown>): void {
     const cited: Actor = actor === "ARBITER" || actor === "STEWARD" ? actor : `identity:${actor}`;
+    if (type === "effect.create") {
+      payload["createdBy"] = (this.log.tip()?.seq ?? -1) + 1;
+    }
     const event = this.log.append({
       tick: this.clerk.tick,
       actor: cited,
@@ -1518,6 +1519,9 @@ export class World {
       payload,
       ruleId: type,
     });
+    if (type === "effect.create") {
+      this.noteCreated(payload["id"], event.seq);
+    }
     archiveAfterAppend(this.log, this.segments, event, this.snapshotInterval, this.segmentSize);
     if (this.isArbiterRecord(type)) {
       this.noteRecord(type, payload);

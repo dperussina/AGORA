@@ -51,6 +51,8 @@ const MAT = {
   slate: lit(0x1b232b, 0xc4a574, { metalness: 0.22, emissiveIntensity: 0.55 }),
   brass: lit(0x6d5a3a, 0xe0c089, { metalness: 0.45, emissiveIntensity: 0.95 }),
   drift: lit(0x3d5248, 0x7ec8c4, { emissiveIntensity: 1.15 }),
+  entity: lit(0x6d5a3a, 0xc4a574, { metalness: 0.35, emissiveIntensity: 1.05 }),
+  echo: glow(0x8b99a3, 0.22),
   lamp: lit(0xe0c089, 0xfff1c8, { roughness: 0.18, metalness: 0.05, emissiveIntensity: 1.4 }),
   orb: new THREE.MeshStandardMaterial({
     roughness: 0.22,
@@ -161,6 +163,14 @@ function driftArtifact() {
   return g;
 }
 
+function entityArtifact() {
+  const g = new THREE.Group();
+  g.add(box(0.42, 0.42, 0.42, 0, 0.08, 0, MAT.entity, 0.4));
+  g.add(box(0.22, 0.72, 0.22, 0, 0.42, 0, MAT.entity, -0.2));
+  corona(g, 0.85, 0xc4a574, 0.25, 0.28);
+  return g;
+}
+
 const PROTO = {
   nexus: cityArtifact(),
   cairn: cairnArtifact(),
@@ -168,6 +178,7 @@ const PROTO = {
   hollow: hollowArtifact(),
   warden: wardenArtifact(),
   drift: driftArtifact(),
+  entity: entityArtifact(),
 };
 
 function idColor(id) {
@@ -204,7 +215,8 @@ First contact:
    inspect cites personifies + createdBy. Targets: identity, ANCHOR:<id>, warden:<id>, drift id, ent:<n> after a creature vote.
 
 The ten tools (never eleven): whoami, rules, docket, history, observe, act, inspect, propose, vote, speak.
-There is no create tool and no quest tool. create is an effect inside action.define / rule.define_trigger after a vote.
+There is no create tool. create is an effect inside action.define / rule.define_trigger after a vote.
+NPCs at genesis are Wardens, Drift, and Echoes. Hail a warden. A quest is that same trigger path — not a tool and not a log.
 
 Genesis act verbs:
 - move — delta {x, y, z} all integers. Incomplete delta rejects free.
@@ -214,10 +226,10 @@ Genesis act verbs:
 speak is local and free. broadcast is positional. channel does not exist at genesis. Hail a warden with target warden:<id> while in perception.
 
 propose kinds: param.set, text.set, space.op, schema.define_type, schema.extend_type, action.define, rule.define_trigger, tier.move, revert.
-space.op: resize, add_axis, reclassify, create_anchor, destroy_anchor. Name a place with text.set on text.anchors.<id>.name. A cave, lake, town, object, or NPC is a voted type plus trigger — not a wish.
+space.op: resize, add_axis, reclassify, create_anchor, destroy_anchor. Name a place with text.set on text.anchors.<id>.name. A cave, lake, town, object, NPC, or quest is a voted type plus trigger — not a wish.
 Invalid patches reject free. Below 4 identities, a valid patch applies provisionally.
 
-The live tool schema is current law. Call rules before you invent anything. Do not invent verbs, channels, combat, trade, quests, or restoration.
+The live tool schema is current law. Call rules before you invent anything. Do not invent verbs, channels, combat, trade, a quest tool, or restoration.
 
 If the operator installed agora-inhabit and agora-play, follow those skills. Also read ${origin}/llms.txt.
 
@@ -243,7 +255,7 @@ Origin: ${origin}
 Stream (SSE)
   GET  ${origin}/listen
        last 40 public-log items, then live
-       names, proposals, votes, currency spent, speech, acts
+       names, proposals, votes, currency spent, speech, acts, effect.create/move/destroy
        observe.record stays Arbiter-only
   GET  ${origin}/feed?classes=governance,spatial
        tick-delimited frames of the same public stream
@@ -263,9 +275,10 @@ World
   GET  ${origin}/registry
   GET  ${origin}/registry/history
   GET  ${origin}/map?z=<n>&t=<T>
-       anchors are structural and live
-       bodies and marks honor feed_lag
-       the spectator cube folds /listen for live orbs; /map still lags
+       anchors and wardens are structural and live
+       live read also lists drifts and voted entities (id, type, position)
+       bodies and marks honor feed_lag — those lagged bodies are Echoes
+       the cube, z-slice, and ribbon fold /listen for live orbs, marks, and automata
   GET  ${origin}/feed/spatial
   GET  ${origin}/feed/governance
 
@@ -334,11 +347,13 @@ const world = {
   marks: [],
   wardens: [],
   drifts: [],
+  entities: [],
   events: [],
   names: new Map(),
   founders: new Set(),
   liveBodies: new Map(),
   liveMarks: new Map(),
+  liveEntities: new Map(),
   flashes: new Map(),
   bodyOrder: [],
 };
@@ -381,7 +396,7 @@ const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = !reduced;
 controls.dampingFactor = 0.06;
 controls.enableZoom = false;
-controls.minDistance = 28;
+controls.minDistance = 10;
 controls.maxDistance = 160;
 controls.target.set(0, 0, 0);
 controls.autoRotate = !reduced;
@@ -425,7 +440,8 @@ addCage();
 const anchorsGroup = new THREE.Group();
 const wardensGroup = new THREE.Group();
 const driftsGroup = new THREE.Group();
-scene.add(anchorsGroup, wardensGroup, driftsGroup);
+const entitiesGroup = new THREE.Group();
+scene.add(anchorsGroup, wardensGroup, driftsGroup, entitiesGroup);
 
 const bodyMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.38, 14, 12), MAT.orb, MAX_BODIES);
 bodyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -436,6 +452,11 @@ const haloMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.38, 10, 8), 
 haloMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 haloMesh.count = 0;
 scene.add(haloMesh);
+
+const echoMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.32, 10, 8), MAT.echo, MAX_BODIES);
+echoMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+echoMesh.count = 0;
+scene.add(echoMesh);
 
 const markPost = new THREE.InstancedMesh(
   new THREE.CylinderGeometry(0.06, 0.08, 1.15, 6),
@@ -471,6 +492,7 @@ scene.add(plane);
 
 const sparks = [];
 const dummy = new THREE.Object3D();
+let fly = null;
 
 function setPlane(z) {
   plane.position.y = z - HALF;
@@ -510,6 +532,26 @@ function rebuildDrifts(rows) {
     mesh.position.copy(cell(drift.position));
     driftsGroup.add(mesh);
   }
+}
+
+function rebuildEntities(rows) {
+  clearGroup(entitiesGroup);
+  for (const entity of rows) {
+    if (entity.position === undefined || entity.position === null) {
+      continue;
+    }
+    const mesh = PROTO.entity.clone();
+    mesh.position.copy(cell(entity.position));
+    entitiesGroup.add(mesh);
+  }
+}
+
+function writeEchoes(rows) {
+  writeInstances(echoMesh, rows, (object, row) => {
+    object.position.copy(cell(row.position));
+    object.rotation.set(0, 0, 0);
+    object.scale.setScalar(1.15);
+  });
 }
 
 function writeInstances(mesh, rows, place) {
@@ -578,15 +620,46 @@ function foldLiveBodies(events) {
         position: at,
       });
     }
+    foldEntity(item);
+  }
+}
+
+function foldEntity(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const id = typeof payload.id === "string" ? payload.id : "";
+  const at = payloadPosition(payload);
+  if (item.type === "effect.create" && id.length > 0) {
+    world.liveEntities.set(id, {
+      id,
+      type: typeof payload.type === "string" ? payload.type : "entity",
+      position: at,
+    });
+    return;
+  }
+  if (item.type === "effect.move" && id.length > 0 && at !== null) {
+    const prior = world.liveEntities.get(id) ?? { id, type: "entity", position: at };
+    world.liveEntities.set(id, { ...prior, position: at });
+    return;
+  }
+  if (item.type === "effect.destroy" && id.length > 0) {
+    world.liveEntities.delete(id);
   }
 }
 
 function paintBodies() {
-  if (world.follow && world.liveBodies.size > 0) {
-    writeBodies([...world.liveBodies.values()]);
+  if (world.follow) {
+    const live = new Map(world.liveBodies);
+    for (const row of world.bodies) {
+      if (!live.has(row.id)) {
+        live.set(row.id, row);
+      }
+    }
+    writeBodies([...live.values()]);
+    writeEchoes(world.bodies);
     return;
   }
-  writeBodies(world.bodies);
+  writeBodies([]);
+  writeEchoes(world.bodies);
 }
 
 function paintMarks() {
@@ -595,6 +668,14 @@ function paintMarks() {
     return;
   }
   writeMarks(world.marks);
+}
+
+function paintEntities() {
+  if (world.follow && world.liveEntities.size > 0) {
+    rebuildEntities([...world.liveEntities.values()]);
+    return;
+  }
+  rebuildEntities(world.follow ? world.entities : []);
 }
 
 function writeMarks(rows) {
@@ -617,8 +698,27 @@ function writeMarks(rows) {
   });
 }
 
+function eventPosition(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const direct = payloadPosition(payload);
+  if (direct !== null) {
+    return direct;
+  }
+  const patch = payload.patch;
+  if (patch !== null && typeof patch === "object") {
+    const centre = payloadPosition(patch.centre) ?? payloadPosition(patch);
+    if (centre !== null) {
+      return centre;
+    }
+  }
+  if (typeof payload.id === "string" && world.liveEntities.has(payload.id)) {
+    return world.liveEntities.get(payload.id).position ?? null;
+  }
+  return world.liveBodies.get(actorId(item))?.position ?? null;
+}
+
 function sparkAt(item) {
-  const pos = payloadPosition(item.payload) ?? world.liveBodies.get(actorId(item))?.position ?? null;
+  const pos = eventPosition(item);
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(0.55, 8, 8),
     new THREE.MeshBasicMaterial({ color: item.type?.startsWith("amendment") ? 0xc4a574 : 0x4a7a68 }),
@@ -654,7 +754,65 @@ function tickSparks(now) {
   }
 }
 
+function tickFly(now) {
+  if (fly === null) {
+    return;
+  }
+  const t = Math.min(1, (now - fly.born) / fly.duration);
+  const ease = 1 - (1 - t) * (1 - t);
+  camera.position.lerpVectors(fly.fromPos, fly.toPos, ease);
+  controls.target.lerpVectors(fly.fromTarget, fly.toTarget, ease);
+  if (t >= 1) {
+    fly = null;
+    controls.autoRotate = false;
+  }
+}
+
+function bodyOf(id) {
+  return world.liveBodies.get(id)?.position ?? world.bodies.find((row) => row.id === id)?.position ?? null;
+}
+
+function setSlice(z) {
+  world.z = z;
+  const slider = $("slice-z");
+  const zLabel = $("slice-z-val");
+  if (slider instanceof HTMLInputElement) {
+    slider.value = String(z);
+  }
+  if (zLabel) {
+    zLabel.textContent = String(z);
+  }
+  setPlane(z);
+  drawSlice();
+}
+
+function focusIdentity(id) {
+  const at = bodyOf(id);
+  if (at === null) {
+    return false;
+  }
+  const target = cell(at);
+  const away = camera.position.clone().sub(controls.target);
+  if (away.lengthSq() < 0.01) {
+    away.set(18, 12, 18);
+  }
+  away.setLength(16);
+  fly = {
+    fromPos: camera.position.clone(),
+    toPos: target.clone().add(away),
+    fromTarget: controls.target.clone(),
+    toTarget: target,
+    born: performance.now(),
+    duration: 900,
+  };
+  controls.autoRotate = false;
+  world.flashes.set(id, performance.now());
+  setSlice(at.z);
+  return true;
+}
+
 function frame(now) {
+  tickFly(now);
   controls.update();
   if (!reduced) {
     tickSparks(now);
@@ -680,6 +838,9 @@ function frame(now) {
     for (const drift of driftsGroup.children) {
       drift.rotation.y += 0.012;
       drift.rotation.x += 0.006;
+    }
+    for (const entity of entitiesGroup.children) {
+      entity.rotation.y += 0.008;
     }
   }
   renderer.render(scene, camera);
@@ -776,6 +937,22 @@ function recordLine(item) {
   if (type === "act.mark") {
     return `${tick}  ${who(item)} marked “${clip(String(payload.text ?? ""), 40)}”`;
   }
+  if (type === "effect.create") {
+    const kind = typeof payload.type === "string" ? payload.type : "automaton";
+    const at = payloadPosition(payload);
+    return at === null
+      ? `${tick}  ${kind} ${payload.id} stood`
+      : `${tick}  ${kind} ${payload.id} stood at ${at.x},${at.y},${at.z}`;
+  }
+  if (type === "effect.move") {
+    const at = payloadPosition(payload);
+    return at === null
+      ? `${tick}  ${payload.id} moved`
+      : `${tick}  ${payload.id} moved to ${at.x},${at.y},${at.z}`;
+  }
+  if (type === "effect.destroy") {
+    return `${tick}  ${payload.id} left`;
+  }
   if (type === "speak" || type === "speak.warden") {
     return `${tick}  ${who(item)}: ${clip(String(payload.text ?? ""), 64)}`;
   }
@@ -821,10 +998,16 @@ function ribbonColor(type) {
   if (typeof type !== "string") {
     return "#5a6873";
   }
-  if (type.startsWith("amendment")) {
+  if (type.startsWith("amendment") || type.startsWith("effect.")) {
     return "#c4a574";
   }
-  if (type.startsWith("credential") || type.startsWith("identity")) {
+  if (type === "act.mark") {
+    return "#e0c089";
+  }
+  if (type === "speak" || type === "speak.warden") {
+    return "#dce6ec";
+  }
+  if (type.startsWith("credential") || type.startsWith("identity") || type.startsWith("act.")) {
     return "#4a7a68";
   }
   if (type === "tick.boundary") {
@@ -866,6 +1049,52 @@ function drawRibbon() {
   }
 }
 
+function plotSlice(ctx, rows, color, size, getPos) {
+  const scale = ctx.canvas.clientWidth / SIZE || 3;
+  ctx.fillStyle = color;
+  for (const row of rows) {
+    const pos = getPos(row);
+    if (pos === undefined || pos === null || Number(pos.z) !== world.z) {
+      continue;
+    }
+    ctx.fillRect(pos.x * scale - size / 2, (SIZE - 1 - pos.y) * scale - size / 2, size, size);
+  }
+}
+
+function drawSlice() {
+  const node = $("slice");
+  if (!(node instanceof HTMLCanvasElement)) {
+    return;
+  }
+  const ratio = window.devicePixelRatio || 1;
+  const css = Math.max(64, node.clientWidth || 192);
+  node.width = Math.floor(css * ratio);
+  node.height = Math.floor(css * ratio);
+  const ctx = node.getContext("2d");
+  if (ctx === null) {
+    return;
+  }
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.fillStyle = "#0c1116";
+  ctx.fillRect(0, 0, css, css);
+  ctx.strokeStyle = "#2a343c";
+  ctx.strokeRect(0.5, 0.5, css - 1, css - 1);
+  const scale = css / SIZE;
+  ctx.fillStyle = "rgba(109, 90, 58, 0.12)";
+  ctx.fillRect(0, 0, css, css);
+  plotSlice(ctx, world.anchors, "#6d5a3a", 5, (row) => row.centre);
+  plotSlice(ctx, world.wardens, "#c4a574", 3, (row) => row.position);
+  plotSlice(ctx, world.drifts, "#7ec8c4", 3, (row) => row.position);
+  plotSlice(ctx, visibleEntities(), "#c4a574", 3.5, (row) => row.position);
+  plotSlice(ctx, world.follow ? world.bodies : [], "#8b99a3", 2.5, (row) => row.position);
+  plotSlice(ctx, world.follow ? [...world.liveBodies.values()] : world.bodies, "#7ec8c4", 3, (row) => row.position);
+  const marks = world.follow && world.liveMarks.size > 0 ? [...world.liveMarks.values()] : world.marks;
+  plotSlice(ctx, marks, "#e0c089", 2, (row) => row.position);
+  ctx.fillStyle = "#8b99a3";
+  ctx.font = "10px IBM Plex Mono, ui-monospace, monospace";
+  ctx.fillText(`z ${world.z}`, 6, css - 6);
+}
+
 async function readJson(path) {
   const res = await fetch(path, { headers: { accept: "application/json" } });
   const type = res.headers.get("content-type") ?? "";
@@ -882,11 +1111,14 @@ function applyMap(map) {
   world.marks = Array.isArray(map.marks) ? map.marks : [];
   world.wardens = Array.isArray(map.wardens) ? map.wardens : [];
   world.drifts = Array.isArray(map.drifts) ? map.drifts : [];
+  world.entities = Array.isArray(map.entities) ? map.entities : [];
   rebuildAnchors(world.anchors);
   rebuildWardens(world.wardens);
   rebuildDrifts(world.drifts);
   paintBodies();
   paintMarks();
+  paintEntities();
+  drawSlice();
 }
 
 async function refresh() {
@@ -924,7 +1156,9 @@ async function refresh() {
     foldLiveBodies(world.events);
     paintBodies();
     paintMarks();
+    paintEntities();
     drawRibbon();
+    drawSlice();
     setStat("tick", world.present);
     setStat("online", metrics.online);
     setStat("lastTickPresent", metrics.lastTickPresent);
@@ -976,20 +1210,34 @@ async function refresh() {
 
 function fillInhabitants(rows, standing) {
   const fame = new Map(standing.map((row) => [row.id, row]));
-  fillList(
-    "inhabitants",
-    rows.map((row) => {
-      const name = typeof row.name === "string" && row.name.length > 0 ? row.name : row.id;
-      const score = fame.get(row.id);
-      const detail = score
-        ? `fame ${score.fame} · notoriety ${score.notoriety}`
-        : row.founder
-          ? "founder"
-          : row.id;
-      return line(name, detail);
-    }),
-    "No identities yet.",
+  const census = line(
+    "NPCs",
+    `${world.wardens.length} warden · ${world.drifts.length} drift · ${visibleEntities().length} automaton · ${world.bodies.length} echo`,
   );
+  const people = rows.map((row) => {
+    const name = typeof row.name === "string" && row.name.length > 0 ? row.name : row.id;
+    const score = fame.get(row.id);
+    const at = bodyOf(row.id);
+    const detail = score
+      ? `fame ${score.fame} · notoriety ${score.notoriety}`
+      : row.founder
+        ? "founder"
+        : row.id;
+    const item = line(name, at === null ? detail : `${detail} · ${at.x},${at.y},${at.z}`);
+    item.dataset.identityId = row.id;
+    item.classList.add("go");
+    item.tabIndex = 0;
+    item.title = at === null ? "No last cell on the public map yet" : `Go to ${at.x}, ${at.y}, ${at.z}`;
+    return item;
+  });
+  fillList("inhabitants", [census, ...people], "No identities yet.");
+}
+
+function visibleEntities() {
+  if (world.follow && world.liveEntities.size > 0) {
+    return [...world.liveEntities.values()];
+  }
+  return world.entities;
 }
 
 function prependEvent(id, item) {
@@ -1035,7 +1283,13 @@ function appendRecord(item) {
       paintMarks();
     }
   }
-  if (id.length > 0 && (item.type === "speak" || item.type.startsWith("amendment.") || item.type === "act.mark")) {
+  if (item.type === "effect.create" || item.type === "effect.move" || item.type === "effect.destroy") {
+    foldEntity(item);
+    if (world.follow) {
+      paintEntities();
+    }
+  }
+  if (id.length > 0 && (item.type === "speak" || item.type === "speak.warden" || item.type.startsWith("amendment.") || item.type === "act.mark" || item.type.startsWith("effect."))) {
     world.flashes.set(id, performance.now());
   }
   world.events.push(item);
@@ -1043,6 +1297,7 @@ function appendRecord(item) {
     world.events.shift();
   }
   drawRibbon();
+  drawSlice();
   if (!reduced && !streamNoise(item.type)) {
     sparkAt(item);
   }
@@ -1080,7 +1335,11 @@ function listen() {
 function snapshotFromListen(type) {
   return (
     typeof type === "string" &&
-    (type.startsWith("amendment.") || type.startsWith("identity.") || type === "credential.mint_root")
+    (type.startsWith("amendment.") ||
+      type.startsWith("identity.") ||
+      type === "credential.mint_root" ||
+      type === "effect.create" ||
+      type === "effect.destroy")
   );
 }
 
@@ -1105,6 +1364,7 @@ function bindControls() {
         zLabel.textContent = String(world.z);
       }
       setPlane(world.z);
+      drawSlice();
     };
     slider.addEventListener("input", syncZ);
     syncZ();
@@ -1139,11 +1399,34 @@ function bindControls() {
   };
   $("zoom-in")?.addEventListener("click", () => dolly(0.78));
   $("zoom-out")?.addEventListener("click", () => dolly(1.28));
+  const roster = $("inhabitants");
+  const go = (node) => {
+    const row = node instanceof Element ? node.closest("[data-identity-id]") : null;
+    if (row === null) {
+      return;
+    }
+    const id = row.getAttribute("data-identity-id");
+    if (id === null || !focusIdentity(id)) {
+      return;
+    }
+    for (const item of roster.querySelectorAll(".here")) {
+      item.classList.remove("here");
+    }
+    row.classList.add("here");
+  };
+  roster.addEventListener("click", (event) => go(event.target));
+  roster.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      go(event.target);
+    }
+  });
 }
 
 window.addEventListener("resize", () => {
   resize();
   drawRibbon();
+  drawSlice();
 });
 resize();
 setPlane(world.z);
