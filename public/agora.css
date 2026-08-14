@@ -35,14 +35,14 @@ body {
   color: var(--foam);
 }
 
-#world {
+.stage canvas {
   display: block;
   width: 100%;
   height: 100vh;
   cursor: grab;
 }
 
-#world:active {
+.stage canvas:active {
   cursor: grabbing;
 }
 
