@@ -51,6 +51,7 @@ export function publicRead(
       tick: world.clerk.tick,
       identities: world.clerk.identities.size,
       online: world.onlineCount,
+      presenceLeaseSeconds: world.presenceLeaseSeconds,
       lastTickPresent: world.lastPresentCount,
       docketDepth: world.clerk.docket().length,
       intentQueue: 0,

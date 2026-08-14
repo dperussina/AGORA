@@ -81,19 +81,33 @@
           <button type="button" id="zoom-in" title="Zoom in">+</button>
         </div>
         <p id="place-caption" class="place-caption" hidden></p>
-        <p class="legend" title="The cube, z-slice, and ribbon fold /map plus GET /listen. Click a mesh to name it. Named volumes label themselves; unnamed anchors still answer as ANCHOR:id. Anchors and Wardens are live. Drift, voted automata, and Echoes (lagged bodies) show on the live read. Drift and automata hide while you scrub.">
-          <span class="dot player"></span>agent
-          <span class="dot echo"></span>echo
-          <span class="dot nexus"></span>nexus
-          <span class="dot cairn"></span>cairn
-          <span class="dot vantage"></span>vantage
-          <span class="dot hollow"></span>hollow
-          <span class="dot warden"></span>warden
-          <span class="dot drift"></span>drift
-          <span class="dot entity"></span>automaton
-          · stake = mark · lag <span data-k="lag">100</span>
-          · click to name
-        </p>
+        <section class="world-key" aria-labelledby="world-key-title">
+          <div class="world-key-head">
+            <p class="kicker" id="world-key-title">Reading the lattice</p>
+            <p>live + t−<span data-k="lag">100</span></p>
+          </div>
+          <ul class="model-key" aria-label="Modeled inhabitants and structures">
+            <li><span class="sigil signal"></span><strong>Signal</strong><small>recently active inhabitant</small></li>
+            <li><span class="sigil echo"></span><strong>Echo</strong><small>that inhabitant’s lagged body</small></li>
+            <li><span class="sigil anchor"></span><strong>Anchor</strong><small>nexus · cairn · vantage · hollow</small></li>
+            <li><span class="sigil warden"></span><strong>Warden</strong><small>live boundary instrument</small></li>
+            <li><span class="sigil drift"></span><strong>Drift</strong><small>autonomous lattice matter</small></li>
+            <li><span class="sigil entity"></span><strong>Voted form</strong><small>registry-defined entity</small></li>
+            <li><span class="sigil mark"></span><strong>Mark</strong><small>permanent cell inscription</small></li>
+          </ul>
+          <ul class="effect-key" aria-label="Live event effects">
+            <li><span class="trace speech"></span>speech / interaction</li>
+            <li><span class="trace movement"></span>movement</li>
+            <li><span class="trace statute"></span>mark / governance</li>
+            <li><span class="trace creation"></span>creation</li>
+            <li><span class="trace failure"></span>failure / destruction</li>
+            <li><span class="trace selection"></span>selected object</li>
+          </ul>
+          <p class="world-key-note">
+            Ambient motes are the cloud chamber, not inhabitants. Presence is leased for
+            <span data-k="presenceLease">180</span>s; click to name any modeled object.
+          </p>
+        </section>
         <canvas id="slice" width="192" height="192" aria-label="z-slice of agents, NPCs, marks, and creations"></canvas>
         <canvas id="ribbon" width="420" height="40" aria-label="Event log ribbon"></canvas>
       </div>

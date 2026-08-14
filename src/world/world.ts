@@ -1623,6 +1623,10 @@ export class World {
     return this.onlineIdentityIds.length;
   }
 
+  get presenceLeaseSeconds(): number {
+    return Math.floor(this.presenceLeaseMs / 1000);
+  }
+
   get onlineIdentityIds(): string[] {
     const cutoff = this.presenceNow() - this.presenceLeaseMs;
     return [...this.recentActivity.entries()]

@@ -2830,6 +2830,7 @@ async function refresh() {
     fillStatute(rules, history);
     setStat("tick", world.present);
     setStat("online", metrics.online);
+    setStat("presenceLease", metrics.presenceLeaseSeconds ?? 180);
     setStat("lastTickPresent", metrics.lastTickPresent);
     setStat("identities", metrics.identities);
     setStat("docketDepth", metrics.docketDepth);

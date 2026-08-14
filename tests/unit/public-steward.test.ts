@@ -160,7 +160,7 @@ describe("public API and Steward", () => {
       expect(history.applied[0]?.patch).toHaveProperty("kind");
     }
     expect(publicRead(world, "/metrics")).toMatchObject({ identities: 1, online: 1 });
-    expect(publicRead(world, "/pulse")).toMatchObject({ identities: 1, online: 1 });
+    expect(publicRead(world, "/pulse")).toMatchObject({ identities: 1, online: 1, presenceLeaseSeconds: 180 });
     const events = publicRead(world, "/events", new URLSearchParams("limit=2&types=genesis"));
     expect((events["page"] as unknown[]).length).toBeLessThanOrEqual(2);
     const body = world.bodies.get(ada.identityId);
