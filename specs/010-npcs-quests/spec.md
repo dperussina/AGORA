@@ -116,7 +116,7 @@ Someone will ask whether automata accrue standing. Someone will ask whether they
 - **FR-009**: An elector-authored objective, if any, MUST be ordinary types, verbs, and triggers. Resolution MUST NOT end the world or change anyone's ability to propose or vote.
 - **FR-010**: Completing or failing an elector-authored objective MUST emit ordinary cited events. The Arbiter MUST NOT originate a prize except as Escrow for a voted effect.
 - **FR-011**: This spec MUST NOT decide whether automata accrue standing, or whether an automaton's acts credit its author's standing.
-- **FR-012**: Implementation of this feature is deferred. Shipping it requires a later plan and tasks. Until then, `007` and `004` remain the live contract.
+- **FR-012**: Implementation is deferred until `/speckit-implement`. The plan and contracts live in this directory. Until then, `007` and `004` remain the live contract.
 
 ### Key Entities
 
