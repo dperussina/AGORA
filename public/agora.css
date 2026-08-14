@@ -28,35 +28,122 @@ body {
   line-height: 1.55;
 }
 
-#lattice {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
+.stage {
+  position: relative;
+  min-height: 100vh;
+  background: var(--well);
+  color: var(--foam);
+}
+
+#world {
+  display: block;
   width: 100%;
-  height: 100%;
-  pointer-events: none;
-  opacity: 0.28;
+  height: 100vh;
+  cursor: grab;
 }
 
-.gauge {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 1.15rem;
-  z-index: 1;
-  width: 1px;
-  background: var(--rule);
-  pointer-events: none;
+#world:active {
+  cursor: grabbing;
 }
 
-.gauge i {
+.stage .bar {
   position: absolute;
-  left: -3px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--brass);
-  transform: translateY(12vh);
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  padding: 1.2rem 1.6rem 0;
+}
+
+.stage .mark,
+.stage nav a {
+  color: var(--foam);
+}
+
+.stage nav a {
+  color: #9aa8b2;
+}
+
+.stage nav a:hover {
+  color: var(--foam);
+}
+
+.hud {
+  position: absolute;
+  left: 1.6rem;
+  bottom: 1.4rem;
+  z-index: 3;
+  width: min(34rem, calc(100% - 20rem));
+  pointer-events: auto;
+}
+
+.hud .kicker {
+  color: #c4a574;
+}
+
+.hud .tick {
+  margin: 0;
+  font-size: clamp(3rem, 8vw, 6.2rem);
+  color: var(--foam);
+}
+
+.hud h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  max-width: 22ch;
+  color: var(--foam);
+}
+
+.hud .stats {
+  margin-top: 0.6rem;
+}
+
+.hud .stats div {
+  border-top-color: #2a343c;
+}
+
+.hud .stats dt,
+.hud .hint,
+.hud .live {
+  color: #8b99a3;
+}
+
+.hud .stats dd {
+  color: var(--foam);
+}
+
+.tape {
+  position: absolute;
+  top: 4.4rem;
+  right: 1.2rem;
+  z-index: 3;
+  width: min(18rem, 34vw);
+  max-height: calc(100vh - 5.4rem);
+  overflow: auto;
+}
+
+.tape .kicker {
+  color: #c4a574;
+}
+
+.tape .list li,
+.tape .record li {
+  border-top-color: #2a343c;
+  color: var(--foam);
+}
+
+.tape .empty,
+.tape .patch {
+  color: #8b99a3;
+}
+
+#ribbon {
+  display: block;
+  width: 100%;
+  height: 56px;
+  margin-top: 0.85rem;
+  border: 1px solid #2a343c;
+  background: #0c1116;
 }
 
 .bar,
@@ -75,12 +162,21 @@ main,
 }
 
 .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   font-family: "Fraunces", Georgia, serif;
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: -0.03em;
   color: inherit;
   text-decoration: none;
+}
+
+.mark img {
+  width: 1.45rem;
+  height: 1.45rem;
+  border: 1px solid var(--rule);
 }
 
 nav {
@@ -149,6 +245,30 @@ h2 {
   margin: 0;
   max-width: 38rem;
   font-size: 1.12rem;
+}
+
+.hero {
+  display: grid;
+  gap: 2.2rem;
+}
+
+@media (min-width: 960px) {
+  .hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(14rem, 0.95fr);
+    align-items: end;
+    gap: 3rem;
+  }
+}
+
+.hero-art {
+  margin: 0;
+}
+
+.hero-art img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
 }
 
 .hero-actions {
@@ -265,41 +385,16 @@ a.btn.quiet {
   color: var(--halt);
 }
 
-.sight {
-  display: grid;
-  gap: 2rem;
-  margin-top: 4.5rem;
-  padding-top: 1.4rem;
-  border-top: 1px solid var(--rule);
-}
-
-@media (min-width: 960px) {
-  .sight {
-    grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 0.8fr);
-    gap: 3rem;
-    align-items: start;
-  }
-}
-
-#slice {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1;
-  background: var(--foam);
-  border: 1px solid var(--rule);
-}
-
 .sight-ctrl {
   display: grid;
-  gap: 0.45rem;
-  margin-top: 0.85rem;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
 }
 
 .sight-ctrl label {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 0.78rem;
-  color: var(--mute);
+  color: #8b99a3;
 }
 
 .sight-ctrl input[type="range"] {
@@ -514,8 +609,19 @@ code {
     padding-right: 1.2rem;
   }
 
-  .gauge {
-    left: 0.7rem;
+  .hud {
+    width: calc(100% - 2.2rem);
+    left: 1.1rem;
+  }
+
+  .tape {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: auto;
+    max-height: none;
+    padding: 0 1.1rem 1.4rem;
+    background: var(--well);
   }
 
   .stats {

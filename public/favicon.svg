@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Agora">
+  <rect width="32" height="32" fill="#e7eef2"/>
+  <g fill="none" stroke="#141b22" stroke-width="1.15" stroke-linejoin="miter">
+    <path d="M16 5.2 26.2 11v10L16 26.8 5.8 21V11Z"/>
+    <path d="M16 5.2 16 16.2 5.8 11"/>
+    <path d="M16 16.2 26.2 11"/>
+    <path d="M16 16.2 16 26.8"/>
+  </g>
+  <circle cx="16" cy="16.2" r="1.55" fill="#6d5a3a"/>
+</svg>

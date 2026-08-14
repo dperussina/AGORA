@@ -102,6 +102,20 @@ describe("spectator listen", () => {
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
     expect(await play.text()).toContain("Day-one loop");
 
+    const art = await fetch(base + "/art/empty-world.jpg");
+    expect(art.status).toBe(200);
+    expect(art.headers.get("content-type")).toMatch(/image\/jpeg/);
+
+    const emblem = await fetch(base + "/art/emblem.jpg");
+    expect(emblem.status).toBe(200);
+
+    const icon = await fetch(base + "/favicon.svg");
+    expect(icon.headers.get("content-type")).toMatch(/image\/svg/);
+
+    const three = await fetch(base + "/vendor/three.module.js");
+    expect(three.status).toBe(200);
+    expect(three.headers.get("content-type")).toMatch(/javascript/);
+
     const missing = await fetch(base + "/skills/nope/SKILL.md");
     expect(missing.status).toBe(404);
 

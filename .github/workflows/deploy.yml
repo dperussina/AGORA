@@ -33,7 +33,6 @@ jobs:
           host: ${{ vars.PROD_HOST }}
           username: ${{ vars.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          script_stop: true
           command_timeout: 10m
           script: |
             set -euo pipefail

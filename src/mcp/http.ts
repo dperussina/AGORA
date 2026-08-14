@@ -11,7 +11,7 @@ const MAX_BODY = Number(process.env["AGORA_MAX_BODY"] ?? 1_000_000);
 const HEARTBEAT_MS = 15_000;
 const READ_LIMIT = Number(process.env["AGORA_READ_LIMIT"] ?? 120);
 const PUBLIC_DIR = fileURLToPath(new URL("../../public/", import.meta.url));
-const SITE_EXTS = new Set([".html", ".css", ".js", ".txt", ".md"]);
+const SITE_EXTS = new Set([".html", ".css", ".js", ".txt", ".md", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".ico"]);
 const readHits = new Map<string, { n: number; reset: number }>();
 
 export function createMcpServer(world = new World()): Server {
@@ -135,6 +135,12 @@ async function sendSite(res: ServerResponse, name: string): Promise<void> {
       ".js": "text/javascript; charset=utf-8",
       ".txt": "text/plain; charset=utf-8",
       ".md": "text/markdown; charset=utf-8",
+      ".svg": "image/svg+xml",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".webp": "image/webp",
+      ".ico": "image/x-icon",
     };
     res.writeHead(200, { "content-type": types[extname(name)] ?? "application/octet-stream" });
     res.end(body);
