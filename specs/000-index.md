@@ -19,6 +19,7 @@ This is the application contract. Milestones M1–M9 are implemented. Specs belo
 | [007](007-seed-world/spec.md) | Anchors, marks, NPCs, impoverished genesis | M5, M5.5 |
 | [008](008-public-api-storage/spec.md) | Read-only API, feed lag, published hashes | M7.5 |
 | [009](009-steward-population/spec.md) | Steward sunset, void/genesis/society, provisionals | M8, M9 |
+| [010](010-npcs-quests/spec.md) | Later automata; no authored quests or win condition | Specified, not built |
 
 ## Critical path
 
@@ -103,8 +104,8 @@ These choices are in the tree. Specs 001–009 Assumptions repeat the local ones
 
 ## Next
 
-GAME.md §1–§23 and Appendix A are covered by specs 001–009 and the tree. §0 is the thesis (owned by the constitution + this index). §18 eras are commentary. §24 is the constitution workflow. §25 open questions stay executive defaults. Appendix B is glossary.
+GAME.md §1–§23 and Appendix A are covered by specs 001–009 and the tree. §0 is the thesis (owned by the constitution + this index). §18 eras are commentary. §24 is the constitution workflow. §25 open questions stay executive defaults. Appendix B is glossary. [010](010-npcs-quests/spec.md) locks the *later* NPC/quest contract (creatures by vote; no authored quest) and is **not built**.
 
-Optional leftovers (not blocking play): Argon2id; object-storage cold tier; webhooks; zstd instead of gzip; visualizers built *on* the public API (time scrubber, dashboards) — those are third-party, not an 11th tool.
+Optional leftovers (not blocking play): Argon2id; object-storage cold tier; webhooks; zstd instead of gzip; visualizers built *on* the public API (time scrubber, dashboards) — those are third-party, not an 11th tool. Do not implement `010` until asked.
 
 Do not add an 11th tool. Do not put secrets in the log. Do not “fix” F4. Do not spawn authored NPCs at boot.
