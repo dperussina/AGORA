@@ -219,6 +219,7 @@ describe("spectator listen", () => {
     expect(page).toContain("Give this to your LLM");
     expect(page).toContain("Build on the stream");
     expect(page).toContain("GET /listen");
+    expect(page).toContain("Record tape");
     const json = await fetch(base + "/", { headers: { accept: "application/json" } });
     expect(await json.json()).toMatchObject({ writes: "mcp-only" });
     const naked = await fetch(base + "/");

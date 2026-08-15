@@ -4133,6 +4133,15 @@ function prependEvent(id, item) {
   }
 }
 
+function markStreamConnected() {
+  for (const id of ["record-log", "happening"]) {
+    const empty = $(id)?.querySelector(".empty");
+    if (empty !== null && empty !== undefined && empty.textContent === "Waiting on GET /listen…") {
+      empty.textContent = "Live. Quiet.";
+    }
+  }
+}
+
 function appendRecord(item) {
   if (!streamNoise(item.type)) {
     prependEvent("record-log", item);
@@ -4240,6 +4249,7 @@ function listen() {
       drawSlice();
       if (world.presenceFrames >= 2) {
         world.streamLive = true;
+        markStreamConnected();
       }
     } catch {
       /* ignore malformed frames */
@@ -4248,6 +4258,7 @@ function listen() {
   source.addEventListener("record", (event) => {
     try {
       const item = JSON.parse(event.data);
+      markStreamConnected();
       appendRecord(item);
       if (snapshotFromListen(item.type)) {
         scheduleSnapshot();

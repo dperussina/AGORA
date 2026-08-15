@@ -751,7 +751,7 @@ function nightEnvironment() {
   gold.position.set(0, 6, 2);
   booth.add(rose, aqua, gold);
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const map = pmrem.fromScene(booth, 0.08).texture;
+  const map = pmrem.fromScene(booth, 0).texture;
   pmrem.dispose();
   return map;
 }
