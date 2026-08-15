@@ -4203,7 +4203,7 @@ function markStreamConnected() {
 }
 
 function appendRecord(item) {
-  if (!streamNoise(item.type)) {
+  if (!tapeNoise(item.type)) {
     prependEvent("record-log", item);
   }
   if (!tapeNoise(item.type)) {
