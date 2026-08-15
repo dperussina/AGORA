@@ -83,22 +83,25 @@
 
 .spectrum-chat {
   position: fixed;
-  left: max(0.85rem, env(safe-area-inset-left, 0px));
-  bottom: max(0.85rem, env(safe-area-inset-bottom, 0px));
-  z-index: 4;
+  top: auto;
+  right: auto;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 20;
   box-sizing: border-box;
-  width: min(22rem, calc(100vw - 1.7rem));
-  max-height: min(14rem, calc(100vh - 8.5rem));
+  width: min(26rem, calc(100vw - 2rem));
+  height: min(32rem, calc(100vh - 7rem));
   display: flex;
   flex-direction: column;
   padding: 0.55rem 0.7rem 0.65rem;
   border: 1px solid rgba(42, 51, 58, 0.85);
-  background: rgba(8, 10, 14, 0.72);
+  background: rgba(8, 10, 14, 0.78);
   overflow: hidden;
   pointer-events: auto;
 }
 
 .spectrum-chat .spectrum-kicker {
+  flex: 0 0 auto;
   margin: 0 0 0.35rem;
 }
 
@@ -106,8 +109,11 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow: auto;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
 }
 
 .spectrum-chat li {
@@ -440,7 +446,7 @@
 .spectrum-dock {
   right: 1rem;
   bottom: 1rem;
-  left: min(24rem, calc(22rem + 2rem));
+  left: min(28rem, calc(26rem + 2.5rem));
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem 1.1rem;
@@ -502,7 +508,7 @@
     left: 0.75rem;
     right: 0.75rem;
     width: auto;
-    max-height: min(22vh, 10rem);
+    height: min(40vh, 16rem);
     bottom: max(6.8rem, calc(env(safe-area-inset-bottom, 0px) + 6.8rem));
   }
 

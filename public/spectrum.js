@@ -3209,6 +3209,7 @@ function pushChat(item) {
     return;
   }
   root.querySelector(".empty")?.remove();
+  const stick = root.scrollHeight - root.scrollTop - root.clientHeight < 56;
   const li = document.createElement("li");
   li.className = type === "speak.warden" ? "warden" : "speak";
   const who = document.createElement("span");
@@ -3219,10 +3220,12 @@ function pushChat(item) {
   body.textContent = text;
   li.append(who, body);
   root.append(li);
-  while (root.children.length > 48) {
+  while (root.children.length > 120) {
     root.firstElementChild?.remove();
   }
-  root.scrollTop = root.scrollHeight;
+  if (stick) {
+    root.scrollTop = root.scrollHeight;
+  }
 }
 
 function appendRecord(item) {
