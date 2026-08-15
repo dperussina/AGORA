@@ -725,6 +725,48 @@ function pickProbeAct(seed, roll) {
   return "drift";
 }
 
+function probeBusy(item, now) {
+  return item.act !== "hold" && item.act !== "settle" && now < item.next;
+}
+
+function someoneElseProbing(selfId, now) {
+  for (const [id, item] of probes) {
+    if (id !== selfId && probeBusy(item, now)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function holdProbe(probe, now, wait) {
+  probe.act = "hold";
+  probe.born = now;
+  probe.duration = wait;
+  probe.next = now + wait;
+}
+
+function startProbeAct(probe, now) {
+  probe.act = pickProbeAct(probe.seed, now);
+  probe.born = now;
+  probe.duration = probe.act === "release" ? 4200 : probe.act === "circle" ? 5000 : probe.act === "drift" ? 3600 : 3200;
+  probe.next = now + probe.duration;
+  const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
+  probe.drift.set(Math.cos(heading) * 0.62, 0, Math.sin(heading) * 0.62);
+}
+
+function gate(u, inEnd, outStart) {
+  if (u <= 0 || u >= 1) {
+    return 0;
+  }
+  if (u < inEnd) {
+    return easeInOut(u / inEnd);
+  }
+  if (u > outStart) {
+    return 1 - easeInOut((u - outStart) / (1 - outStart));
+  }
+  return 1;
+}
+
 function glowMat(color, opacity = 0.72) {
   return new THREE.MeshBasicMaterial({
     color,
@@ -844,10 +886,10 @@ function ensureProbe(id, home, now) {
     probe = {
       id,
       home: home.clone(),
-      act: "circle",
+      act: "hold",
       born: now,
-      duration: 2800,
-      next: now + 400 + (probeSeed(id) % 700),
+      duration: 400 + (probeSeed(id) % 900),
+      next: now + 400 + (probeSeed(id) % 900),
       seed: probeSeed(id),
       drift: new THREE.Vector3(),
       fx: makeProbeRig(color),
@@ -872,11 +914,12 @@ function ensureProbe(id, home, now) {
 
 function probePose(probe, now) {
   const phase = (probe.seed % 1000) / 1000;
+  const heading = Math.atan2(probe.drift.z, probe.drift.x) || 0;
   const pose = {
     x: 0,
     y: 0.16,
     z: 0,
-    yaw: Math.atan2(probe.drift.z, probe.drift.x) || 0,
+    yaw: heading,
     pitch: 0,
     roll: 0,
     lamp: 1.15,
@@ -885,54 +928,44 @@ function probePose(probe, now) {
     ring: 0,
     release: 0,
   };
-  const age = (now - probe.born) / Math.max(1, probe.duration);
-  const u = Math.min(1, Math.max(0, age));
-  const deploy = u < 0.14 ? easeInOut(u / 0.14) : u > 0.86 ? 1 - easeInOut((u - 0.86) / 0.14) : 1;
+  const u = Math.min(1, Math.max(0, (now - probe.born) / Math.max(1, probe.duration)));
   if (probe.act === "circle") {
-    const ang = u * Math.PI * 2 + phase * 5;
-    const radius = 1.1;
-    pose.x = Math.cos(ang) * radius;
-    pose.z = Math.sin(ang) * radius;
-    pose.yaw = -ang + Math.PI / 2;
-    pose.lamp = 1.4;
-    pose.ring = 1;
+    const reach = gate(u, 0.2, 0.8);
+    const ang = heading + (u < 0.2 ? 0 : u > 0.8 ? Math.PI * 2 : ((u - 0.2) / 0.6) * Math.PI * 2);
+    pose.x = Math.cos(ang) * 1.1 * reach;
+    pose.z = Math.sin(ang) * 1.1 * reach;
+    const tangent = -ang + Math.PI / 2;
+    pose.yaw = heading + (tangent - heading) * reach;
+    pose.lamp = 1.15 + reach * 0.25;
+    pose.ring = reach;
   } else if (probe.act === "gather") {
-    pose.y = 0.1;
-    pose.lamp = 1.9;
+    const deploy = gate(u, 0.16, 0.84);
+    pose.y = 0.16 - deploy * 0.06;
+    pose.lamp = 1.15 + deploy * 0.75;
     pose.beam = deploy;
   } else if (probe.act === "release") {
     pose.release = u;
-    pose.lamp = 1.5;
+    pose.lamp = 1.15 + gate(u, 0.16, 0.84) * 0.35;
   } else if (probe.act === "drift") {
-    const travel = u < 0.3 ? easeInOut(u / 0.3) : u > 0.7 ? 1 - easeInOut((u - 0.7) / 0.3) : 1;
+    const travel = gate(u, 0.28, 0.72);
     pose.x = probe.drift.x * travel;
     pose.z = probe.drift.z * travel;
     pose.y = 0.16 + travel * 0.12;
   } else if (probe.act === "settle") {
     pose.y = 0.16 + (1 - u) * 0.2;
-    pose.lamp = 1.5;
+    pose.lamp = 1.3;
   }
   return pose;
 }
 
 function poseMinions(fx, release) {
-  for (let i = 0; i < fx.minions.length; i += 1) {
-    const delay = i * 0.045;
-    const local = Math.min(1, Math.max(0, (release - delay) / 0.82));
-    let reach = 0;
-    if (local <= 0) {
-      reach = 0;
-    } else if (local < 0.2) {
-      reach = easeInOut(local / 0.2) * 0.12;
-    } else if (local < 0.52) {
-      reach = 0.12 + easeInOut((local - 0.2) / 0.32) * 0.88;
-    } else if (local < 0.7) {
-      reach = 1;
-    } else {
-      reach = 1 - easeInOut((local - 0.7) / 0.3);
-    }
+  const count = fx.minions.length;
+  const last = (count - 1) * 0.05;
+  for (let i = 0; i < count; i += 1) {
+    const local = Math.min(1, Math.max(0, (release - i * 0.05) / (1 - last)));
+    const reach = gate(local, 0.22, 0.62);
     const { mesh, dest } = fx.minions[i];
-    mesh.visible = release > 0.02 && reach > 0.03;
+    mesh.visible = reach > 0.03;
     mesh.position.copy(dest).multiplyScalar(reach);
     mesh.scale.setScalar(0.35 + reach * 0.75);
   }
@@ -962,9 +995,9 @@ function poseProbeRig(probe, at, pose, now, dt) {
   const emit = now - fx.last > 70;
   if (emit) {
     fx.last = now;
-    if (probe.act === "circle") {
+    if (probe.act === "circle" && pose.ring > 0.45) {
       emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.45, at.z), new THREE.Vector3(-pose.x * 1.4, 0.15, -pose.z * 1.4), 3);
-    } else if (probe.act === "gather") {
+    } else if (probe.act === "gather" && pose.beam > 0.35) {
       emitProbeDust(fx, new THREE.Vector3(at.x, at.y - 0.35, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.18, 1.6, (Math.random() - 0.5) * 0.18), 4);
     }
   }
@@ -1008,12 +1041,13 @@ function tickProbes(now) {
     const home = cell(row.position);
     const probe = ensureProbe(id, home, now);
     if (now >= probe.next) {
-      probe.act = pickProbeAct(probe.seed, now);
-      probe.born = now;
-      probe.duration = probe.act === "release" ? 4200 : probe.act === "circle" ? 4800 : probe.act === "drift" ? 3400 : 3000;
-      probe.next = now + probe.duration;
-      const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
-      probe.drift.set(Math.cos(heading) * 0.62, 0, Math.sin(heading) * 0.62);
+      if (probe.act !== "hold") {
+        holdProbe(probe, now, 600);
+      } else if (someoneElseProbing(id, now)) {
+        holdProbe(probe, now, 450);
+      } else {
+        startProbeAct(probe, now);
+      }
     }
     const pose = probePose(probe, now);
     const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);

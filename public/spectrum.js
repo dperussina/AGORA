@@ -702,10 +702,7 @@ function tickFlights(now) {
       }
       const idle = idles.get(id);
       if (idle !== undefined) {
-        idle.act = "circle";
-        idle.born = now;
-        idle.duration = 2800;
-        idle.next = now + 2800;
+        holdIdle(idle, now, 700);
       }
       state.flights.delete(id);
       landed = true;
@@ -1027,33 +1024,77 @@ function pickIdleAct(seed, now) {
   return "drift";
 }
 
+function idleBusy(item, now) {
+  return item.act !== "hold" && now < item.next;
+}
+
+function someoneElseBusy(selfId, now) {
+  for (const [id, item] of idles) {
+    if (id !== selfId && idleBusy(item, now)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function holdIdle(idle, now, wait) {
+  idle.act = "hold";
+  idle.born = now;
+  idle.duration = wait;
+  idle.next = now + wait;
+}
+
+function startIdleAct(idle, now) {
+  idle.act = pickIdleAct(idle.seed, now);
+  idle.born = now;
+  idle.duration = idle.act === "release" ? 4200 : idle.act === "circle" ? 5000 : idle.act === "drift" ? 3600 : 3200;
+  idle.next = now + idle.duration;
+  idle.heading = ((idle.seed + Math.floor(now)) % 360) * (Math.PI / 180);
+}
+
 function ensureIdle(id, now) {
   let idle = idles.get(id);
   if (idle === undefined) {
     idle = {
-      act: "circle",
+      act: "hold",
       born: now,
-      duration: 3200,
-      next: now + 3200,
+      duration: 400 + (fnv(id) % 900),
+      next: now + 400 + (fnv(id) % 900),
       seed: fnv(id),
       heading: (fnv(id) % 360) * (Math.PI / 180),
     };
     idles.set(id, idle);
   }
-  if (now >= idle.next) {
-    idle.act = pickIdleAct(idle.seed, now);
-    idle.born = now;
-    idle.duration = idle.act === "release" ? 4200 : idle.act === "circle" ? 4800 : idle.act === "drift" ? 3400 : 3000;
-    idle.next = now + idle.duration;
-    idle.heading = ((idle.seed + Math.floor(now)) % 360) * (Math.PI / 180);
+  if (now < idle.next) {
+    return idle;
   }
+  if (idle.act !== "hold") {
+    holdIdle(idle, now, 600);
+    return idle;
+  }
+  if (someoneElseBusy(id, now)) {
+    holdIdle(idle, now, 450);
+    return idle;
+  }
+  startIdleAct(idle, now);
   return idle;
 }
 
+function gate(u, inEnd, outStart) {
+  if (u <= 0 || u >= 1) {
+    return 0;
+  }
+  if (u < inEnd) {
+    return easeInOut(u / inEnd);
+  }
+  if (u > outStart) {
+    return 1 - easeInOut((u - outStart) / (1 - outStart));
+  }
+  return 1;
+}
+
 function idlePose(idle, now) {
-  const phase = (idle.seed % 1000) / 1000;
   const u = Math.min(1, Math.max(0, (now - idle.born) / Math.max(1, idle.duration)));
-  const deploy = u < 0.14 ? easeInOut(u / 0.14) : u > 0.86 ? 1 - easeInOut((u - 0.86) / 0.14) : 1;
   const pose = {
     x: 0,
     y: 0.16,
@@ -1064,18 +1105,21 @@ function idlePose(idle, now) {
     release: 0,
   };
   if (idle.act === "circle") {
-    const ang = u * Math.PI * 2 + phase * 4;
-    pose.x = Math.cos(ang) * 1.2;
-    pose.z = Math.sin(ang) * 1.2;
-    pose.yaw = -ang + Math.PI / 2;
-    pose.ring = 1;
+    const reach = gate(u, 0.2, 0.8);
+    const ang = idle.heading + (u < 0.2 ? 0 : u > 0.8 ? Math.PI * 2 : ((u - 0.2) / 0.6) * Math.PI * 2);
+    pose.x = Math.cos(ang) * 1.2 * reach;
+    pose.z = Math.sin(ang) * 1.2 * reach;
+    const tangent = -ang + Math.PI / 2;
+    pose.yaw = idle.heading + (tangent - idle.heading) * reach;
+    pose.ring = reach;
   } else if (idle.act === "gather") {
-    pose.y = 0.1;
+    const deploy = gate(u, 0.16, 0.84);
+    pose.y = 0.16 - deploy * 0.06;
     pose.beam = deploy;
   } else if (idle.act === "release") {
     pose.release = u;
   } else if (idle.act === "drift") {
-    const travel = u < 0.3 ? easeInOut(u / 0.3) : u > 0.7 ? 1 - easeInOut((u - 0.7) / 0.3) : 1;
+    const travel = gate(u, 0.28, 0.72);
     pose.x = Math.cos(idle.heading) * 1.15 * travel;
     pose.z = Math.sin(idle.heading) * 1.15 * travel;
     pose.y = 0.16 + travel * 0.12;
@@ -1142,23 +1186,13 @@ function ensureIdleRig(node) {
 }
 
 function poseMinions(rig, release) {
-  for (let i = 0; i < rig.minions.length; i += 1) {
-    const delay = i * 0.045;
-    const local = Math.min(1, Math.max(0, (release - delay) / 0.82));
-    let reach = 0;
-    if (local <= 0) {
-      reach = 0;
-    } else if (local < 0.2) {
-      reach = easeInOut(local / 0.2) * 0.12;
-    } else if (local < 0.52) {
-      reach = 0.12 + easeInOut((local - 0.2) / 0.32) * 0.88;
-    } else if (local < 0.7) {
-      reach = 1;
-    } else {
-      reach = 1 - easeInOut((local - 0.7) / 0.3);
-    }
+  const count = rig.minions.length;
+  const last = (count - 1) * 0.05;
+  for (let i = 0; i < count; i += 1) {
+    const local = Math.min(1, Math.max(0, (release - i * 0.05) / (1 - last)));
+    const reach = gate(local, 0.22, 0.62);
     const { mesh, dest } = rig.minions[i];
-    mesh.visible = release > 0.02 && reach > 0.03;
+    mesh.visible = reach > 0.03;
     mesh.position.copy(dest).multiplyScalar(reach);
     mesh.scale.setScalar(0.35 + reach * 0.75);
   }
@@ -1205,13 +1239,13 @@ function tickIdles(now) {
     }
     rig.last = now;
     idleScratch.set(node.position.x, node.position.y, node.position.z);
-    if (idle.act === "circle") {
+    if (idle.act === "circle" && pose.ring > 0.45) {
       idleBack.set(-pose.x, 0.12, -pose.z);
       if (idleBack.lengthSq() > 1e-6) {
         idleBack.normalize();
         puffJet(idleScratch, idleBack, now, 1);
       }
-    } else if (idle.act === "gather") {
+    } else if (idle.act === "gather" && pose.beam > 0.35) {
       puffJet(idleScratch.setY(idleScratch.y - 0.55), idleBack.set((Math.random() - 0.5) * 0.18, 1.4, (Math.random() - 0.5) * 0.18), now, 3);
     }
   }
