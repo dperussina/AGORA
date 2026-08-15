@@ -5,6 +5,8 @@
   --line: #2a333a;
   --mark: #c4a574;
   position: relative;
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
   overflow: hidden;
   background: var(--well);
@@ -14,6 +16,8 @@
 .spectrum-stage canvas#spectrum {
   display: block;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 100vh;
   cursor: grab;
 }
@@ -83,16 +87,17 @@
 }
 
 .spectrum-chat {
-  position: absolute;
+  position: fixed;
   top: auto;
   right: auto;
-  left: 1rem;
-  bottom: 1rem;
+  left: max(1.5rem, env(safe-area-inset-left, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   z-index: 20;
   box-sizing: border-box;
-  width: min(24rem, calc(100% - 2rem));
-  max-width: calc(100% - 2rem);
-  height: min(32rem, calc(100% - 7rem));
+  margin: 0;
+  width: min(22rem, calc(100vw - 3rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  max-width: calc(100vw - 3rem);
+  height: min(28rem, calc(100dvh - 8rem));
   display: flex;
   flex-direction: column;
   padding: 0.55rem 0.7rem 0.65rem;
@@ -100,6 +105,7 @@
   background: rgba(8, 10, 14, 0.78);
   overflow: hidden;
   pointer-events: auto;
+  transform: none;
 }
 
 .spectrum-chat .spectrum-kicker {
@@ -507,9 +513,10 @@
   }
 
   .spectrum-chat {
-    left: 0.75rem;
-    right: 0.75rem;
+    left: max(0.75rem, env(safe-area-inset-left, 0px));
+    right: max(0.75rem, env(safe-area-inset-right, 0px));
     width: auto;
+    max-width: none;
     height: min(40vh, 16rem);
     bottom: max(6.8rem, calc(env(safe-area-inset-bottom, 0px) + 6.8rem));
   }
