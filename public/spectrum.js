@@ -687,12 +687,7 @@ function tickFlights(now) {
       if (node) {
         node.position.copy(jetAt);
         node.quaternion.setFromUnitVectors(Y_UP, jetDir);
-        if (node.userData.idleRig !== undefined) {
-          node.userData.idleRig.beam.visible = false;
-          node.userData.idleRig.arm.visible = false;
-          node.userData.idleRig.scoop.visible = false;
-          node.userData.idleRig.ring.visible = false;
-        }
+        hideIdleRig(node.userData.idleRig);
       }
       if (!reduced) {
         puffJet(jetExhaust.copy(jetAt).addScaledVector(jetBack, 0.22), jetBack, now);
@@ -1020,19 +1015,16 @@ function easeInOut(t) {
 
 function pickIdleAct(seed, now) {
   const pick = (seed + Math.floor(now * 0.013)) % 100;
-  if (pick < 42) {
+  if (pick < 34) {
     return "circle";
   }
-  if (pick < 64) {
+  if (pick < 58) {
     return "gather";
   }
-  if (pick < 78) {
-    return "scan";
+  if (pick < 82) {
+    return "release";
   }
-  if (pick < 88) {
-    return "drift";
-  }
-  return "work";
+  return "drift";
 }
 
 function ensureIdle(id, now) {
@@ -1051,8 +1043,7 @@ function ensureIdle(id, now) {
   if (now >= idle.next) {
     idle.act = pickIdleAct(idle.seed, now);
     idle.born = now;
-    idle.duration =
-      idle.act === "circle" ? 4800 : idle.act === "scan" || idle.act === "drift" ? 3400 : 2800;
+    idle.duration = idle.act === "release" ? 4200 : idle.act === "circle" ? 4800 : idle.act === "drift" ? 3400 : 3000;
     idle.next = now + idle.duration;
     idle.heading = ((idle.seed + Math.floor(now)) % 360) * (Math.PI / 180);
   }
@@ -1068,14 +1059,9 @@ function idlePose(idle, now) {
     y: 0.16,
     z: 0,
     yaw: idle.heading,
-    pitch: 0,
-    roll: 0,
     beam: 0,
-    arm: 0,
-    scoop: 0,
     ring: 0,
-    armYaw: 0,
-    armDip: -0.35,
+    release: 0,
   };
   if (idle.act === "circle") {
     const ang = u * Math.PI * 2 + phase * 4;
@@ -1084,28 +1070,16 @@ function idlePose(idle, now) {
     pose.yaw = -ang + Math.PI / 2;
     pose.ring = 1;
   } else if (idle.act === "gather") {
-    pose.y = 0.08;
+    pose.y = 0.1;
     pose.beam = deploy;
-    pose.scoop = deploy;
-  } else if (idle.act === "scan") {
-    const sweep = easeInOut(u);
-    pose.yaw = idle.heading + sweep * Math.PI * 0.7;
-    pose.arm = deploy;
-    pose.armYaw = -0.55 + sweep * 1.1;
-    pose.armDip = -0.85;
+  } else if (idle.act === "release") {
+    pose.release = u;
   } else if (idle.act === "drift") {
     const travel = u < 0.3 ? easeInOut(u / 0.3) : u > 0.7 ? 1 - easeInOut((u - 0.7) / 0.3) : 1;
     pose.x = Math.cos(idle.heading) * 1.15 * travel;
     pose.z = Math.sin(idle.heading) * 1.15 * travel;
     pose.y = 0.16 + travel * 0.12;
     pose.yaw = idle.heading;
-  } else if (idle.act === "work") {
-    const pecks = 3;
-    const cycle = (u * pecks) % 1;
-    const peck = cycle < 0.4 ? easeInOut(cycle / 0.4) : 1 - easeInOut((cycle - 0.4) / 0.6);
-    pose.arm = deploy;
-    pose.armDip = -0.35 - peck * 0.85;
-    pose.armYaw = 0.15;
   }
   return pose;
 }
@@ -1120,42 +1094,91 @@ function glowIdle(color, opacity) {
   });
 }
 
+function hideIdleRig(rig) {
+  if (rig === undefined) {
+    return;
+  }
+  rig.beam.visible = false;
+  rig.core.visible = false;
+  rig.ring.visible = false;
+  for (const minion of rig.minions) {
+    minion.mesh.visible = false;
+  }
+}
+
 function ensureIdleRig(node) {
-  if (node.userData.idleRig !== undefined) {
+  if (node.userData.idleRig?.minions !== undefined) {
     return node.userData.idleRig;
   }
-  const glow = glowIdle(0x00ffd4, 0.62);
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.28, 1, 10, 1, true), glow);
-  const brass = new THREE.MeshStandardMaterial({ color: 0xc4a574, metalness: 0.75, roughness: 0.28 });
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.032, 1.15, 6), brass);
-  const claw = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.14), brass);
-  claw.position.set(0, -0.62, 0);
-  arm.add(claw);
-  const scoop = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.36, 8, 1, true), glowIdle(0x00ffd4, 0.45));
-  scoop.rotation.x = Math.PI;
+  if (node.userData.idleRig !== undefined) {
+    const stale = node.userData.idleRig;
+    for (const part of [stale.beam, stale.arm, stale.scoop, stale.ring]) {
+      if (part !== undefined) {
+        node.remove(part);
+      }
+    }
+  }
+  const glow = glowIdle(0x00ffd4, 0.7);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.38, 1, 14, 1, true), glow);
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.06, 1, 8, 1, true), glowIdle(0xe8fff8, 0.85));
   const ring = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.035, 6, 48), glowIdle(0x00ffd4, 0.5));
   ring.rotation.x = Math.PI / 2;
-  node.add(beam, arm, scoop, ring);
-  node.userData.idleRig = { beam, arm, scoop, ring, last: 0 };
+  const minions = [];
+  const swarm = new THREE.Group();
+  for (let i = 0; i < 7; i += 1) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), glowIdle(0x00ffd4, 0.95));
+    mesh.visible = false;
+    swarm.add(mesh);
+    const phi = Math.acos(1 - (2 * (i + 0.5)) / 7);
+    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+    minions.push({
+      mesh,
+      dest: new THREE.Vector3(Math.sin(phi) * Math.cos(theta) * 1.45, 0.15 + Math.cos(phi) * 0.7, Math.sin(phi) * Math.sin(theta) * 1.45),
+    });
+  }
+  node.add(beam, core, ring, swarm);
+  node.userData.idleRig = { beam, core, ring, minions, last: 0 };
   return node.userData.idleRig;
 }
 
+function poseMinions(rig, release) {
+  for (let i = 0; i < rig.minions.length; i += 1) {
+    const delay = i * 0.045;
+    const local = Math.min(1, Math.max(0, (release - delay) / 0.82));
+    let reach = 0;
+    if (local <= 0) {
+      reach = 0;
+    } else if (local < 0.2) {
+      reach = easeInOut(local / 0.2) * 0.12;
+    } else if (local < 0.52) {
+      reach = 0.12 + easeInOut((local - 0.2) / 0.32) * 0.88;
+    } else if (local < 0.7) {
+      reach = 1;
+    } else {
+      reach = 1 - easeInOut((local - 0.7) / 0.3);
+    }
+    const { mesh, dest } = rig.minions[i];
+    mesh.visible = release > 0.02 && reach > 0.03;
+    mesh.position.copy(dest).multiplyScalar(reach);
+    mesh.scale.setScalar(0.35 + reach * 0.75);
+  }
+}
+
 function poseIdleRig(rig, pose) {
-  rig.beam.visible = pose.beam > 0.04;
-  rig.beam.scale.set(1, 0.2 + pose.beam * 2.6, 1);
-  rig.beam.position.y = 0.2 - pose.beam * 1.4;
-  rig.beam.material.opacity = 0.28 + pose.beam * 0.55;
-  rig.arm.visible = pose.arm > 0.04;
-  rig.arm.position.set(0.28, 0.42, 0.06);
-  rig.arm.rotation.z = pose.armDip;
-  rig.arm.rotation.y = pose.armYaw;
-  rig.scoop.visible = pose.scoop > 0.04;
-  rig.scoop.position.set(-0.22, 0.22, 0.1);
-  rig.scoop.scale.setScalar(0.55 + pose.scoop * 0.45);
+  const on = pose.beam > 0.04;
+  rig.beam.visible = on;
+  rig.core.visible = on;
+  const length = 0.35 + pose.beam * 2.8;
+  rig.beam.scale.set(1, length, 1);
+  rig.core.scale.set(1, length, 1);
+  rig.beam.position.y = 0.12 - length * 0.5;
+  rig.core.position.y = rig.beam.position.y;
+  rig.beam.material.opacity = 0.22 + pose.beam * 0.5;
+  rig.core.material.opacity = 0.4 + pose.beam * 0.5;
   rig.ring.visible = pose.ring > 0.04;
   rig.ring.scale.setScalar(0.86);
-  rig.ring.rotation.z = 0;
   rig.ring.material.opacity = 0.28 + pose.ring * 0.22;
+  poseMinions(rig, pose.release);
 }
 
 function tickIdles(now) {
@@ -1189,16 +1212,7 @@ function tickIdles(now) {
         puffJet(idleScratch, idleBack, now, 1);
       }
     } else if (idle.act === "gather") {
-      puffJet(idleScratch.setY(idleScratch.y - 0.4), idleBack.set((Math.random() - 0.5) * 0.3, 1, (Math.random() - 0.5) * 0.3), now, 4);
-    } else if (idle.act === "work" && pose.armDip < -0.7) {
-      puffJet(
-        idleScratch.setY(idleScratch.y + 0.15),
-        idleBack.set((Math.random() - 0.5) * 0.25, 0.12, (Math.random() - 0.5) * 0.25),
-        now,
-        2,
-      );
-    } else if (idle.act === "scan") {
-      puffJet(idleScratch.setY(idleScratch.y + 0.45), idleBack.set(Math.cos(pose.yaw), 0.05, Math.sin(pose.yaw)), now, 2);
+      puffJet(idleScratch.setY(idleScratch.y - 0.55), idleBack.set((Math.random() - 0.5) * 0.18, 1.4, (Math.random() - 0.5) * 0.18), now, 3);
     }
   }
   for (const id of [...idles.keys()]) {

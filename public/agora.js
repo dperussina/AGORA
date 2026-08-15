@@ -713,19 +713,16 @@ function easeInOut(t) {
 
 function pickProbeAct(seed, roll) {
   const pick = (seed + Math.floor(roll * 997)) % 100;
-  if (pick < 40) {
+  if (pick < 34) {
     return "circle";
   }
-  if (pick < 62) {
+  if (pick < 58) {
     return "gather";
   }
-  if (pick < 76) {
-    return "scan";
+  if (pick < 82) {
+    return "release";
   }
-  if (pick < 88) {
-    return "drift";
-  }
-  return "work";
+  return "drift";
 }
 
 function glowMat(color, opacity = 0.72) {
@@ -740,18 +737,23 @@ function glowMat(color, opacity = 0.72) {
 
 function makeProbeRig(color) {
   const rig = new THREE.Group();
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.16, 1, 10, 1, true), glowMat(color, 0.55));
-  beam.position.y = -0.15;
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.028, 0.85, 6), MAT.agentTrim);
-  arm.position.set(0.15, 0.55, 0);
-  const claw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.1), MAT.brass);
-  claw.position.set(0, -0.48, 0);
-  arm.add(claw);
-  const scoop = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.28, 8, 1, true), glowMat(color, 0.4));
-  scoop.rotation.x = Math.PI;
-  scoop.position.set(-0.12, 0.5, 0.08);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.32, 1, 14, 1, true), glowMat(color, 0.55));
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.05, 1, 8, 1, true), glowMat(0xe8fff8, 0.8));
   const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.03, 6, 40), glowMat(color, 0.45));
   ring.rotation.x = Math.PI / 2;
+  const minions = [];
+  const swarm = new THREE.Group();
+  for (let i = 0; i < 7; i += 1) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), glowMat(color, 0.95));
+    mesh.visible = false;
+    swarm.add(mesh);
+    const phi = Math.acos(1 - (2 * (i + 0.5)) / 7);
+    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+    minions.push({
+      mesh,
+      dest: new THREE.Vector3(Math.sin(phi) * Math.cos(theta) * 1.35, 0.12 + Math.cos(phi) * 0.55, Math.sin(phi) * Math.sin(theta) * 1.35),
+    });
+  }
   const count = 64;
   const positions = new Float32Array(count * 3);
   const velocities = new Float32Array(count * 3);
@@ -772,9 +774,9 @@ function makeProbeRig(color) {
       sizeAttenuation: true,
     }),
   );
-  rig.add(beam, arm, scoop, ring, dust);
+  rig.add(beam, core, ring, swarm, dust);
   scene.add(rig);
-  return { rig, beam, arm, claw, scoop, ring, dust, positions, velocities, ages, cursor: 0, last: 0 };
+  return { rig, beam, core, ring, minions, dust, positions, velocities, ages, cursor: 0, last: 0 };
 }
 
 function disposeProbeRig(probe) {
@@ -860,7 +862,8 @@ function ensureProbe(id, home, now) {
     probe.duration = 900;
     probe.next = now + 700 + (probe.seed % 500);
   }
-  if (probe.fx === undefined) {
+  if (probe.fx === undefined || probe.fx.minions === undefined) {
+    disposeProbeRig(probe);
     const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
     probe.fx = makeProbeRig(color);
   }
@@ -879,11 +882,8 @@ function probePose(probe, now) {
     lamp: 1.15,
     halo: phase * 3,
     beam: 0,
-    arm: 0,
-    scoop: 0,
     ring: 0,
-    armYaw: 0,
-    armDip: -0.35,
+    release: 0,
   };
   const age = (now - probe.born) / Math.max(1, probe.duration);
   const u = Math.min(1, Math.max(0, age));
@@ -897,35 +897,45 @@ function probePose(probe, now) {
     pose.lamp = 1.4;
     pose.ring = 1;
   } else if (probe.act === "gather") {
-    pose.y = 0.08;
-    pose.lamp = 1.8;
+    pose.y = 0.1;
+    pose.lamp = 1.9;
     pose.beam = deploy;
-    pose.scoop = deploy;
-  } else if (probe.act === "scan") {
-    const sweep = easeInOut(u);
-    pose.yaw = pose.yaw + sweep * Math.PI * 0.7;
-    pose.arm = deploy;
-    pose.armYaw = -0.55 + sweep * 1.1;
-    pose.armDip = -0.85;
-    pose.lamp = 1.4;
+  } else if (probe.act === "release") {
+    pose.release = u;
+    pose.lamp = 1.5;
   } else if (probe.act === "drift") {
     const travel = u < 0.3 ? easeInOut(u / 0.3) : u > 0.7 ? 1 - easeInOut((u - 0.7) / 0.3) : 1;
     pose.x = probe.drift.x * travel;
     pose.z = probe.drift.z * travel;
     pose.y = 0.16 + travel * 0.12;
-  } else if (probe.act === "work") {
-    const pecks = 3;
-    const cycle = (u * pecks) % 1;
-    const peck = cycle < 0.4 ? easeInOut(cycle / 0.4) : 1 - easeInOut((cycle - 0.4) / 0.6);
-    pose.arm = deploy;
-    pose.armDip = -0.35 - peck * 0.85;
-    pose.armYaw = 0.15;
-    pose.lamp = 1.6;
   } else if (probe.act === "settle") {
     pose.y = 0.16 + (1 - u) * 0.2;
     pose.lamp = 1.5;
   }
   return pose;
+}
+
+function poseMinions(fx, release) {
+  for (let i = 0; i < fx.minions.length; i += 1) {
+    const delay = i * 0.045;
+    const local = Math.min(1, Math.max(0, (release - delay) / 0.82));
+    let reach = 0;
+    if (local <= 0) {
+      reach = 0;
+    } else if (local < 0.2) {
+      reach = easeInOut(local / 0.2) * 0.12;
+    } else if (local < 0.52) {
+      reach = 0.12 + easeInOut((local - 0.2) / 0.32) * 0.88;
+    } else if (local < 0.7) {
+      reach = 1;
+    } else {
+      reach = 1 - easeInOut((local - 0.7) / 0.3);
+    }
+    const { mesh, dest } = fx.minions[i];
+    mesh.visible = release > 0.02 && reach > 0.03;
+    mesh.position.copy(dest).multiplyScalar(reach);
+    mesh.scale.setScalar(0.35 + reach * 0.75);
+  }
 }
 
 function poseProbeRig(probe, at, pose, now, dt) {
@@ -934,34 +944,28 @@ function poseProbeRig(probe, at, pose, now, dt) {
     return;
   }
   fx.rig.position.copy(at);
-  fx.beam.visible = pose.beam > 0.04;
-  fx.beam.scale.set(1, 0.15 + pose.beam * 1.15, 1);
-  fx.beam.position.y = 0.35 - pose.beam * 0.55;
-  fx.beam.material.opacity = 0.25 + pose.beam * 0.55;
-  fx.arm.visible = pose.arm > 0.04;
-  fx.arm.rotation.z = pose.armDip;
-  fx.arm.rotation.y = pose.armYaw;
-  fx.arm.position.set(0.22, 0.58, 0.04);
-  fx.scoop.visible = pose.scoop > 0.04;
-  fx.scoop.scale.setScalar(0.55 + pose.scoop * 0.45);
-  fx.scoop.position.set(-0.18, 0.36, 0.1);
-  fx.scoop.rotation.z = 0;
+  const on = pose.beam > 0.04;
+  fx.beam.visible = on;
+  fx.core.visible = on;
+  const length = 0.3 + pose.beam * 2.4;
+  fx.beam.scale.set(1, length, 1);
+  fx.core.scale.set(1, length, 1);
+  fx.beam.position.y = 0.2 - length * 0.5;
+  fx.core.position.y = fx.beam.position.y;
+  fx.beam.material.opacity = 0.22 + pose.beam * 0.5;
+  fx.core.material.opacity = 0.4 + pose.beam * 0.5;
   fx.ring.visible = pose.ring > 0.04;
   fx.ring.scale.setScalar(0.86);
   fx.ring.rotation.z = 0;
   fx.ring.material.opacity = 0.22 + pose.ring * 0.2;
+  poseMinions(fx, pose.release);
   const emit = now - fx.last > 70;
   if (emit) {
     fx.last = now;
     if (probe.act === "circle") {
       emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.45, at.z), new THREE.Vector3(-pose.x * 1.4, 0.15, -pose.z * 1.4), 3);
     } else if (probe.act === "gather") {
-      emitProbeDust(fx, new THREE.Vector3(at.x, at.y - 0.15, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.2, 1.6, (Math.random() - 0.5) * 0.2), 5);
-    } else if (probe.act === "work" && pose.armDip < -0.7) {
-      const tip = new THREE.Vector3(0, -0.48, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), fx.arm.rotation.z);
-      emitProbeDust(fx, new THREE.Vector3(at.x + tip.x + 0.22, at.y + 0.55 + tip.y, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.15, (Math.random() - 0.5) * 0.25), 2);
-    } else if (probe.act === "scan") {
-      emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.7, at.z), new THREE.Vector3(Math.cos(pose.yaw) * 0.9, 0.05, Math.sin(pose.yaw) * 0.9), 2);
+      emitProbeDust(fx, new THREE.Vector3(at.x, at.y - 0.35, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.18, 1.6, (Math.random() - 0.5) * 0.18), 4);
     }
   }
   tickProbeDust(fx, dt);
@@ -1006,7 +1010,7 @@ function tickProbes(now) {
     if (now >= probe.next) {
       probe.act = pickProbeAct(probe.seed, now);
       probe.born = now;
-      probe.duration = probe.act === "circle" ? 4800 : probe.act === "scan" || probe.act === "drift" ? 3400 : 2800;
+      probe.duration = probe.act === "release" ? 4200 : probe.act === "circle" ? 4800 : probe.act === "drift" ? 3400 : 3000;
       probe.next = now + probe.duration;
       const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
       probe.drift.set(Math.cos(heading) * 0.62, 0, Math.sin(heading) * 0.62);
