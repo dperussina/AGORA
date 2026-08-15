@@ -30,12 +30,16 @@ import {
   FALL_LINGER,
   FIRST_PORT,
   WAR_WOUND_MAX,
+  beastBite,
+  beastHide,
   fallenFor,
   fillBiteParams,
   isHollowClass,
+  isOpenWar,
   openWarBetween,
   parseCombatCell,
   scalarArg,
+  thisWarWoundSum,
   thisWarWounds,
 } from "../engine/combat.ts";
 import { runEffects, type EffectContext, type Entity } from "../engine/effects.ts";
@@ -157,6 +161,7 @@ export class World {
   private readonly presenceLeaseMs: number;
   private readonly presenceNow: () => number;
   private readonly intents: Intent[] = [];
+  private readonly lastBreathTick = new Map<string, number>();
   private readonly lastStep = new Map<string, Position>();
   private readonly lastFrom = new Map<string, Position>();
   private intentSeq = 0;
@@ -810,8 +815,7 @@ export class World {
       return this.followWouldFail(identityId, args);
     }
     if (verb === "strike") {
-      const holder = this.strikeHolder(args);
-      if (holder !== undefined && fallenFor(this.entities.values(), holder) !== undefined) {
+      if (this.isFallenStrike(args)) {
         return "holder is fallen";
       }
       const biteBlocked = this.biteWouldFail(identityId, args);
@@ -941,6 +945,12 @@ export class World {
       if (intent.verb === "strike") {
         this.maybeAutoFall(intent);
         this.maybeBeastBite(intent);
+      }
+      if (intent.verb === "rise") {
+        const holder = typeof priorTarget?.fields["holder"] === "string" ? priorTarget.fields["holder"] : undefined;
+        if (holder !== undefined) {
+          this.clearThisWarWounds(holder);
+        }
       }
       this.fireTriggers("act.end", {
         selfId: intent.identityId,
@@ -2428,14 +2438,78 @@ export class World {
     this.ensureGoldBurnCompensation();
   }
 
-  private strikeHolder(args: Record<string, unknown>): string | undefined {
-    if (typeof args["target"] === "string" && args["target"].length > 0) {
-      return args["target"];
+  private combatBeast(args: { target?: string; name?: string; position?: unknown }): Entity | undefined {
+    const beasts = [...this.entities.values()].filter((item) => item.type === "beast").sort((a, b) => (a.id < b.id ? -1 : 1));
+    const target = args.target;
+    const name = args.name;
+    if (target !== undefined) {
+      const direct = this.entities.get(target);
+      if (direct?.type === "beast") {
+        return direct;
+      }
+      const named = beasts.find((item) => item.fields["name"] === target);
+      if (named !== undefined) {
+        return named;
+      }
     }
-    if (typeof args["name"] === "string" && args["name"].length > 0) {
-      return args["name"];
+    if (name !== undefined) {
+      const named = beasts.find((item) => item.fields["name"] === name);
+      if (named !== undefined) {
+        return named;
+      }
+    }
+    const at = parseCombatCell(args.position);
+    if (at !== null) {
+      return beasts.find(
+        (item) => item.position !== undefined && item.position.x === at.x && item.position.y === at.y && item.position.z === at.z,
+      );
     }
     return undefined;
+  }
+
+  private fallenAliases(holder: string, name?: string, position?: unknown): string[] {
+    const aliases = [holder];
+    if (name !== undefined && name.length > 0) {
+      aliases.push(name);
+    }
+    const beast = this.combatBeast({ target: holder, name, position });
+    if (beast !== undefined) {
+      aliases.push(beast.id);
+      if (typeof beast.fields["name"] === "string") {
+        aliases.push(beast.fields["name"]);
+      }
+    }
+    return [...new Set(aliases.filter((item) => item.length > 0))];
+  }
+
+  private isFallenHolder(holder: string, name?: string, position?: unknown): boolean {
+    return this.fallenAliases(holder, name, position).some((id) => fallenFor(this.entities.values(), id) !== undefined);
+  }
+
+  private isFallenStrike(args: Record<string, unknown>): boolean {
+    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const name = typeof args["name"] === "string" ? args["name"] : undefined;
+    if (target !== undefined && this.isFallenHolder(target, name, args["position"])) {
+      return true;
+    }
+    if (name !== undefined && this.isFallenHolder(name, name, args["position"])) {
+      return true;
+    }
+    return false;
+  }
+
+  private clearThisWarWounds(holder: string): void {
+    const beast = this.entities.get(holder);
+    const name = beast?.type === "beast" && typeof beast.fields["name"] === "string" ? beast.fields["name"] : undefined;
+    const war = [...this.entities.values()]
+      .filter(isOpenWar)
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .find((item) => item.fields["attacker"] === holder || item.fields["defender"] === holder);
+    const wounds = thisWarWounds(this.entities.values(), { target: holder, name, sinceTick: this.entityBornTick(war) });
+    for (const wound of wounds.sort((a, b) => (a.id < b.id ? -1 : 1))) {
+      this.entities.delete(wound.id);
+      this.append("effect.destroy", "ARBITER", { id: wound.id, type: "wound" });
+    }
   }
 
   private definedVerbWouldFail(identityId: string, verb: string, args: Record<string, unknown>): string | null {
@@ -2543,21 +2617,30 @@ export class World {
   }
 
   private maybeAutoFallHolder(actor: string, holder: string, name?: string, position?: unknown, counterpart?: string): void {
-    if (fallenFor(this.entities.values(), holder) !== undefined) {
+    if (this.isFallenHolder(holder, name, position)) {
       return;
     }
+    const beast = this.combatBeast({ target: holder, name, position });
+    const fallenId = beast?.id ?? holder;
+    const fallenName = typeof beast?.fields["name"] === "string" ? beast.fields["name"] : name;
     const war = openWarBetween(this.entities.values(), actor, counterpart ?? holder);
     const sinceTick = this.entityBornTick(war);
-    const wounds = thisWarWounds(this.entities.values(), { target: holder, name, sinceTick });
-    if (wounds.length < WAR_WOUND_MAX) {
+    const wounds = thisWarWounds(this.entities.values(), { target: fallenId, name: fallenName, sinceTick });
+    const hide = beastHide(beast);
+    if (hide !== undefined) {
+      if (thisWarWoundSum(wounds) < hide) {
+        return;
+      }
+    } else if (wounds.length < WAR_WOUND_MAX) {
       return;
     }
     const at =
       parseCombatCell(position) ??
-      this.bodies.get(holder) ??
+      this.bodies.get(fallenId) ??
+      beast?.position ??
       this.entities.get(holder)?.position ??
       this.bodyOf(actor);
-    this.writeFallen(holder, at, this.clerk.tick, actor);
+    this.writeFallen(fallenId, at, this.clerk.tick, actor);
   }
 
   private strikeAtLife(args: Record<string, unknown>, strikerId: string): boolean {
@@ -2568,6 +2651,9 @@ export class World {
     }
     if (name !== undefined && this.identityNamed(name) !== undefined) {
       return false;
+    }
+    if (this.combatBeast({ target, name, position: args["position"] }) !== undefined) {
+      return true;
     }
     if (this.liveStirring(target) !== undefined) {
       return true;
@@ -2664,6 +2750,15 @@ export class World {
     if (!this.strikeAtLife(args, intent.identityId)) {
       return;
     }
+    const name = typeof intent.params?.["name"] === "string" ? intent.params["name"] : undefined;
+    if (this.isFallenHolder(intent.target ?? "", name, intent.params?.["position"])) {
+      return;
+    }
+    const beast = this.combatBeast({ target: intent.target, name, position: intent.params?.["position"] });
+    const breathKey = beast?.id ?? name ?? intent.target ?? "life";
+    if (this.lastBreathTick.get(breathKey) === this.clerk.tick) {
+      return;
+    }
     const beforeIds = new Set(this.entities.keys());
     const params = fillBiteParams({
       selfId: intent.identityId,
@@ -2699,6 +2794,16 @@ export class World {
       return;
     }
     runtime.commitSeq();
+    this.lastBreathTick.set(breathKey, this.clerk.tick);
+    const bite = beastBite(beast);
+    if (bite !== undefined) {
+      const wound = [...this.entities.values()].find(
+        (item) => !beforeIds.has(item.id) && item.type === "wound" && item.fields["beast"] === intent.identityId,
+      );
+      if (wound !== undefined) {
+        wound.fields["amount"] = bite;
+      }
+    }
     this.maybeAutoFallHolder(
       intent.identityId,
       intent.identityId,

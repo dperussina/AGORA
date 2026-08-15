@@ -2,8 +2,40 @@ import type { Entity } from "./effects.ts";
 import type { Position } from "./tick.ts";
 import { parseCellString } from "./wake.ts";
 
-/** This-war HP is inverted wound count. Three wounds drop the body. */
+/** This-war HP is inverted wound count. Three wounds drop a body that has no hide. */
 export const WAR_WOUND_MAX = 3;
+
+export function woundAmount(entity: Entity): number {
+  if (entity.type !== "wound") {
+    return 0;
+  }
+  const amount = entity.fields["amount"];
+  return typeof amount === "number" && Number.isInteger(amount) && amount > 0 ? amount : 1;
+}
+
+export function thisWarWoundSum(wounds: Iterable<Entity>): number {
+  let sum = 0;
+  for (const wound of wounds) {
+    sum += woundAmount(wound);
+  }
+  return sum;
+}
+
+export function beastHide(entity: Entity | undefined): number | undefined {
+  if (entity === undefined || entity.type !== "beast") {
+    return undefined;
+  }
+  const hide = entity.fields["hide"];
+  return typeof hide === "number" && Number.isInteger(hide) && hide > 0 ? hide : undefined;
+}
+
+export function beastBite(entity: Entity | undefined): number | undefined {
+  if (entity === undefined || entity.type !== "beast") {
+    return undefined;
+  }
+  const bite = entity.fields["bite"];
+  return typeof bite === "number" && Number.isInteger(bite) && bite > 0 ? bite : undefined;
+}
 
 /** fallen.until = tick + linger. Rise in that window; miss it and the body is dead. */
 export const FALL_LINGER = 5;
