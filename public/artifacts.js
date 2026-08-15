@@ -457,17 +457,23 @@ function sitOnCell(group) {
 
 function hearthBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.46, 0.52, 0.14, 12), MAT.stone, 0, 0.07, 0));
-  g.add(mesh(new THREE.TorusGeometry(0.4, 0.07, 8, 14), MAT.stoneDark, 0, 0.16, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.08, 10), MAT.coal, 0, 0.12, 0));
-  for (const [x, z] of [[-0.16, 0.12], [0.18, 0.08], [0.02, -0.16]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), MAT.stoneDark, x, 0.16, z));
+  g.add(mesh(new THREE.BoxGeometry(0.92, 0.12, 0.62), MAT.stoneDark, 0, 0.06, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.78, 0.08, 0.48), MAT.stone, 0, 0.14, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.86, 0.72, 0.12), MAT.stone, 0, 0.5, -0.22));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.72, 0.42), MAT.stoneDark, -0.4, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.72, 0.42), MAT.stoneDark, 0.4, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.92, 0.1, 0.16), MAT.stone, 0, 0.88, -0.18));
+  g.add(mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.08, 12), MAT.coal, 0, 0.2, 0.06));
+  for (const [x, z] of [[-0.14, 0.12], [0.16, 0.08], [0.02, -0.06]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), MAT.stoneDark, x, 0.24, z));
   }
-  const flame = mesh(new THREE.SphereGeometry(0.16, 10, 8), MAT.fire, 0, 0.38, 0);
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.16, 0.16), MAT.iron, -0.16, 0.22, 0.14));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.16, 0.16), MAT.iron, 0.16, 0.22, 0.14));
+  const flame = mesh(new THREE.SphereGeometry(0.16, 10, 8), MAT.fire, 0, 0.42, 0.06);
   flame.userData.motion = "pulse";
   g.add(flame);
-  g.add(mesh(new THREE.ConeGeometry(0.12, 0.28, 7), MAT.ember, 0, 0.56, 0));
-  const wash = mesh(new THREE.CylinderGeometry(0.22, 0.04, 0.42, 10, 1, true), MAT.fire, 0, 0.42, 0);
+  g.add(mesh(new THREE.ConeGeometry(0.12, 0.28, 7), MAT.ember, 0, 0.6, 0.06));
+  const wash = mesh(new THREE.CylinderGeometry(0.22, 0.04, 0.42, 10, 1, true), MAT.fire, 0, 0.46, 0.06);
   g.add(wash);
   return g;
 }
@@ -682,11 +688,15 @@ function doorBlock() {
 
 function windowBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.64, 0.7, 0.08), MAT.timberDark, 0, 0.58, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.56, 0.03), MAT.glass, 0, 0.58, 0.03));
-  g.add(mesh(new THREE.BoxGeometry(0.05, 0.56, 0.05), MAT.timber, 0, 0.58, 0.04));
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), MAT.timber, 0, 0.58, 0.04));
-  const glow = mesh(new THREE.BoxGeometry(0.46, 0.5, 0.02), MAT.lamp, 0, 0.58, 0.01);
+  g.add(mesh(new THREE.BoxGeometry(0.78, 0.88, 0.1), MAT.timberDark, 0, 0.58, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.86, 0.08, 0.16), MAT.timber, 0, 0.12, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.86, 0.08, 0.14), MAT.timber, 0, 1.04, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.88, 0.12), MAT.timber, -0.38, 0.58, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.88, 0.12), MAT.timber, 0.38, 0.58, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.62, 0.03), MAT.glass, 0, 0.58, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.05, 0.62, 0.05), MAT.timberDark, 0, 0.58, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.05, 0.05), MAT.timberDark, 0, 0.58, 0.06));
+  const glow = mesh(new THREE.BoxGeometry(0.54, 0.56, 0.02), MAT.lamp, 0, 0.58, 0.02);
   glow.userData.motion = "pulse";
   g.add(glow);
   return g;
@@ -903,10 +913,15 @@ function stallBlock() {
 
 function chimneyBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.36, 1.05, 0.36), MAT.stone, 0, 0.52, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.44, 0.1, 0.44), MAT.stoneDark, 0, 1.06, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.2, 0.12, 0.2), MAT.coal, 0, 1.14, 0));
-  const smoke = mesh(new THREE.SphereGeometry(0.12, 8, 6), MAT.fire, 0, 1.28, 0);
+  g.add(mesh(new THREE.BoxGeometry(0.48, 0.16, 0.48), MAT.stoneDark, 0, 0.08, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 1.12, 0.4), MAT.stone, 0, 0.7, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.06, 0.42), MAT.stoneDark, 0, 0.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.06, 0.42), MAT.stoneDark, 0, 0.78, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.06, 0.42), MAT.stoneDark, 0, 1.12, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.52, 0.1, 0.52), MAT.stone, 0, 1.3, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), MAT.coal, 0, 1.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.26, 0.04, 0.26), MAT.iron, 0, 1.52, 0));
+  const smoke = mesh(new THREE.SphereGeometry(0.12, 8, 6), MAT.fire, 0, 1.64, 0);
   smoke.userData.motion = "pulse";
   g.add(smoke);
   return g;
