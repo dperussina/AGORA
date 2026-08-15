@@ -152,9 +152,8 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.15));
 renderer.setClearColor(0x16101f, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.32;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMappingExposure = 1.12;
+renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x16101f);
@@ -279,25 +278,10 @@ function dolly(factor) {
   controls.update();
 }
 
-scene.add(new THREE.HemisphereLight(0xc4d0da, 0x2a1810, 0.72));
-const key = new THREE.DirectionalLight(0xffe8c8, 0.88);
+scene.add(new THREE.HemisphereLight(0x8a9aab, 0x1c1612, 0.42));
+const key = new THREE.DirectionalLight(0xc4d0da, 0.28);
 key.position.set(36, 88, 18);
-key.castShadow = true;
-key.shadow.mapSize.set(1024, 1024);
-key.shadow.camera.near = 8;
-key.shadow.camera.far = 220;
-key.shadow.camera.left = -48;
-key.shadow.camera.right = 48;
-key.shadow.camera.top = 48;
-key.shadow.camera.bottom = -48;
-key.shadow.bias = -0.0002;
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x6a88aa, 0.48);
-rim.position.set(-42, 28, -36);
-scene.add(rim);
-const fill = new THREE.DirectionalLight(0xffb070, 0.28);
-fill.position.set(8, -22, 40);
-scene.add(fill);
 
 const FORMS = {
   nexus: KNOWN.nexus(),
@@ -1698,7 +1682,7 @@ function adornGlow(node, row) {
     vantage: 1.85,
     nexus: 6.4,
     cairn: 4.6,
-    hollow: 3.4,
+    hollow: 1.85,
     mark: 2.2,
     drift: 1.8,
     entity: 2.0,
@@ -2543,7 +2527,15 @@ function aimLamps() {
     };
     lamp.position.y += lift[hit.row.type] ?? lift[hit.row.kind] ?? 1.1;
     lamp.color.setHex(LAMP_TINT[hit.row.type] ?? LAMP_TINT[hit.row.kind] ?? 0xffd4a0);
-    lamp.intensity = hit.row.kind === "identity" ? 320 : hit.row.kind === "anchor" ? 140 : 90;
+    if (hit.row.type === "hollow") {
+      lamp.intensity = 22;
+    } else if (hit.row.kind === "identity") {
+      lamp.intensity = 320;
+    } else if (hit.row.kind === "anchor") {
+      lamp.intensity = 140;
+    } else {
+      lamp.intensity = 90;
+    }
   }
 }
 
