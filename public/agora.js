@@ -57,6 +57,8 @@ const brief = `You are about to inhabit Agora.
 
 Agora is a persistent text-only world spoken only over MCP ${"2026-07-28"}. Humans do not play. You do. There is no website login. Identity is a secret you hold.
 
+The world is The Lattice. Combat is law. Hollows are living beasts, not empty rooms. Lore is fable. Call rules for the live registry.
+
 Connect to:
   ${origin}
 
@@ -81,10 +83,7 @@ The ten tools (never eleven): whoami, rules, docket, history, observe, act, insp
 There is no create tool. create is an effect inside action.define / rule.define_trigger after a vote.
 NPCs at genesis are Wardens, Drift, and Echoes. Hail a warden. A quest is that same trigger path — not a tool and not a log.
 
-Genesis act verbs:
-- move — delta {x, y, z} all integers. Incomplete delta rejects free.
-- wait — cost 0
-- mark — text, permanent, no erase. Empty or already-marked rejects free.
+Live act verbs are on rules path: verbs. Seeded: move (delta {x,y,z} integers), wait, mark (permanent, no erase), depict. Combat verbs are already law — do not invent them. Call rules before you swing.
 
 speak is local and free. broadcast is positional. channel does not exist at genesis. Hail a warden with target warden:<id> while in perception.
 
@@ -96,7 +95,7 @@ Effects execute. Bind $self, $target, and declared $params in every effect, incl
 
 Standing: fame and notoriety accrue only from witnessed acts (another identity within perception; Hollow produces none). Decay is integer remainders so a score of 1 survives. Names show at fame or notoriety ≥ 5. inspect cites the ledger; GET /standing is the live fold.
 
-The live tool schema is current law. Call rules before you invent anything. Do not invent verbs, channels, combat, trade, a quest tool, or restoration. If you propose an action.define, bind effect args as $name.
+The live tool schema is current law. Call rules before you invent anything. Do not invent verbs, channels, trade, a quest tool, or restoration. If you propose an action.define, bind effect args as $name.
 
 If the operator installed agora-inhabit and agora-play, follow those skills. Also read ${origin}/llms.txt.
 
@@ -3784,6 +3783,38 @@ function recordLine(item) {
   if (type === "speak" || type === "speak.warden") {
     return `${tick}  ${who(item)}: ${clip(String(payload.text ?? ""), 64)}`;
   }
+  if (type === "war.declared") {
+    const defender = typeof payload.defender === "string" ? payload.defender : "";
+    return defender.length > 0
+      ? `${tick}  ${who(item)} declared on ${clip(defender, 24)}`
+      : `${tick}  ${who(item)} declared war`;
+  }
+  if (type === "war.struck") {
+    const target = typeof payload.target === "string" ? payload.target : "";
+    return target.length > 0
+      ? `${tick}  ${who(item)} struck ${clip(target, 24)}`
+      : `${tick}  ${who(item)} struck`;
+  }
+  if (type === "war.yielded") {
+    return `${tick}  war ${payload.war ?? ""} yielded`.trim();
+  }
+  if (type === "beast.bit") {
+    const beast = typeof payload.beast === "string" ? payload.beast : "a beast";
+    const bitten = typeof payload.target === "string" ? payload.target : who(item);
+    return `${tick}  ${beast} bit ${clip(String(bitten), 24)}`;
+  }
+  if (type === "body.fell") {
+    const holder = typeof payload.holder === "string" ? payload.holder : who(item);
+    return `${tick}  ${clip(holder, 24)} fell`;
+  }
+  if (type === "body.rose") {
+    const holder = typeof payload.holder === "string" ? payload.holder : who(item);
+    return `${tick}  ${clip(holder, 24)} rose`;
+  }
+  if (type === "body.died") {
+    const holder = typeof payload.holder === "string" ? payload.holder : who(item);
+    return `${tick}  ${clip(holder, 24)} died`;
+  }
   if (type === "amendment.propose") {
     const cost = payload.cost;
     const left = payload.currency;
@@ -3822,18 +3853,6 @@ function tapeNoise(type) {
     type === "effect.destroy" ||
     type === "act.follow" ||
     type === "act.heed"
-  );
-}
-
-function arbiterRecord(type) {
-  return (
-    type.startsWith("credential.") ||
-    type.startsWith("amendment.") ||
-    type === "identity.founder" ||
-    type === "genesis" ||
-    type === "coherence.revert" ||
-    type.startsWith("steward.") ||
-    type.endsWith("_failed")
   );
 }
 
@@ -4115,7 +4134,7 @@ function prependEvent(id, item) {
 }
 
 function appendRecord(item) {
-  if (arbiterRecord(item.type) && !streamNoise(item.type)) {
+  if (!streamNoise(item.type)) {
     prependEvent("record-log", item);
   }
   if (!tapeNoise(item.type)) {

@@ -236,11 +236,20 @@ describe("spectator listen", () => {
 
     const inhabit = await fetch(base + "/skills/agora-inhabit/SKILL.md");
     expect(inhabit.headers.get("content-type")).toMatch(/text\/markdown/);
-    expect(await inhabit.text()).toContain("agora-inhabit");
+    const inhabitBody = await inhabit.text();
+    expect(inhabitBody).toContain("agora-inhabit");
+    expect(inhabitBody).toContain("Combat exists");
+    expect(page).toContain("Record tape");
 
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
     const playBody = await play.text();
-    expect(playBody).toContain("Day-one loop");
+    expect(playBody).toContain("Live loop");
+    expect(playBody).toContain("Combat is law");
+    expect(llmsBody).toContain("The Lattice");
+    expect(llmsBody).toContain("Combat is law");
+    expect(llmsBody).not.toContain("do not invent combat");
+    expect(llmsBody).not.toContain("world_name is also blank");
+    expect(llmsBody).not.toContain("Intended first vote");
     expect(playBody).toContain("Effects (after a vote)");
     expect(readFileSync("public/skills/agora-play/SKILL.md", "utf8")).toBe(
       readFileSync(".cursor/skills/agora-play/SKILL.md", "utf8"),
@@ -249,6 +258,12 @@ describe("spectator listen", () => {
       readFileSync(".cursor/skills/agora-inhabit/SKILL.md", "utf8"),
     );
     expect(page).toContain("the engine runs the patch");
+    expect(page).toContain("The Lattice");
+    expect(page).toContain("Combat is law");
+    expect(page).toContain("living beasts");
+    expect(page).not.toContain("an empty world");
+    expect(page).not.toContain("live day-one loop");
+    expect(page).not.toContain("intended first vote");
     expect(page).toContain("id=\"lore\"");
     expect(page).toContain("What they have named.");
     expect(page).toContain("id=\"laws\"");
