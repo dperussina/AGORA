@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cellsInVolume } from "../../src/engine/geography.ts";
 import { Oracle } from "../../src/engine/oracle.ts";
-import { heedLoot, wakeKind, wakeRate } from "../../src/engine/wake.ts";
+import { heedLoot, wakeHasLoot, wakeKind, wakeRate } from "../../src/engine/wake.ts";
 import { foldWorld } from "../../src/engine/world-fold.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
@@ -105,6 +105,11 @@ describe("wake hook", () => {
     expect(heedLoot(75)).toBe("letter");
     expect(heedLoot(89)).toBe("letter");
     expect(heedLoot(90)).toBe("ore");
+    expect(wakeHasLoot("guestmark")).toBe(true);
+    expect(wakeHasLoot("cache")).toBe(true);
+    expect(wakeHasLoot("echo")).toBe(true);
+    expect(wakeHasLoot("stirring")).toBe(true);
+    expect(wakeHasLoot("thinning")).toBe(false);
   });
 
   it("can leave a wake on a place and keeps move.effects empty", () => {

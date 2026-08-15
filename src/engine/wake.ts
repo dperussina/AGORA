@@ -43,6 +43,11 @@ export function wakeKind(cellClass: CellClass, anchorClass: string | null, empty
   return "thinning";
 }
 
+/** Heedable wakes leave loot. Thinning is follow-only and has none. */
+export function wakeHasLoot(kind: string): boolean {
+  return kind === "guestmark" || kind === "cache" || kind === "echo" || kind === "stirring";
+}
+
 export function heedLoot(roll: number): HeedLoot {
   if (roll < 50) {
     return "seed";

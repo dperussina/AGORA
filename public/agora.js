@@ -9,11 +9,10 @@ import {
   hollowArtifact,
   driftArtifact,
   entityArtifact,
-  blockSlab,
-  blockPost,
-  blockStall,
-  blockForm,
-  kindHash,
+  beastArtifact,
+  blockArtifact,
+  wakeArtifact,
+  wakeHasLoot,
 } from "/artifacts.js";
 
 const origin = window.location.origin;
@@ -46,10 +45,6 @@ const PROTO = {
   hollow: hollowArtifact(),
   drift: driftArtifact(),
   entity: entityArtifact(),
-  crate: entityArtifact(),
-  slab: blockSlab(),
-  post: blockPost(),
-  stall: blockStall(),
 };
 
 function idColor(id) {
@@ -688,20 +683,6 @@ function entityKind(entity) {
   return "";
 }
 
-function tintBlock(mesh, kind) {
-  ensureNpcMaterials(mesh);
-  const color = new THREE.Color().setHSL((kindHash(kind) % 360) / 360, 0.38, 0.4);
-  mesh.traverse((node) => {
-    if (node.material === undefined || Array.isArray(node.material) || node.material.color === undefined) {
-      return;
-    }
-    node.material.color.lerp(color, 0.55);
-    if (node.userData.restColor !== undefined) {
-      node.userData.restColor.copy(node.material.color);
-    }
-  });
-}
-
 function restNpc(mesh, at) {
   mesh.userData.home = at.clone();
   mesh.position.copy(at);
@@ -728,14 +709,44 @@ function rebuildEntities(rows) {
       continue;
     }
     const kind = entityKind(entity);
-    const proto = entity.type === "block" ? PROTO[blockForm(kind)] ?? PROTO.crate : PROTO.entity;
-    const mesh = proto.clone();
+    const at = entity.position;
+    const hollowHere = world.anchors.some(
+      (anchor) =>
+        anchor.class === "hollow" &&
+        anchor.centre !== null &&
+        anchor.centre.x === at.x &&
+        anchor.centre.y === at.y &&
+        anchor.centre.z === at.z,
+    );
+    const hollowNear = world.anchors.some((anchor) => {
+      if (anchor.class !== "hollow" || anchor.centre === null) {
+        return false;
+      }
+      return (
+        Math.max(
+          Math.abs(anchor.centre.x - at.x),
+          Math.abs(anchor.centre.y - at.y),
+          Math.abs(anchor.centre.z - at.z),
+        ) <= 2
+      );
+    });
+    if (entity.type === "wake" && (!wakeHasLoot(kind) || hollowNear)) {
+      continue;
+    }
+    if (entity.type === "beast" && hollowHere) {
+      continue;
+    }
+    const mesh =
+      entity.type === "block"
+        ? blockArtifact(kind)
+        : entity.type === "wake"
+          ? wakeArtifact()
+          : entity.type === "beast"
+            ? beastArtifact()
+            : PROTO.entity.clone();
     restNpc(mesh, cell(entity.position));
     if (entity.type === "beast") {
-      mesh.scale.setScalar(2.6);
-    }
-    if (entity.type === "block") {
-      tintBlock(mesh, kind);
+      mesh.scale.setScalar(1.05);
     }
     tagPick(mesh, "entity", typeof entity.id === "string" ? entity.id : "");
     entitiesGroup.add(mesh);

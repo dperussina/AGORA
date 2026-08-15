@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
-import { KNOWN, blockForm, kindHash } from "/artifacts.js";
+import { KNOWN, blockArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
 
 const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
@@ -302,6 +302,8 @@ const FORMS = {
   identity: KNOWN.identity(),
   echo: KNOWN.echo(),
   entity: KNOWN.entity(),
+  beast: KNOWN.beast(),
+  wake: KNOWN.wake(),
   crate: KNOWN.crate(),
   slab: KNOWN.slab(),
   post: KNOWN.post(),
@@ -1009,6 +1011,17 @@ function sameCell(a, b) {
   return a !== null && b !== null && a.x === b.x && a.y === b.y && a.z === b.z;
 }
 
+function cellReach(a, b) {
+  if (a === null || b === null || a === undefined || b === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+}
+
+function hollowReach(pos, reach) {
+  return listOf("anchor").some((row) => row.type === "hollow" && cellReach(row.position, pos) <= reach);
+}
+
 function beginFlight(id, fromLattice, toLattice) {
   if (sameCell(fromLattice, toLattice)) {
     return;
@@ -1463,6 +1476,12 @@ function foldEntity(item) {
           : typeof payload.kind === "string" && payload.type === "block"
             ? payload.kind
             : prior?.kindName,
+      name:
+        typeof payload.name === "string"
+          ? payload.name
+          : typeof fields.name === "string"
+            ? fields.name
+            : prior?.name,
       caption: typeof payload.caption === "string" ? payload.caption : prior?.caption,
       mime: typeof payload.mime === "string" ? payload.mime : prior?.mime,
       hash: typeof payload.hash === "string" ? payload.hash : prior?.hash,
@@ -1477,6 +1496,8 @@ function foldEntity(item) {
       type: prior?.type ?? "entity",
       position: at,
       fields: prior?.fields,
+      kindName: prior?.kindName,
+      name: prior?.name,
     });
     return at;
   }
@@ -1617,12 +1638,18 @@ function placeTitle(row) {
     const voted = typeof row.name === "string" ? row.name.trim() : "";
     return voted.length > 0 ? voted : `ANCHOR:${row.id}`;
   }
-  if (row.kind === "identity") {
+  if (row.kind === "identity" || row.kind === "echo") {
     const named = state.names.get(row.id);
     return typeof named === "string" && named.length > 0 ? named : "agent";
   }
-  if (row.type === "block" && typeof row.kindName === "string" && row.kindName.length > 0) {
-    return row.kindName;
+  if (row.type === "block" || row.type === "wake") {
+    return "";
+  }
+  if (typeof row.name === "string" && row.name.trim().length > 0) {
+    return row.name.trim();
+  }
+  if (row.type === "beast") {
+    return "beast";
   }
   return "";
 }
@@ -1638,6 +1665,7 @@ function labelForm(node, row) {
     vantage: 0.72,
     hollow: 2.35,
     identity: 1.2,
+    beast: 1.35,
   };
   const color = row.kind === "identity" ? "#00ffd4" : "#e8d2a4";
   const sprite = nameSprite(title, color, row.kind === "anchor" ? 22 : 18);
@@ -1795,23 +1823,34 @@ function buildRelics() {
     }
   }
   for (const row of listOf("entity")) {
-    const spec = spectrumOf(row, state.types, state.standing);
-    const form = row.type === "block" ? blockForm(row.kindName) : "entity";
     if (PAPER_TYPES.has(row.type)) {
       continue;
     }
+    if (row.type === "wake") {
+      if (!wakeHasLoot(row.kindName) || hollowReach(row.position, 2)) {
+        continue;
+      }
+      const node = wakeArtifact();
+      node.position.copy(cell(row.position));
+      tag(node, row);
+      relics.add(node);
+      continue;
+    }
+    if (row.type === "block") {
+      const node = blockArtifact(row.kindName);
+      node.position.copy(cell(row.position));
+      tag(node, row);
+      relics.add(node);
+      continue;
+    }
+    if (row.type === "beast" && hollowReach(row.position, 0)) {
+      continue;
+    }
+    const spec = spectrumOf(row, state.types, state.standing);
+    const form = row.type === "beast" ? "beast" : "entity";
     const node = placeForm(form, row, (clone) => {
       clone.rotation.y = spec.grain % 8;
-      clone.scale.setScalar(row.type === "beast" ? 2.6 : 0.85 + spec.rise * 0.15);
-      if (row.type === "block") {
-        const color = new THREE.Color().setHSL((kindHash(row.kindName) % 360) / 360, 0.38, 0.4);
-        clone.traverse((node) => {
-          if (node.material?.color !== undefined && !Array.isArray(node.material)) {
-            node.material = node.material.clone();
-            node.material.color.lerp(color, 0.55);
-          }
-        });
-      }
+      clone.scale.setScalar(row.type === "beast" ? 1.05 : 0.85 + spec.rise * 0.15);
     });
     if (node !== null) {
       relics.add(node);
@@ -2005,6 +2044,7 @@ function applyMap(map) {
       type: typeof row.type === "string" ? row.type : "entity",
       position: row.position,
       kindName: typeof row.kind === "string" ? row.kind : undefined,
+      name: typeof row.name === "string" ? row.name : undefined,
       caption: typeof row.caption === "string" ? row.caption : undefined,
       mime: typeof row.mime === "string" ? row.mime : undefined,
       hash: typeof row.hash === "string" ? row.hash : undefined,
@@ -2190,10 +2230,16 @@ function writeSelected(hit) {
   }
   const spec = spectrumOf(hit, state.types, state.standing);
   const title = document.createElement("strong");
-  title.textContent = placeTitle(hit) || hit.type || hit.kind;
+  title.textContent = placeTitle(hit) || hit.kindName || hit.type || hit.kind;
   const meta = document.createElement("small");
   const at = hit.position ? `${hit.position.x}, ${hit.position.y}, ${hit.position.z}` : "";
-  meta.textContent = hit.kind === "anchor" ? `${hit.type} · ${at}` : at;
+  if (hit.kind === "anchor") {
+    meta.textContent = `${hit.type} · ${at}`;
+  } else if (hit.type === "beast") {
+    meta.textContent = `beast · ${at}`;
+  } else {
+    meta.textContent = at;
+  }
   box.replaceChildren(title, meta);
   axes.replaceChildren();
   axes.dataset.empty = spec.axes.length === 0 ? "true" : "false";
@@ -2203,7 +2249,7 @@ function writeSelected(hit) {
     axes.append(bar);
   }
   if (caption) {
-    caption.textContent = placeTitle(hit) || hit.type || "A place in the fold.";
+    caption.textContent = placeTitle(hit) || hit.kindName || hit.type || "A place in the fold.";
   }
   appendLikeness(box, hit);
   writeHere();

@@ -74,6 +74,27 @@ export const MAT = {
   secret: physical(0x1a0a0c, { roughness: 0.22, metalness: 0.12, emissive: 0x2a0406, emissiveIntensity: 0.55 }),
   secretGlow: new THREE.MeshBasicMaterial({ color: 0xff1a14, transparent: true, opacity: 0.78, blending: THREE.AdditiveBlending, depthWrite: false }),
   ember: new THREE.MeshBasicMaterial({ color: 0xff2a18 }),
+  timber: physical(0x9a6234, { roughness: 0.78, metalness: 0.04, clearcoat: 0.08 }),
+  timberDark: physical(0x3f2414, { roughness: 0.88, metalness: 0.03 }),
+  coal: physical(0x1a1412, { roughness: 0.7, metalness: 0.08, emissive: 0x2a0c06, emissiveIntensity: 0.35 }),
+  water: physical(0x1a3848, {
+    roughness: 0.06,
+    metalness: 0.18,
+    transmission: 0.35,
+    thickness: 0.28,
+    transparent: true,
+    opacity: 0.82,
+    emissive: 0x0a2434,
+    emissiveIntensity: 0.35,
+  }),
+  fire: new THREE.MeshBasicMaterial({
+    color: 0xff7a28,
+    transparent: true,
+    opacity: 0.88,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  }),
+  linen: physical(0xc4a888, { roughness: 0.92, metalness: 0, sheen: 0.4, sheenColor: 0xe8d2b4 }),
   hide: physical(0x16080c, {
     roughness: 0.32,
     metalness: 0.06,
@@ -406,43 +427,342 @@ export function entityArtifact() {
   return g;
 }
 
-export function blockSlab() {
+function sitOnCell(group) {
+  const box = new THREE.Box3().setFromObject(group);
+  if (!Number.isFinite(box.min.y) || box.min.y === 0) {
+    return group;
+  }
+  const lift = -box.min.y;
+  for (const child of group.children) {
+    child.position.y += lift;
+  }
+  return group;
+}
+
+function hearthBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.92, 0.18, 0.92), MAT.entity));
-  g.add(mesh(new THREE.BoxGeometry(0.98, 0.04, 0.98), MAT.hull, 0, 0.11, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.98, 0.04, 0.98), MAT.hull, 0, -0.11, 0));
-  const lamp = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.navWarm, 0, 0.16, 0);
-  lamp.userData.motion = "pulse";
-  g.add(lamp);
+  g.add(mesh(new THREE.CylinderGeometry(0.46, 0.52, 0.14, 12), MAT.stone, 0, 0.07, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.4, 0.07, 8, 14), MAT.stoneDark, 0, 0.16, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.08, 10), MAT.coal, 0, 0.12, 0));
+  for (const [x, z] of [[-0.16, 0.12], [0.18, 0.08], [0.02, -0.16]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.12, 0.08, 0.08), MAT.stoneDark, x, 0.16, z));
+  }
+  const flame = mesh(new THREE.SphereGeometry(0.16, 10, 8), MAT.fire, 0, 0.38, 0);
+  flame.userData.motion = "pulse";
+  g.add(flame);
+  g.add(mesh(new THREE.ConeGeometry(0.12, 0.28, 7), MAT.ember, 0, 0.56, 0));
+  const wash = mesh(new THREE.CylinderGeometry(0.22, 0.04, 0.42, 10, 1, true), MAT.fire, 0, 0.42, 0);
+  g.add(wash);
   return g;
+}
+
+function chairBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.46, 0.07, 0.44), MAT.timber, 0, 0.32, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.46, 0.52, 0.07), MAT.timber, 0, 0.6, -0.2));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.08, 0.04), MAT.timberDark, 0, 0.78, -0.2));
+  for (const [x, z] of [[-0.18, -0.16], [0.18, -0.16], [-0.18, 0.16], [0.18, 0.16]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), MAT.timberDark, x, 0.16, z));
+  }
+  return g;
+}
+
+function tableBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.86, 0.08, 0.56), MAT.timber, 0, 0.46, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.8, 0.03, 0.5), MAT.timberDark, 0, 0.41, 0));
+  for (const [x, z] of [[-0.34, -0.2], [0.34, -0.2], [-0.34, 0.2], [0.34, 0.2]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.08, 0.42, 0.08), MAT.timberDark, x, 0.21, z));
+  }
+  g.add(mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.06, 8), MAT.iron, 0.16, 0.54, 0.08));
+  return g;
+}
+
+function lampBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.08, 8), MAT.iron, 0, 0.04, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.72, 8), MAT.iron, 0, 0.42, 0));
+  const globe = mesh(new THREE.SphereGeometry(0.16, 12, 10), MAT.lamp, 0, 0.86, 0);
+  globe.userData.motion = "pulse";
+  g.add(globe);
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.12, 0.05, 8), MAT.brass, 0, 1.02, 0));
+  const wash = mesh(new THREE.CylinderGeometry(0.28, 0.04, 0.55, 10, 1, true), MAT.godFlame, 0, 0.72, 0);
+  g.add(wash);
+  return g;
+}
+
+function bedBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.62, 0.12, 0.92), MAT.timberDark, 0, 0.16, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.56, 0.1, 0.84), MAT.linen, 0, 0.26, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.12, 0.18), MAT.linen, 0, 0.36, -0.3));
+  g.add(mesh(new THREE.BoxGeometry(0.64, 0.48, 0.08), MAT.timber, 0, 0.4, -0.46));
+  g.add(mesh(new THREE.BoxGeometry(0.64, 0.16, 0.08), MAT.timber, 0, 0.2, 0.46));
+  return g;
+}
+
+function crateBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.44, 0.5), MAT.timber, 0, 0.22, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.54, 0.05, 0.54), MAT.timberDark, 0, 0.44, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.54, 0.05, 0.54), MAT.timberDark, 0, 0.04, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.52, 0.04, 0.52), MAT.iron, 0, 0.22, 0));
+  for (const [x, z] of [[0.23, 0.23], [-0.23, 0.23], [0.23, -0.23], [-0.23, -0.23]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.05, 0.44, 0.05), MAT.iron, x, 0.22, z));
+  }
+  return g;
+}
+
+function barrelBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(lathe([[0.2, 0], [0.28, 0.08], [0.34, 0.3], [0.28, 0.54], [0.2, 0.62]], 16), MAT.timber, 0, 0, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.28, 0.025, 6, 16), MAT.iron, 0, 0.16, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.32, 0.025, 6, 16), MAT.iron, 0, 0.32, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.28, 0.025, 6, 16), MAT.iron, 0, 0.48, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.03, 12), MAT.timberDark, 0, 0.62, 0));
+  return g;
+}
+
+function shelfBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.78, 0.05), MAT.timberDark, 0, 0.42, -0.1));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.78, 0.22), MAT.timberDark, -0.32, 0.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.78, 0.22), MAT.timberDark, 0.32, 0.42, 0));
+  for (const y of [0.18, 0.42, 0.66]) {
+    g.add(mesh(new THREE.BoxGeometry(0.7, 0.05, 0.22), MAT.timber, 0, y, 0));
+  }
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.16, 0.08), MAT.archive, -0.16, 0.52, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.14, 0.08), MAT.cloth, 0.12, 0.51, 0.02));
+  return g;
+}
+
+function doorBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.1, 1.12, 0.1), MAT.timberDark, -0.3, 0.56, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.1, 1.12, 0.1), MAT.timberDark, 0.3, 0.56, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.7, 0.1, 0.1), MAT.timberDark, 0, 1.08, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.54, 0.98, 0.06), MAT.timber, 0, 0.55, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.9, 0.02), MAT.timberDark, 0, 0.55, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 0.1), MAT.brass, 0.18, 0.52, 0.06));
+  return g;
+}
+
+function windowBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.64, 0.7, 0.08), MAT.timberDark, 0, 0.58, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.56, 0.03), MAT.glass, 0, 0.58, 0.03));
+  g.add(mesh(new THREE.BoxGeometry(0.05, 0.56, 0.05), MAT.timber, 0, 0.58, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), MAT.timber, 0, 0.58, 0.04));
+  const glow = mesh(new THREE.BoxGeometry(0.46, 0.5, 0.02), MAT.lamp, 0, 0.58, 0.01);
+  glow.userData.motion = "pulse";
+  g.add(glow);
+  return g;
+}
+
+function rugBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.84, 0.03, 0.56), MAT.cloth, 0, 0.02, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.68, 0.02, 0.4), MAT.linen, 0, 0.035, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.2, 0.015, 0.2), MAT.cloth, 0, 0.045, 0));
+  return g;
+}
+
+function wellBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.CylinderGeometry(0.36, 0.4, 0.42, 14), MAT.stone, 0, 0.21, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.38, 0.06, 8, 16), MAT.stoneDark, 0, 0.44, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 14), MAT.water, 0, 0.28, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.07, 0.5, 0.07), MAT.timber, -0.3, 0.68, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.07, 0.5, 0.07), MAT.timber, 0.3, 0.68, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.68, 0.06, 0.06), MAT.timberDark, 0, 0.94, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.12, 8), MAT.iron, 0, 0.72, 0));
+  return g;
+}
+
+function fenceBlock() {
+  const g = new THREE.Group();
+  for (const x of [-0.36, 0, 0.36]) {
+    g.add(mesh(new THREE.BoxGeometry(0.08, 0.62, 0.08), MAT.timberDark, x, 0.31, 0));
+  }
+  g.add(mesh(new THREE.BoxGeometry(0.82, 0.06, 0.05), MAT.timber, 0, 0.22, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.82, 0.06, 0.05), MAT.timber, 0, 0.42, 0));
+  return g;
+}
+
+function gateBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.88, 0.1), MAT.timberDark, -0.36, 0.44, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.88, 0.1), MAT.timberDark, 0.36, 0.44, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.08, 0.08), MAT.timberDark, 0, 0.86, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.28, 0.62, 0.05), MAT.timber, -0.16, 0.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.28, 0.62, 0.05), MAT.timber, 0.16, 0.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 0.1), MAT.iron, 0.08, 0.44, 0.05));
+  return g;
+}
+
+function signBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.98, 0.08), MAT.timberDark, 0, 0.49, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.62, 0.36, 0.05), MAT.timber, 0, 0.88, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.48, 0.04, 0.02), MAT.brass, 0, 0.94, 0.1));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.03, 0.02), MAT.brass, 0, 0.84, 0.1));
+  return g;
+}
+
+function bannerBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.2, 8), MAT.iron, 0, 0.6, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.62, 0.03), MAT.cloth, 0.26, 0.82, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.05, 0.04), MAT.brass, 0.26, 1.12, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.02), MAT.brass, 0.26, 0.92, 0.02));
+  return g;
+}
+
+function pathBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.82, 0.05, 0.4), MAT.stone, 0, 0.025, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.28, 0.04, 0.18), MAT.stoneDark, -0.2, 0.05, 0.05));
+  g.add(mesh(new THREE.BoxGeometry(0.24, 0.04, 0.16), MAT.stone, 0.18, 0.05, -0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.2, 0.035, 0.14), MAT.stoneDark, 0.02, 0.048, 0.08));
+  return g;
+}
+
+function stepsBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.7, 0.12, 0.24), MAT.stone, 0, 0.06, 0.2));
+  g.add(mesh(new THREE.BoxGeometry(0.7, 0.12, 0.24), MAT.stoneDark, 0, 0.18, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.7, 0.12, 0.24), MAT.stone, 0, 0.3, -0.2));
+  return g;
+}
+
+function awningBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.07, 0.72, 0.07), MAT.timberDark, -0.34, 0.36, 0.18));
+  g.add(mesh(new THREE.BoxGeometry(0.07, 0.72, 0.07), MAT.timberDark, 0.34, 0.36, 0.18));
+  const cloth = mesh(new THREE.BoxGeometry(0.82, 0.05, 0.56), MAT.cloth, 0, 0.76, 0);
+  cloth.rotation.x = -0.28;
+  g.add(cloth);
+  g.add(mesh(new THREE.BoxGeometry(0.82, 0.04, 0.08), MAT.timber, 0, 0.7, -0.24));
+  return g;
+}
+
+function benchBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.9, 0.08, 0.3), MAT.timber, 0, 0.3, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.9, 0.28, 0.06), MAT.timber, 0, 0.48, -0.12));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.3, 0.28), MAT.timberDark, -0.36, 0.15, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.3, 0.28), MAT.timberDark, 0.36, 0.15, 0));
+  return g;
+}
+
+function stallBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.92, 0.08, 0.46), MAT.timber, 0, 0.44, 0));
+  for (const [x, z] of [[-0.38, 0.18], [0.38, 0.18], [-0.38, -0.18], [0.38, -0.18]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.07, 0.44, 0.07), MAT.timberDark, x, 0.22, z));
+  }
+  g.add(mesh(new THREE.BoxGeometry(0.07, 0.4, 0.07), MAT.timberDark, -0.42, 0.64, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.07, 0.4, 0.07), MAT.timberDark, 0.42, 0.64, 0));
+  const roof = mesh(new THREE.BoxGeometry(0.98, 0.05, 0.58), MAT.cloth, 0, 0.88, 0);
+  roof.rotation.x = -0.12;
+  g.add(roof);
+  g.add(mesh(new THREE.BoxGeometry(0.16, 0.12, 0.16), MAT.timberDark, -0.18, 0.54, 0.04));
+  g.add(mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.1, 8), MAT.brass, 0.16, 0.54, 0.06));
+  return g;
+}
+
+function chimneyBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.36, 1.05, 0.36), MAT.stone, 0, 0.52, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.44, 0.1, 0.44), MAT.stoneDark, 0, 1.06, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.2, 0.12, 0.2), MAT.coal, 0, 1.14, 0));
+  const smoke = mesh(new THREE.SphereGeometry(0.12, 8, 6), MAT.fire, 0, 1.28, 0);
+  smoke.userData.motion = "pulse";
+  g.add(smoke);
+  return g;
+}
+
+export const WAKE_LOOT_KINDS = new Set(["guestmark", "cache", "echo", "stirring"]);
+
+export function wakeHasLoot(kind) {
+  return typeof kind === "string" && WAKE_LOOT_KINDS.has(kind);
+}
+
+export function wakeArtifact() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.SphereGeometry(0.38, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), MAT.stoneDark, 0, 0, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.22, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), MAT.stone, 0.08, 0.04, -0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.16, 0.52, 0.08), MAT.stone, 0, 0.38, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.22, 0.08, 0.06), MAT.stoneDark, 0, 0.58, 0.02));
+  const glint = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.lamp, 0.16, 0.18, 0.12);
+  glint.userData.motion = "pulse";
+  g.add(glint);
+  return sitOnCell(g);
+}
+
+export function beastArtifact() {
+  const g = new THREE.Group();
+  const coil = mesh(new THREE.TorusGeometry(0.32, 0.13, 8, 18), MAT.hide, 0, 0.16, 0);
+  coil.rotation.x = Math.PI / 2;
+  g.add(coil);
+  const rise = mesh(new THREE.TorusGeometry(0.2, 0.1, 8, 16), MAT.hide, 0.08, 0.34, 0.06);
+  rise.rotation.x = 0.8;
+  g.add(rise);
+  g.add(mesh(new THREE.SphereGeometry(0.18, 12, 10), MAT.hide, 0.22, 0.48, 0.18));
+  const jaw = mesh(new THREE.ConeGeometry(0.12, 0.2, 7, 1, true), MAT.secret, 0.28, 0.46, 0.32);
+  jaw.rotation.x = Math.PI / 2;
+  g.add(jaw);
+  for (const side of [-1, 1]) {
+    const eye = mesh(new THREE.SphereGeometry(0.045, 8, 6), MAT.ember, 0.22 + side * 0.08, 0.56, 0.28);
+    eye.userData.motion = "pulse";
+    g.add(eye);
+  }
+  const coal = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.ember, 0.26, 0.44, 0.22);
+  coal.userData.motion = "pulse";
+  g.add(coal);
+  return sitOnCell(g);
+}
+
+export function blockSlab() {
+  return pathBlock();
 }
 
 export function blockPost() {
-  const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.28, 1.15, 0.28), MAT.entity, 0, 0.2, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.42, 0.08, 0.42), MAT.hull, 0, -0.34, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.36, 0.08, 0.36), MAT.rim, 0, 0.78, 0));
-  const lamp = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.navWarm, 0, 0.9, 0);
-  lamp.userData.motion = "pulse";
-  g.add(lamp);
-  return g;
+  return fenceBlock();
 }
 
 export function blockStall() {
-  const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.95, 0.08, 0.62), MAT.entity, 0, 0.42, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, 0.4, 0.02, 0.24));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, -0.4, 0.02, 0.24));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, 0.4, 0.02, -0.24));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, -0.4, 0.02, -0.24));
-  g.add(mesh(new THREE.BoxGeometry(0.88, 0.06, 0.56), MAT.rim, 0, -0.32, 0));
-  const lamp = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.navWarm, 0, 0.52, 0);
-  lamp.userData.motion = "pulse";
-  g.add(lamp);
-  return g;
+  return stallBlock();
 }
 
-export const BLOCK_FORMS = ["crate", "slab", "post", "stall"];
+const BLOCK_BUILDERS = {
+  hearth: hearthBlock,
+  chair: chairBlock,
+  table: tableBlock,
+  lamp: lampBlock,
+  lantern: lampBlock,
+  bed: bedBlock,
+  crate: crateBlock,
+  barrel: barrelBlock,
+  shelf: shelfBlock,
+  door: doorBlock,
+  window: windowBlock,
+  rug: rugBlock,
+  well: wellBlock,
+  fence: fenceBlock,
+  rail: fenceBlock,
+  gate: gateBlock,
+  sign: signBlock,
+  banner: bannerBlock,
+  path: pathBlock,
+  steps: stepsBlock,
+  awning: awningBlock,
+  bench: benchBlock,
+  stall: stallBlock,
+  chimney: chimneyBlock,
+};
+
+export const BLOCK_FORMS = Object.keys(BLOCK_BUILDERS);
 
 export function kindHash(kind) {
   let hash = 2166136261;
@@ -455,7 +775,13 @@ export function kindHash(kind) {
 }
 
 export function blockForm(kind) {
-  return BLOCK_FORMS[kindHash(kind) % BLOCK_FORMS.length];
+  const key = typeof kind === "string" ? kind.toLowerCase() : "";
+  return key in BLOCK_BUILDERS ? key : "crate";
+}
+
+export function blockArtifact(kind) {
+  const build = BLOCK_BUILDERS[blockForm(kind)] ?? crateBlock;
+  return sitOnCell(build());
 }
 
 export function wardenArtifact() {
@@ -541,8 +867,10 @@ export const KNOWN = {
   identity: godArtifact,
   echo: echoArtifact,
   entity: entityArtifact,
-  crate: entityArtifact,
-  slab: blockSlab,
-  post: blockPost,
-  stall: blockStall,
+  beast: beastArtifact,
+  wake: wakeArtifact,
+  crate: crateBlock,
+  slab: pathBlock,
+  post: fenceBlock,
+  stall: stallBlock,
 };
