@@ -141,7 +141,7 @@ camera.position.set(48, 36, 54);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = !reduced;
 controls.dampingFactor = 0.07;
-controls.enableZoom = true;
+controls.enableZoom = false;
 controls.minDistance = 8;
 controls.maxDistance = 180;
 controls.target.set(0, 0, 0);
@@ -349,6 +349,189 @@ const LIGHT_MAP = radialMap([
   [1, "rgba(0,0,0,0)"],
 ]);
 const GLOW_DOT = spriteMat(LIGHT_MAP, 0xe8d2a4, 0.55);
+const SPARK_MAP = LIGHT_MAP;
+const sparks = [];
+
+function sequence(index, factor, offset = 0) {
+  return (index * factor + offset) % 1;
+}
+
+function visualTone(type) {
+  if (type.startsWith("amendment.")) {
+    return { color: 0xc4a574, count: 22, duration: 1800, spread: 7 };
+  }
+  if (type === "speak" || type === "speak.warden" || type === "act.speak") {
+    return { color: 0x00ffd4, count: 18, duration: 1600, spread: 4 };
+  }
+  if (type === "act.mark") {
+    return { color: 0xff6a28, count: 22, duration: 1700, spread: 5 };
+  }
+  if (type === "effect.create") {
+    return { color: 0xffc44d, count: 20, duration: 1500, spread: 5 };
+  }
+  if (type === "effect.destroy" || type.endsWith("_failed")) {
+    return { color: 0xff1a14, count: 18, duration: 1200, spread: 3 };
+  }
+  if (type === "effect.move" || type === "act.move") {
+    return { color: 0x7af0ff, count: 14, duration: 1100, spread: 3 };
+  }
+  return { color: 0x9ec4d4, count: 12, duration: 1100, spread: 3 };
+}
+
+function visualEvent(type) {
+  return (
+    type === "speak" ||
+    type === "speak.warden" ||
+    (type.startsWith("act.") && type !== "act.wait") ||
+    type.startsWith("effect.") ||
+    type.startsWith("amendment.") ||
+    type.endsWith("_failed")
+  );
+}
+
+function eventSeed(item) {
+  const type = typeof item.type === "string" ? item.type : "event";
+  let seed = (Number(item.seq) || Number(item.tick) * 31 || 1) + type.length * 17;
+  for (let i = 0; i < type.length; i += 1) {
+    seed = Math.imul(seed ^ type.charCodeAt(i), 16777619);
+  }
+  return seed >>> 0;
+}
+
+function eventArc(from, to, color) {
+  const distance = from.distanceTo(to);
+  const middle = from.clone().lerp(to, 0.5);
+  middle.y += Math.max(1.5, distance * 0.16);
+  const curve = new THREE.QuadraticBezierCurve3(from, middle, to);
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(curve.getPoints(20)),
+    new THREE.LineBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.62,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+}
+
+function disposeSpark(spark) {
+  scene.remove(spark.group);
+  spark.group.traverse((node) => {
+    node.geometry?.dispose();
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (material && material.map !== SPARK_MAP) {
+        material.dispose();
+      }
+    }
+  });
+}
+
+function sparkAt(item, context = {}) {
+  const type = typeof item.type === "string" ? item.type : "event";
+  if (!visualEvent(type)) {
+    return;
+  }
+  const tone = visualTone(type);
+  const eventAt = context.at ?? payloadPosition(item.payload);
+  const origin = eventAt === null ? new THREE.Vector3(0, 0, 0) : cell(eventAt);
+  const group = new THREE.Group();
+  group.position.copy(origin);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(type.startsWith("amendment.") ? 2.2 : 0.7, 0.03, 5, 32),
+    new THREE.MeshBasicMaterial({
+      color: tone.color,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  ring.quaternion.copy(camera.quaternion);
+  group.add(ring);
+  const positions = new Float32Array(tone.count * 3);
+  const velocities = new Float32Array(tone.count * 3);
+  const seed = eventSeed(item);
+  for (let i = 0; i < tone.count; i += 1) {
+    const theta = sequence(i + seed, 0.61803398875) * Math.PI * 2;
+    const y = sequence(i + seed, 0.75487766625, 0.17) * 2 - 1;
+    const radial = Math.sqrt(Math.max(0, 1 - y * y));
+    const speed = 0.55 + sequence(i + seed, 0.56984029099, 0.41) * tone.spread;
+    const offset = i * 3;
+    velocities[offset] = Math.cos(theta) * radial * speed;
+    velocities[offset + 1] = y * speed + (type === "act.mark" ? 1.4 : 0);
+    velocities[offset + 2] = Math.sin(theta) * radial * speed;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const particles = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color: tone.color,
+      size: type.startsWith("amendment.") ? 1.15 : 0.8,
+      map: SPARK_MAP,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  group.add(particles);
+  const paths = [];
+  const localOrigin = new THREE.Vector3();
+  const from = context.from === null || context.from === undefined ? null : cell(context.from).sub(origin);
+  if ((type === "act.move" || type === "effect.move") && from !== null) {
+    const path = eventArc(from, localOrigin, tone.color);
+    group.add(path);
+    paths.push(path);
+  }
+  scene.add(group);
+  sparks.push({
+    group,
+    particles,
+    positions,
+    velocities,
+    ring,
+    paths,
+    born: performance.now(),
+    duration: tone.duration,
+    type,
+  });
+  while (sparks.length > 24) {
+    const oldest = sparks.shift();
+    if (oldest !== undefined) {
+      disposeSpark(oldest);
+    }
+  }
+}
+
+function tickSparks(now) {
+  for (let i = sparks.length - 1; i >= 0; i -= 1) {
+    const spark = sparks[i];
+    const age = (now - spark.born) / spark.duration;
+    if (age >= 1) {
+      disposeSpark(spark);
+      sparks.splice(i, 1);
+      continue;
+    }
+    const travel = Math.sin(Math.min(1, age) * Math.PI * 0.5);
+    for (let n = 0; n < spark.positions.length; n += 3) {
+      spark.positions[n] = spark.velocities[n] * travel;
+      spark.positions[n + 1] = spark.velocities[n + 1] * travel - age * age * 0.8;
+      spark.positions[n + 2] = spark.velocities[n + 2] * travel;
+    }
+    spark.particles.geometry.attributes.position.needsUpdate = true;
+    spark.particles.material.opacity = Math.max(0, 1 - age);
+    spark.ring.scale.setScalar(1 + age * (spark.type.startsWith("amendment.") ? 12 : 5));
+    spark.ring.material.opacity = Math.max(0, (1 - age) * 0.7);
+    spark.ring.quaternion.copy(camera.quaternion);
+    for (const path of spark.paths) {
+      path.material.opacity = Math.max(0, (1 - age) * 0.55);
+    }
+  }
+}
 
 const LIT_KINDS = ["identity", "echo", "entity", "mark", "anchor", "drift"];
 const LAMP_TINT = {
@@ -629,7 +812,10 @@ function foldEntity(item) {
   return at;
 }
 
-function ripple(_position, _type) {}
+function actorId(item) {
+  const actor = typeof item.actor === "string" ? item.actor : "";
+  return actor.startsWith("identity:") ? actor.slice(10) : actor;
+}
 
 function listOf(kind) {
   return [...state.occupants.values()].filter((row) => row.kind === kind && row.position);
@@ -1088,9 +1274,9 @@ function applyMap(map) {
   dropKind("drift");
   if (!state.streamLive) {
     dropKind("identity");
-    dropKind("entity");
-    dropKind("mark");
   }
+  dropKind("entity");
+  dropKind("mark");
   for (const row of map.bodies ?? []) {
     if (typeof row.id === "string") {
       put({ kind: "echo", id: row.id, type: "identity", position: row.position });
@@ -1118,24 +1304,22 @@ function applyMap(map) {
   for (const row of map.drifts ?? []) {
     put({ kind: "drift", id: String(row.id ?? "drift"), type: "drift", position: row.position });
   }
-  if (!state.streamLive) {
-    for (const row of map.entities ?? []) {
-      put({
-        kind: "entity",
-        id: String(row.id ?? ""),
-        type: typeof row.type === "string" ? row.type : "entity",
-        position: row.position,
-      });
-    }
-    for (const row of map.marks ?? []) {
-      put({
-        kind: "mark",
-        id: String(row.authorId ?? "mark"),
-        type: "mark",
-        position: row.position,
-        text: typeof row.text === "string" ? row.text : "",
-      });
-    }
+  for (const row of map.entities ?? []) {
+    put({
+      kind: "entity",
+      id: String(row.id ?? ""),
+      type: typeof row.type === "string" ? row.type : "entity",
+      position: row.position,
+    });
+  }
+  for (const row of map.marks ?? []) {
+    put({
+      kind: "mark",
+      id: String(row.authorId ?? "mark"),
+      type: "mark",
+      position: row.position,
+      text: typeof row.text === "string" ? row.text : "",
+    });
   }
 }
 
@@ -1304,10 +1488,14 @@ async function refresh() {
 function appendRecord(item) {
   const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
   const at = payloadPosition(payload);
-  const actor = typeof item.actor === "string" && item.actor.startsWith("identity:") ? item.actor.slice(10) : "";
+  const actor = actorId(item);
+  const previousBody = listOf("identity").find((row) => row.id === actor)?.position ?? null;
+  const previousEntity =
+    typeof payload.id === "string"
+      ? listOf("entity").find((row) => row.id === payload.id)?.position ?? null
+      : null;
   if (item.type === "act.move" && actor.length > 0 && at !== null) {
     rememberBody(actor, at, "identity");
-    ripple(at, item.type);
   }
   if (item.type === "act.mark" && at !== null) {
     put({
@@ -1317,16 +1505,17 @@ function appendRecord(item) {
       position: at,
       text: typeof payload.text === "string" ? payload.text : "",
     });
-    ripple(at, item.type);
-  }
-  if (item.type === "act.speak" && actor.length > 0) {
-    const body = listOf("identity").find((row) => row.id === actor);
-    ripple(body?.position ?? at, item.type);
   }
   const created = foldEntity(item);
-  if (item.type === "effect.create" || item.type === "effect.destroy") {
-    ripple(created, item.type);
-  }
+  const sparkAtCell =
+    at ??
+    created ??
+    (item.type === "effect.destroy" ? previousEntity : null) ??
+    previousBody;
+  sparkAt(item, {
+    from: item.type === "act.move" ? previousBody : item.type === "effect.move" ? previousEntity : null,
+    at: sparkAtCell,
+  });
 }
 
 function listen() {
@@ -1416,6 +1605,7 @@ function tick() {
   if (!reduced) {
     const now = performance.now();
     tickFly(now);
+    tickSparks(now);
     controls.update();
     cosmos.rotation.y += 0.00018;
     aimLamps();
@@ -1449,6 +1639,7 @@ function tick() {
         }
     }
   } else {
+    tickSparks(performance.now());
     aimLamps();
   }
   renderer.render(scene, camera);
