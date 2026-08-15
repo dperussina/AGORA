@@ -891,13 +891,6 @@ const BLOCK_LIGHTS = {
   lantern: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 0.72 },
   chimney: { color: 0xff6a20, intensity: 0.85, distance: 2.6, y: 1.05 },
   window: { color: 0xffe2a8, intensity: 0.7, distance: 2.4, y: 0.58 },
-  "wall-front": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
-  "wall-back": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
-  "wall-left": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
-  "wall-right": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
-  "wall-top": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.94 },
-  "wall-bottom": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.06 },
-  "wall-l": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
 };
 
 export function blockArtifact(kind) {

@@ -1423,8 +1423,11 @@ function rememberBody(id, position, kind) {
   if (position === null) {
     return;
   }
-  const prior = [...state.occupants.values()].find((row) => row.kind === kind && row.id === id);
-  if (kind === "identity" && prior?.position && !sameCell(prior.position, position)) {
+  const prior = state.occupants.get(occupantKey(kind, id));
+  if (prior?.position && sameCell(prior.position, position)) {
+    return;
+  }
+  if (kind === "identity" && prior?.position) {
     beginFlight(id, prior.position, position);
   }
   state.occupants.set(occupantKey(kind, id), {
@@ -2451,21 +2454,29 @@ function listen() {
     try {
       const data = JSON.parse(event.data);
       const seen = new Set();
+      let moved = false;
       for (const row of Array.isArray(data.bodies) ? data.bodies : []) {
         if (typeof row.id === "string") {
           seen.add(row.id);
-          rememberBody(row.id, payloadPosition(row.position ?? row), "identity");
+          const at = payloadPosition(row.position ?? row);
+          const prior = state.occupants.get(occupantKey("identity", row.id));
+          rememberBody(row.id, at, "identity");
+          if (!prior || !at || !sameCell(prior.position, at)) {
+            moved = true;
+          }
         }
       }
       for (const row of listOf("identity")) {
         if (!seen.has(row.id)) {
           state.occupants.delete(occupantKey("identity", row.id));
           state.flights.delete(row.id);
-          state.dirty = true;
+          moved = true;
         }
       }
       state.streamLive = true;
-      state.dirty = true;
+      if (moved) {
+        state.dirty = true;
+      }
     } catch {
       /* ignore malformed frames */
     }
@@ -2541,7 +2552,7 @@ function aimLamps() {
 
 function tick() {
   requestAnimationFrame(tick);
-  if (!state.onScreen) {
+  if (!state.onScreen || document.hidden) {
     return;
   }
   if (state.dirty) {

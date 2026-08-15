@@ -4116,6 +4116,9 @@ function applyMap(map) {
       fields,
     });
   }
+}
+
+function rebuildWorldMeshes() {
   rebuildAnchors(world.anchors);
   rebuildWardens(world.wardens);
   rebuildDrifts(world.drifts);
@@ -4169,13 +4172,11 @@ async function refresh() {
     }
     applyMap(map);
     ingestText(rules?.registry?.text);
-    rebuildAnchors(world.anchors);
     foldLiveBodies(world.events);
-    paintBodies();
-    paintMarks();
-    paintEntities();
-    drawRibbon();
-    drawSlice();
+    if (worldVisible) {
+      rebuildWorldMeshes();
+      drawRibbon();
+    }
     fillLore();
     fillStatute(rules, history);
     setStat("tick", world.present);
@@ -4303,10 +4304,12 @@ function appendRecord(item) {
   const previousEntity = entityId.length > 0 ? world.liveEntities.get(entityId)?.position ?? null : null;
   if (item.type === "identity.spawn" || item.type === "act.move" || item.type === "act.mark") {
     rememberBody(id, at);
-    if (world.follow) {
+    if (worldVisible && world.follow) {
       paintBodies();
     }
-    fillInhabitants(world.identityRows, world.standingRows);
+    if (worldVisible) {
+      fillInhabitants(world.identityRows, world.standingRows);
+    }
   }
   if (item.type === "act.mark" && at !== null) {
     world.liveMarks.set(`${at.x},${at.y},${at.z}`, {
@@ -4315,14 +4318,14 @@ function appendRecord(item) {
       tick: item.tick,
       position: at,
     });
-    if (world.follow) {
+    if (worldVisible && world.follow) {
       paintMarks();
     }
     fillLore();
   }
   if (item.type === "effect.create" || item.type === "effect.move" || item.type === "effect.destroy") {
     foldEntity(item);
-    if (world.follow) {
+    if (worldVisible && world.follow) {
       paintEntities();
     }
   }
@@ -4384,12 +4387,14 @@ function listen() {
           rememberBody(row.id, payloadPosition(row.position ?? row));
         }
       }
-      if (world.follow) {
+      if (worldVisible && world.follow) {
         paintBodies();
       }
       moveSelectionField(world.selected);
-      fillInhabitants(world.identityRows, world.standingRows);
-      drawSlice();
+      if (worldVisible) {
+        fillInhabitants(world.identityRows, world.standingRows);
+        drawSlice();
+      }
       if (world.presenceFrames >= 2) {
         world.streamLive = true;
         markStreamConnected();
@@ -4460,6 +4465,9 @@ function bindControls() {
       }
       try {
         applyMap(await readJson(`/map?t=${t}`));
+        if (worldVisible) {
+          rebuildWorldMeshes();
+        }
         fillLore();
       } catch {
         /* keep last map */
@@ -4647,8 +4655,13 @@ function showWorld(on) {
   if (stage) {
     stage.hidden = !on;
   }
+  const wasLive = worldVisible;
   worldInView = on;
   syncWorldVisible();
+  if (on && !wasLive) {
+    rebuildWorldMeshes();
+    drawRibbon();
+  }
 }
 
 function syncWorldHash() {
