@@ -23,11 +23,34 @@ function unit(hash, lane) {
   return ((hash >>> (lane * 5)) & 1023) / 1023;
 }
 
+function parseCellText(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const parts = value.split(",");
+  if (parts.length !== 3) {
+    return null;
+  }
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  const z = Number(parts[2]);
+  if (![x, y, z].every((n) => Number.isInteger(n))) {
+    return null;
+  }
+  return { x, y, z };
+}
+
 function payloadPosition(payload) {
   if (payload === undefined || payload === null || typeof payload !== "object") {
     return null;
   }
   const nested = payload.position;
+  if (typeof nested === "string") {
+    const fromText = parseCellText(nested);
+    if (fromText !== null) {
+      return fromText;
+    }
+  }
   const source =
     nested !== undefined && typeof nested === "object" && nested !== null ? nested : payload;
   if (typeof source.x !== "number" || typeof source.y !== "number" || typeof source.z !== "number") {
@@ -284,6 +307,23 @@ const FORMS = {
   post: KNOWN.post(),
   stall: KNOWN.stall(),
 };
+
+const PAPER_TYPES = new Set([
+  "war",
+  "wound",
+  "fallen",
+  "gold",
+  "resource",
+  "listing",
+  "offer",
+  "message",
+  "channel",
+  "skill",
+  "home",
+  "invite",
+  "membership",
+  "guild",
+]);
 
 const MAT = {
   wake: new THREE.LineBasicMaterial({ color: 0xc4a574, transparent: true, opacity: 0.35 }),
@@ -1063,6 +1103,110 @@ function startIdleAct(idle, now) {
   idle.heading = ((idle.seed + Math.floor(now)) % 360) * (Math.PI / 180);
 }
 
+const foldShots = [];
+const recentFoldShots = [];
+
+function occupantCell(id) {
+  if (typeof id !== "string" || id.length === 0) {
+    return null;
+  }
+  for (const row of state.occupants.values()) {
+    if (row.id === id && row.position) {
+      return row.position;
+    }
+  }
+  return null;
+}
+
+function foldCombatBusy(id, now) {
+  return foldShots.some((shot) => (shot.fromId === id || shot.toId === id) && now - shot.born < shot.duration);
+}
+
+function fireFoldShot(fromId, toId, item, now) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const fromAt = occupantCell(fromId) ?? occupantCell(typeof payload.identityId === "string" ? payload.identityId : "");
+  const toAt = occupantCell(toId) ?? payloadPosition(payload);
+  if (fromAt === null || toAt === null) {
+    return;
+  }
+  if (recentFoldShots.some((row) => row.fromId === fromId && row.toId === toId && now - row.born < 900)) {
+    return;
+  }
+  recentFoldShots.push({ fromId, toId, born: now });
+  while (recentFoldShots.length > 24) {
+    recentFoldShots.shift();
+  }
+  const from = cell(fromAt);
+  from.y += 0.78;
+  const to = cell(toAt);
+  to.y += 0.7;
+  const beast = item.type === "beast.bit" || (typeof fromId === "string" && fromId.startsWith("ent:"));
+  const color = new THREE.Color(beast ? 0xff3a6a : 0xc4e8ff);
+  const hot = new THREE.Color(beast ? 0xffc078 : 0xf4fff8);
+  const length = Math.max(0.35, from.distanceTo(to));
+  const mid = from.clone().lerp(to, 0.5);
+  const group = new THREE.Group();
+  group.position.copy(mid);
+  group.lookAt(to);
+  const fat = beast ? 0.28 : 0.12;
+  const bloom = new THREE.Mesh(
+    new THREE.CylinderGeometry(fat * 2.4, fat * 1.6, length, 12, 1, true),
+    glowIdle(color, 0.28),
+  );
+  bloom.rotation.x = Math.PI / 2;
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(fat * 0.35, fat * 0.22, length, 8, 1, true),
+    glowIdle(hot, 0.95),
+  );
+  core.rotation.x = Math.PI / 2;
+  group.add(bloom, core);
+  const bolt = new THREE.Mesh(new THREE.SphereGeometry(beast ? 0.22 : 0.14, 12, 10), glowIdle(hot, 0.95));
+  scene.add(group, bolt);
+  foldShots.push({
+    group,
+    bolt,
+    bloom,
+    core,
+    from,
+    to,
+    fromId,
+    toId,
+    born: now,
+    duration: beast ? 980 : 640,
+  });
+  while (foldShots.length > 10) {
+    const oldest = foldShots.shift();
+    if (oldest !== undefined) {
+      scene.remove(oldest.group, oldest.bolt);
+    }
+  }
+  const midCell = {
+    x: Math.round((fromAt.x + toAt.x) / 2),
+    y: Math.round((fromAt.y + toAt.y) / 2),
+    z: Math.round((fromAt.z + toAt.z) / 2),
+  };
+  if (controls.target.distanceTo(cell(midCell)) > 10) {
+    flyToRow({ position: toAt, kind: "entity", id: toId }, 12);
+  }
+}
+
+function tickShots(now) {
+  for (let i = foldShots.length - 1; i >= 0; i -= 1) {
+    const shot = foldShots[i];
+    const u = (now - shot.born) / shot.duration;
+    if (u >= 1) {
+      scene.remove(shot.group, shot.bolt);
+      foldShots.splice(i, 1);
+      continue;
+    }
+    const travel = 1 - (1 - u) * (1 - u);
+    shot.bolt.position.copy(shot.from.clone().lerp(shot.to, Math.min(1, travel)));
+    const fade = Math.max(0, 1 - u * 0.55);
+    shot.core.material.opacity = fade * 0.95;
+    shot.bloom.material.opacity = fade * 0.28;
+  }
+}
+
 function ensureIdle(id, now) {
   let idle = idles.get(id);
   if (idle === undefined) {
@@ -1075,6 +1219,10 @@ function ensureIdle(id, now) {
       heading: (fnv(id) % 360) * (Math.PI / 180),
     };
     idles.set(id, idle);
+  }
+  if (foldCombatBusy(id, now)) {
+    holdIdle(idle, now, 400);
+    return idle;
   }
   if (now < idle.next) {
     return idle;
@@ -1649,9 +1797,12 @@ function buildRelics() {
   for (const row of listOf("entity")) {
     const spec = spectrumOf(row, state.types, state.standing);
     const form = row.type === "block" ? blockForm(row.kindName) : "entity";
+    if (PAPER_TYPES.has(row.type)) {
+      continue;
+    }
     const node = placeForm(form, row, (clone) => {
       clone.rotation.y = spec.grain % 8;
-      clone.scale.setScalar(0.85 + spec.rise * 0.15);
+      clone.scale.setScalar(row.type === "beast" ? 2.6 : 0.85 + spec.rise * 0.15);
       if (row.type === "block") {
         const color = new THREE.Color().setHSL((kindHash(row.kindName) % 360) / 360, 0.38, 0.4);
         clone.traverse((node) => {
@@ -2245,6 +2396,13 @@ function appendRecord(item) {
     from: fromCell,
     at: sparkAtCell,
   });
+  if (combat) {
+    const striker = typeof payload.striker === "string" ? payload.striker : actor;
+    const target = typeof payload.target === "string" ? payload.target : "";
+    if (!(item.type === "war.struck" && target.length === 0 && payloadPosition(payload) === null)) {
+      fireFoldShot(striker, target, item, performance.now());
+    }
+  }
 }
 
 function listen() {
@@ -2351,6 +2509,7 @@ function tick() {
     tickIdles(now);
     tickJet(now);
     tickSparks(now);
+    tickShots(now);
     controls.update();
     cosmos.rotation.y += 0.00018;
     aimLamps();

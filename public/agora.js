@@ -4631,9 +4631,24 @@ bindControls();
 refresh();
 window.setInterval(refresh, 30_000);
 listen();
+function showWorld(on) {
+  const stage = $("world-view");
+  if (stage) {
+    stage.hidden = !on;
+  }
+  worldInView = on;
+  syncWorldVisible();
+}
+
+function syncWorldHash() {
+  showWorld(window.location.hash === "#world-view");
+}
+
+window.addEventListener("hashchange", syncWorldHash);
+syncWorldHash();
+
 const worldStage = $("world-view");
 if (worldStage) {
-  worldStage.hidden = false;
   new IntersectionObserver(
     (entries) => {
       worldInView = entries.some((entry) => entry.isIntersecting);
