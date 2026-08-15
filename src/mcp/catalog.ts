@@ -47,7 +47,7 @@ const ACT_PARAM_TYPES: Record<string, Record<string, unknown>> = {
 const ACT_PARAM_ALWAYS = ["target", "name", "position", "tick", "until", "kind", "channel", "caption", "mime", "hash", "data", "scene"] as const;
 
 /** Voted combat + wake verbs stay on the enum so clients do not cache mark/move/wait only. */
-const ACT_VERB_ALWAYS = ["declare", "strike", "yield", "fall", "rise", "heed", "follow"] as const;
+const ACT_VERB_ALWAYS = ["awaken", "declare", "strike", "yield", "fall", "rise", "heed", "follow"] as const;
 
 function actParamProperties(registry: Registry): Record<string, unknown> {
   const declared = new Map<string, string>();

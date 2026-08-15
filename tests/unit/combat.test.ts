@@ -145,11 +145,11 @@ describe("combat law", () => {
     const act = listTools(registry).find((tool) => tool.name === "act")?.inputSchema as {
       properties: { verb: { enum: string[] }; position: { type: string }; tick: { type: string }; until: { type: string }; name: { type: string }; target: { type: string } };
     };
-    expect(act.properties.verb.enum).toEqual(expect.arrayContaining(["declare", "strike", "yield", "fall", "rise"]));
+    expect(act.properties.verb.enum).toEqual(expect.arrayContaining(["awaken", "declare", "strike", "yield", "fall", "rise"]));
     const seeded = listTools(seedRegistry()).find((tool) => tool.name === "act")?.inputSchema as {
       properties: { verb: { enum: string[] } };
     };
-    expect(seeded.properties.verb.enum).toEqual(expect.arrayContaining(["fall", "rise", "declare", "strike", "yield"]));
+    expect(seeded.properties.verb.enum).toEqual(expect.arrayContaining(["awaken", "fall", "rise", "declare", "strike", "yield"]));
     expect(act.properties.position.type).toBe("string");
     expect(act.properties.tick.type).toBe("integer");
     expect(act.properties.until.type).toBe("integer");
