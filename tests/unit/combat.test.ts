@@ -158,6 +158,24 @@ describe("combat law", () => {
     expect(act.properties.target.type).toBe("string");
   });
 
+  it("publishes field-positioned blocks on /map so historic camps stay visible", () => {
+    const world = new World();
+    world.entities.set("ent:54", {
+      id: "ent:54",
+      type: "block",
+      fields: { kind: "hearth", position: "38,31,51", builder: "id_x" },
+    });
+    const map = publicRead(world, "/map") as {
+      entities: Array<{ id: string; type: string; kind?: string; position: { x: number; y: number; z: number } }>;
+    };
+    expect(map.entities.find((row) => row.id === "ent:54")).toMatchObject({
+      id: "ent:54",
+      type: "block",
+      kind: "hearth",
+      position: { x: 38, y: 31, z: 51 },
+    });
+  });
+
   it("publishes a beast name on /map so the spectator can aim a shot", () => {
     const world = new World();
     world.entities.set("ent:maw", {
@@ -171,6 +189,24 @@ describe("combat law", () => {
       id: "ent:maw",
       type: "beast",
       name: "Maw",
+    });
+  });
+
+  it("publishes a field-positioned beast on /map so the Maw is not dropped", () => {
+    const world = new World();
+    world.entities.set("ent:425", {
+      id: "ent:425",
+      type: "beast",
+      fields: { name: "Maw", position: "20,55,38", hide: 80, gate: 1, bite: 3 },
+    });
+    const map = publicRead(world, "/map") as {
+      entities: Array<{ id: string; type: string; name?: string; position: { x: number; y: number; z: number } }>;
+    };
+    expect(map.entities.find((row) => row.id === "ent:425")).toMatchObject({
+      id: "ent:425",
+      type: "beast",
+      name: "Maw",
+      position: { x: 20, y: 55, z: 38 },
     });
   });
 
@@ -264,6 +300,10 @@ describe("combat law", () => {
       ).toMatchObject({ accepted: true });
       world.advanceTick();
     }
+
+    const struck = world.log.events().find((event) => event.type === "war.struck");
+    expect(struck?.payload["striker"]).toBe(ada.identityId);
+    expect(struck?.payload["target"]).toBe(bob.identityId);
 
     const wounds = [...world.entities.values()].filter((item) => item.type === "wound");
     expect(wounds).toHaveLength(WAR_WOUND_MAX);

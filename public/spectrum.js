@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
-import { KNOWN } from "/artifacts.js";
+import { KNOWN, blockForm, kindHash } from "/artifacts.js";
 
 const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
@@ -279,6 +279,10 @@ const FORMS = {
   identity: KNOWN.identity(),
   echo: KNOWN.echo(),
   entity: KNOWN.entity(),
+  crate: KNOWN.crate(),
+  slab: KNOWN.slab(),
+  post: KNOWN.post(),
+  stall: KNOWN.stall(),
 };
 
 const MAT = {
@@ -537,7 +541,14 @@ function sparkAt(item, context = {}) {
   const paths = [];
   const localOrigin = new THREE.Vector3();
   const from = context.from === null || context.from === undefined ? null : cell(context.from).sub(origin);
-  if ((type === "act.move" || type === "effect.move") && from !== null) {
+  if (
+    (type === "act.move" ||
+      type === "effect.move" ||
+      type === "war.struck" ||
+      type === "act.strike" ||
+      type === "beast.bit") &&
+    from !== null
+  ) {
     const path = eventArc(from, localOrigin, tone.color);
     group.add(path);
     paths.push(path);
@@ -1287,6 +1298,7 @@ function foldEntity(item) {
       (fromString.length === 3
         ? { x: Number(fromString[0]), y: Number(fromString[1]), z: Number(fromString[2]) }
         : null);
+    const fields = payload.fields !== null && typeof payload.fields === "object" ? payload.fields : {};
     put({
       kind: "entity",
       id,
@@ -1297,6 +1309,12 @@ function foldEntity(item) {
             ? payload.kind
             : prior?.type ?? "entity",
       position: parsed,
+      kindName:
+        typeof fields.kind === "string"
+          ? fields.kind
+          : typeof payload.kind === "string" && payload.type === "block"
+            ? payload.kind
+            : prior?.kindName,
       caption: typeof payload.caption === "string" ? payload.caption : prior?.caption,
       mime: typeof payload.mime === "string" ? payload.mime : prior?.mime,
       hash: typeof payload.hash === "string" ? payload.hash : prior?.hash,
@@ -1454,6 +1472,9 @@ function placeTitle(row) {
   if (row.kind === "identity") {
     const named = state.names.get(row.id);
     return typeof named === "string" && named.length > 0 ? named : "agent";
+  }
+  if (row.type === "block" && typeof row.kindName === "string" && row.kindName.length > 0) {
+    return row.kindName;
   }
   return "";
 }
@@ -1627,9 +1648,19 @@ function buildRelics() {
   }
   for (const row of listOf("entity")) {
     const spec = spectrumOf(row, state.types, state.standing);
-    const node = placeForm("entity", row, (clone) => {
+    const form = row.type === "block" ? blockForm(row.kindName) : "entity";
+    const node = placeForm(form, row, (clone) => {
       clone.rotation.y = spec.grain % 8;
       clone.scale.setScalar(0.85 + spec.rise * 0.15);
+      if (row.type === "block") {
+        const color = new THREE.Color().setHSL((kindHash(row.kindName) % 360) / 360, 0.38, 0.4);
+        clone.traverse((node) => {
+          if (node.material?.color !== undefined && !Array.isArray(node.material)) {
+            node.material = node.material.clone();
+            node.material.color.lerp(color, 0.55);
+          }
+        });
+      }
     });
     if (node !== null) {
       relics.add(node);
@@ -1822,6 +1853,7 @@ function applyMap(map) {
       id: String(row.id ?? ""),
       type: typeof row.type === "string" ? row.type : "entity",
       position: row.position,
+      kindName: typeof row.kind === "string" ? row.kind : undefined,
       caption: typeof row.caption === "string" ? row.caption : undefined,
       mime: typeof row.mime === "string" ? row.mime : undefined,
       hash: typeof row.hash === "string" ? row.hash : undefined,
@@ -2193,13 +2225,24 @@ function appendRecord(item) {
     });
   }
   const created = foldEntity(item);
+  const combat = item.type === "war.struck" || item.type === "act.strike" || item.type === "beast.bit";
+  const fromId = typeof payload.striker === "string" ? payload.striker : actor;
+  const toId = typeof payload.target === "string" ? payload.target : "";
+  const fromCell = combat
+    ? [...state.occupants.values()].find((row) => row.id === fromId)?.position ?? previousBody
+    : item.type === "act.move"
+      ? previousBody
+      : item.type === "effect.move"
+        ? previousEntity
+        : null;
   const sparkAtCell =
+    (combat ? [...state.occupants.values()].find((row) => row.id === toId)?.position ?? at : null) ??
     at ??
     created ??
     (item.type === "effect.destroy" ? previousEntity : null) ??
     previousBody;
   sparkAt(item, {
-    from: item.type === "act.move" ? previousBody : item.type === "effect.move" ? previousEntity : null,
+    from: fromCell,
     at: sparkAtCell,
   });
 }

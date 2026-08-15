@@ -1,7 +1,10 @@
+import type { Entity } from "../engine/effects.ts";
 import { chebyshev } from "../engine/geography.ts";
 import { publicStanding } from "../engine/standing.ts";
 import { merkleRoot } from "../engine/segment.ts";
+import type { Position } from "../engine/tick.ts";
 import type { Event } from "../engine/types.ts";
+import { parseCellString } from "../engine/wake.ts";
 import { foldWorld } from "../engine/world-fold.ts";
 import type { World } from "../world/world.ts";
 
@@ -24,6 +27,34 @@ const GOVERNANCE = new Set([
   "coherence.revert",
   "genesis",
 ]);
+
+function entityCell(entity: Entity): Position | undefined {
+  if (entity.position !== undefined) {
+    return entity.position;
+  }
+  const raw = entity.fields["position"];
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  return parseCellString(raw) ?? undefined;
+}
+
+function mapEntity(entity: Entity) {
+  const position = entityCell(entity);
+  if (position === undefined) {
+    return null;
+  }
+  return {
+    id: entity.id,
+    type: entity.type,
+    position,
+    ...(typeof entity.fields["name"] === "string" ? { name: entity.fields["name"] } : {}),
+    ...(typeof entity.fields["kind"] === "string" ? { kind: entity.fields["kind"] } : {}),
+    ...(typeof entity.fields["caption"] === "string" ? { caption: entity.fields["caption"] } : {}),
+    ...(typeof entity.fields["mime"] === "string" ? { mime: entity.fields["mime"] } : {}),
+    ...(typeof entity.fields["hash"] === "string" ? { hash: entity.fields["hash"] } : {}),
+  };
+}
 
 export function publicRead(
   world: World,
@@ -159,16 +190,8 @@ export function publicRead(
         : [],
       entities: t === null
         ? [...world.entities.values()]
-            .filter((entity) => entity.position !== undefined && (z === null || entity.position.z === Number(z)))
-            .map((entity) => ({
-              id: entity.id,
-              type: entity.type,
-              position: entity.position,
-              ...(typeof entity.fields["name"] === "string" ? { name: entity.fields["name"] } : {}),
-              ...(typeof entity.fields["caption"] === "string" ? { caption: entity.fields["caption"] } : {}),
-              ...(typeof entity.fields["mime"] === "string" ? { mime: entity.fields["mime"] } : {}),
-              ...(typeof entity.fields["hash"] === "string" ? { hash: entity.fields["hash"] } : {}),
-            }))
+            .map(mapEntity)
+            .filter((row): row is NonNullable<typeof row> => row !== null && (z === null || row.position.z === Number(z)))
         : [],
     };
   }

@@ -406,6 +406,58 @@ export function entityArtifact() {
   return g;
 }
 
+export function blockSlab() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.92, 0.18, 0.92), MAT.entity));
+  g.add(mesh(new THREE.BoxGeometry(0.98, 0.04, 0.98), MAT.hull, 0, 0.11, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.98, 0.04, 0.98), MAT.hull, 0, -0.11, 0));
+  const lamp = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.navWarm, 0, 0.16, 0);
+  lamp.userData.motion = "pulse";
+  g.add(lamp);
+  return g;
+}
+
+export function blockPost() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.28, 1.15, 0.28), MAT.entity, 0, 0.2, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.08, 0.42), MAT.hull, 0, -0.34, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.36, 0.08, 0.36), MAT.rim, 0, 0.78, 0));
+  const lamp = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.navWarm, 0, 0.9, 0);
+  lamp.userData.motion = "pulse";
+  g.add(lamp);
+  return g;
+}
+
+export function blockStall() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.95, 0.08, 0.62), MAT.entity, 0, 0.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, 0.4, 0.02, 0.24));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, -0.4, 0.02, 0.24));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, 0.4, 0.02, -0.24));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), MAT.hull, -0.4, 0.02, -0.24));
+  g.add(mesh(new THREE.BoxGeometry(0.88, 0.06, 0.56), MAT.rim, 0, -0.32, 0));
+  const lamp = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.navWarm, 0, 0.52, 0);
+  lamp.userData.motion = "pulse";
+  g.add(lamp);
+  return g;
+}
+
+export const BLOCK_FORMS = ["crate", "slab", "post", "stall"];
+
+export function kindHash(kind) {
+  let hash = 2166136261;
+  const text = typeof kind === "string" && kind.length > 0 ? kind : "block";
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+export function blockForm(kind) {
+  return BLOCK_FORMS[kindHash(kind) % BLOCK_FORMS.length];
+}
+
 export function wardenArtifact() {
   const g = new THREE.Group();
   g.add(mesh(new THREE.SphereGeometry(0.12, 10, 8), MAT.rim, 0, 0.12, 0));
@@ -489,4 +541,8 @@ export const KNOWN = {
   identity: godArtifact,
   echo: echoArtifact,
   entity: entityArtifact,
+  crate: entityArtifact,
+  slab: blockSlab,
+  post: blockPost,
+  stall: blockStall,
 };

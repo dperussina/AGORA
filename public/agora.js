@@ -9,6 +9,11 @@ import {
   hollowArtifact,
   driftArtifact,
   entityArtifact,
+  blockSlab,
+  blockPost,
+  blockStall,
+  blockForm,
+  kindHash,
 } from "/artifacts.js";
 
 const origin = window.location.origin;
@@ -41,6 +46,10 @@ const PROTO = {
   hollow: hollowArtifact(),
   drift: driftArtifact(),
   entity: entityArtifact(),
+  crate: entityArtifact(),
+  slab: blockSlab(),
+  post: blockPost(),
+  stall: blockStall(),
 };
 
 function idColor(id) {
@@ -669,6 +678,30 @@ const PAPER_TYPES = new Set([
   "guild",
 ]);
 
+function entityKind(entity) {
+  if (typeof entity?.kind === "string" && entity.kind.length > 0) {
+    return entity.kind;
+  }
+  if (typeof entity?.fields?.kind === "string" && entity.fields.kind.length > 0) {
+    return entity.fields.kind;
+  }
+  return "";
+}
+
+function tintBlock(mesh, kind) {
+  ensureNpcMaterials(mesh);
+  const color = new THREE.Color().setHSL((kindHash(kind) % 360) / 360, 0.38, 0.4);
+  mesh.traverse((node) => {
+    if (node.material === undefined || Array.isArray(node.material) || node.material.color === undefined) {
+      return;
+    }
+    node.material.color.lerp(color, 0.55);
+    if (node.userData.restColor !== undefined) {
+      node.userData.restColor.copy(node.material.color);
+    }
+  });
+}
+
 function restNpc(mesh, at) {
   mesh.userData.home = at.clone();
   mesh.position.copy(at);
@@ -694,10 +727,15 @@ function rebuildEntities(rows) {
     if (PAPER_TYPES.has(entity.type)) {
       continue;
     }
-    const mesh = PROTO.entity.clone();
+    const kind = entityKind(entity);
+    const proto = entity.type === "block" ? PROTO[blockForm(kind)] ?? PROTO.crate : PROTO.entity;
+    const mesh = proto.clone();
     restNpc(mesh, cell(entity.position));
     if (entity.type === "beast") {
       mesh.scale.setScalar(2.6);
+    }
+    if (entity.type === "block") {
+      tintBlock(mesh, kind);
     }
     tagPick(mesh, "entity", typeof entity.id === "string" ? entity.id : "");
     entitiesGroup.add(mesh);
@@ -1099,7 +1137,9 @@ function tickProbes(now) {
     const home = overlay?.walkHome ?? cell(row.position);
     const probe = ensureProbe(id, home, now);
     if (overlay === null && now >= probe.next) {
-      if (probe.act !== "hold") {
+      if (combatBusy(id, now)) {
+        holdProbe(probe, now, 400);
+      } else if (probe.act !== "hold") {
         holdProbe(probe, now, 600);
       } else if (someoneElseProbing(id, now)) {
         holdProbe(probe, now, 450);
@@ -1266,6 +1306,7 @@ function foldEntity(item) {
       id,
       type: typeof payload.type === "string" ? payload.type : "entity",
       position: at ?? parseCellText(fields.position),
+      kind: typeof fields.kind === "string" ? fields.kind : undefined,
       fields,
     });
     return;
@@ -1671,6 +1712,26 @@ function combatColor(id) {
   return world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
 }
 
+function combatBusy(id, now) {
+  if (combatPoseFor(id, now) !== null) {
+    return true;
+  }
+  return combat.shots.some((shot) => (shot.fromId === id || shot.toId === id) && now - shot.born < shot.duration);
+}
+
+const recentShots = [];
+
+function rememberShot(fromId, toId, now) {
+  recentShots.push({ fromId, toId, born: now });
+  while (recentShots.length > 24) {
+    recentShots.shift();
+  }
+}
+
+function alreadyShot(fromId, toId, now) {
+  return recentShots.some((row) => row.fromId === fromId && row.toId === toId && now - row.born < 900);
+}
+
 function setCombatPose(id, mode, now, extra = {}) {
   if (typeof id !== "string" || id.length === 0) {
     return;
@@ -1990,6 +2051,8 @@ function fireShot(fromId, toId, now, item) {
     positions: trail.positions,
     from,
     to,
+    fromId: striker,
+    toId: target,
     style,
     color,
     born: now,
@@ -2346,9 +2409,16 @@ function noteCombat(item, now) {
     }
     return;
   }
-  if (type === "war.struck") {
+  if (type === "war.struck" || type === "act.strike") {
     const striker = resolveCombatId(typeof payload.striker === "string" ? payload.striker : actorId(item), payload);
     const target = resolveCombatId(typeof payload.target === "string" ? payload.target : "", payload);
+    if (type === "war.struck" && target.length === 0 && payloadPosition(payload) === null) {
+      return;
+    }
+    if (alreadyShot(striker, target, now)) {
+      return;
+    }
+    rememberShot(striker, target, now);
     fireShot(striker, target, now, item);
     return;
   }
@@ -2786,10 +2856,12 @@ function selectLore(selected, options = {}) {
   } else if (current?.kind === "entity") {
     const row = visibleEntities().find((item) => item.id === current.id);
     const type = typeof row?.type === "string" && row.type.length > 0 ? row.type : "automaton";
+    const kind = entityKind(row);
+    const title = type === "block" && kind.length > 0 ? kind : type;
     const lore = world.kindLore.get(type);
     setPlate(
-      "automaton",
-      type,
+      type === "block" ? "block" : "automaton",
+      title,
       current.id,
       typeof lore === "string" && lore.length > 0 ? lore : "No kind-lore yet. That path is text.types.<type>.lore.",
       cellLockup(row?.position),
@@ -2797,7 +2869,7 @@ function selectLore(selected, options = {}) {
     showLoreRegister("kinds");
     if (caption) {
       caption.hidden = false;
-      caption.textContent = `${type} · automaton`;
+      caption.textContent = type === "block" && kind.length > 0 ? `${kind} · block` : `${type} · automaton`;
     }
     if (shouldFly) {
       flyToCell(row?.position);
@@ -3399,12 +3471,10 @@ function tickArtifactMotions(now) {
 
 let worldVisible = !$("world-view")?.hidden;
 let worldInView = worldVisible;
-let foldInView = false;
 function syncWorldVisible() {
-  worldVisible = worldInView && !foldInView;
+  worldVisible = worldInView;
 }
-window.agoraPauseWorld = (pause) => {
-  foldInView = Boolean(pause);
+window.agoraPauseWorld = () => {
   syncWorldVisible();
 };
 
@@ -4024,10 +4094,14 @@ function applyMap(map) {
     if (typeof entity.name === "string") {
       fields.name = entity.name;
     }
+    if (typeof entity.kind === "string") {
+      fields.kind = entity.kind;
+    }
     world.liveEntities.set(entity.id, {
       id: entity.id,
       type: typeof entity.type === "string" ? entity.type : prior?.type ?? "entity",
       position: entity.position ?? prior?.position ?? null,
+      kind: typeof entity.kind === "string" ? entity.kind : prior?.kind ?? fields.kind,
       fields,
     });
   }
@@ -4559,6 +4633,7 @@ window.setInterval(refresh, 30_000);
 listen();
 const worldStage = $("world-view");
 if (worldStage) {
+  worldStage.hidden = false;
   new IntersectionObserver(
     (entries) => {
       worldInView = entries.some((entry) => entry.isIntersecting);
