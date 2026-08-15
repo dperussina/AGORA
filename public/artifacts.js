@@ -520,6 +520,69 @@ function wallBlock() {
   return g;
 }
 
+const SLAB = 0.12;
+
+function wallPlate(axis, sign) {
+  const g = new THREE.Group();
+  const inset = 0.5 - SLAB / 2;
+  if (axis === "z") {
+    const z = sign * inset;
+    g.add(mesh(new THREE.BoxGeometry(1, 1, SLAB), MAT.deck, 0, 0.5, z));
+    g.add(mesh(new THREE.BoxGeometry(1.02, 0.1, SLAB + 0.02), MAT.ion, 0, 0.5, z));
+    g.add(mesh(new THREE.BoxGeometry(1.01, 0.05, SLAB + 0.01), MAT.nav, 0, 0.975, z));
+    return g;
+  }
+  if (axis === "x") {
+    const x = sign * inset;
+    g.add(mesh(new THREE.BoxGeometry(SLAB, 1, 1), MAT.deck, x, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.02, 0.1, 1.02), MAT.ion, x, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.01, 0.05, 1.01), MAT.nav, x, 0.975, 0));
+    return g;
+  }
+  const y = sign > 0 ? 1 - SLAB / 2 : SLAB / 2;
+  g.add(mesh(new THREE.BoxGeometry(1, SLAB, 1), MAT.deck, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.02, SLAB + 0.02, 0.1), MAT.ion, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.1, SLAB + 0.02, 1.02), MAT.nav, 0, y, 0));
+  return g;
+}
+
+function takeChildren(into, from) {
+  while (from.children.length > 0) {
+    into.add(from.children[0]);
+  }
+}
+
+function wallFrontBlock() {
+  return wallPlate("z", -1);
+}
+
+function wallBackBlock() {
+  return wallPlate("z", 1);
+}
+
+function wallLeftBlock() {
+  return wallPlate("x", -1);
+}
+
+function wallRightBlock() {
+  return wallPlate("x", 1);
+}
+
+function wallTopBlock() {
+  return wallPlate("y", 1);
+}
+
+function wallBottomBlock() {
+  return wallPlate("y", -1);
+}
+
+function wallLBlock() {
+  const g = new THREE.Group();
+  takeChildren(g, wallPlate("x", -1));
+  takeChildren(g, wallPlate("z", -1));
+  return g;
+}
+
 function crateBlock() {
   const g = new THREE.Group();
   g.add(mesh(new THREE.BoxGeometry(1, 1, 1), MAT.timber, 0, 0.5, 0));
@@ -769,6 +832,13 @@ const BLOCK_BUILDERS = {
   keep: wallBlock,
   hangar: wallBlock,
   dock: wallBlock,
+  "wall-front": wallFrontBlock,
+  "wall-back": wallBackBlock,
+  "wall-left": wallLeftBlock,
+  "wall-right": wallRightBlock,
+  "wall-top": wallTopBlock,
+  "wall-bottom": wallBottomBlock,
+  "wall-l": wallLBlock,
   barrel: barrelBlock,
   shelf: shelfBlock,
   door: doorBlock,
@@ -805,17 +875,35 @@ export function blockForm(kind) {
   return key in BLOCK_BUILDERS ? key : "wall";
 }
 
+const FACE_WALLS = new Set([
+  "wall-front",
+  "wall-back",
+  "wall-left",
+  "wall-right",
+  "wall-top",
+  "wall-bottom",
+  "wall-l",
+]);
+
 const BLOCK_LIGHTS = {
   hearth: { color: 0xff7a28, intensity: 1.4, distance: 3.6, y: 0.42 },
   lamp: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 0.72 },
   lantern: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 0.72 },
   chimney: { color: 0xff6a20, intensity: 0.85, distance: 2.6, y: 1.05 },
   window: { color: 0xffe2a8, intensity: 0.7, distance: 2.4, y: 0.58 },
+  "wall-front": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  "wall-back": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  "wall-left": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  "wall-right": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  "wall-top": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.94 },
+  "wall-bottom": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.06 },
+  "wall-l": { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
 };
 
 export function blockArtifact(kind) {
   const form = blockForm(kind);
-  const group = sitOnCell((BLOCK_BUILDERS[form] ?? crateBlock)());
+  const built = (BLOCK_BUILDERS[form] ?? crateBlock)();
+  const group = FACE_WALLS.has(form) ? built : sitOnCell(built);
   const spec = BLOCK_LIGHTS[form];
   if (spec) {
     carryLight(group, spec.color, spec.intensity, spec.distance, spec.y);
