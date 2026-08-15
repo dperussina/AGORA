@@ -4,9 +4,11 @@ import type { Position } from "./tick.ts";
 export const FOLLOW_FLOOR_IDS = ["3ae4", "5d0c", "774b"] as const;
 
 export type CellClass = "place" | "kept" | "empty";
-export type WakeKind = "stirring" | "thinning" | "guestmark";
+export type WakeKind = "stirring" | "thinning" | "guestmark" | "cache" | "echo";
+export type HeedLoot = "seed" | "cloth" | "letter" | "ore" | "notice";
 
-export const WAKE_AGE = 3;
+/** Written at T, live through T+4, gone at T+5. */
+export const WAKE_AGE = 5;
 
 export function wakeRate(cellClass: CellClass): number {
   if (cellClass === "place") {
@@ -18,14 +20,44 @@ export function wakeRate(cellClass: CellClass): number {
   return 4;
 }
 
-export function wakeKind(cellClass: CellClass, anchorClass: string | null): WakeKind {
+export function emptyWakeKind(roll: number): WakeKind {
+  if (roll < 50) {
+    return "cache";
+  }
+  if (roll < 85) {
+    return "echo";
+  }
+  return "thinning";
+}
+
+export function wakeKind(cellClass: CellClass, anchorClass: string | null, emptyRoll?: number): WakeKind {
   if (cellClass === "place" && anchorClass === "hollow") {
     return "stirring";
   }
   if (cellClass === "place" && anchorClass === "nexus") {
     return "guestmark";
   }
+  if (cellClass === "empty" && emptyRoll !== undefined) {
+    return emptyWakeKind(emptyRoll);
+  }
   return "thinning";
+}
+
+export function heedLoot(roll: number): HeedLoot {
+  if (roll < 50) {
+    return "seed";
+  }
+  if (roll < 75) {
+    return "cloth";
+  }
+  if (roll < 90) {
+    return "letter";
+  }
+  return "ore";
+}
+
+export function wakeIsLive(written: number, atTick: number): boolean {
+  return written + WAKE_AGE > atTick;
 }
 
 export function formatCell(position: Position): string {

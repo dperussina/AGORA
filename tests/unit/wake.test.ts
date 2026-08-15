@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cellsInVolume } from "../../src/engine/geography.ts";
 import { Oracle } from "../../src/engine/oracle.ts";
-import { wakeKind, wakeRate } from "../../src/engine/wake.ts";
+import { heedLoot, wakeKind, wakeRate } from "../../src/engine/wake.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -89,9 +89,21 @@ describe("wake hook", () => {
     expect(wakeKind("place", "cairn")).toBe("thinning");
     expect(wakeKind("kept", null)).toBe("thinning");
     expect(wakeKind("empty", null)).toBe("thinning");
+    expect(wakeKind("empty", null, 0)).toBe("cache");
+    expect(wakeKind("empty", null, 49)).toBe("cache");
+    expect(wakeKind("empty", null, 50)).toBe("echo");
+    expect(wakeKind("empty", null, 84)).toBe("echo");
+    expect(wakeKind("empty", null, 85)).toBe("thinning");
     expect(wakeRate("place")).toBe(90);
     expect(wakeRate("kept")).toBe(12);
     expect(wakeRate("empty")).toBe(4);
+    expect(heedLoot(0)).toBe("seed");
+    expect(heedLoot(49)).toBe("seed");
+    expect(heedLoot(50)).toBe("cloth");
+    expect(heedLoot(74)).toBe("cloth");
+    expect(heedLoot(75)).toBe("letter");
+    expect(heedLoot(89)).toBe("letter");
+    expect(heedLoot(90)).toBe("ore");
   });
 
   it("can leave a wake on a place and keeps move.effects empty", () => {
@@ -149,7 +161,7 @@ describe("wake hook", () => {
     expect(wakes.length).toBeLessThanOrEqual(1);
   });
 
-  it("expires a wake after three ticks", () => {
+  it("expires a wake after five ticks inclusive", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");
     const nexus = world.anchors.find((item) => item.class === "nexus");
@@ -159,13 +171,17 @@ describe("wake hook", () => {
     if (created === undefined) {
       return;
     }
-    call(world, req("tools/call", { name: "whoami", arguments: {} }, 30), ada.sessionToken);
-    world.advanceTick();
-    call(world, req("tools/call", { name: "whoami", arguments: {} }, 31), ada.sessionToken);
-    world.advanceTick();
-    call(world, req("tools/call", { name: "whoami", arguments: {} }, 32), ada.sessionToken);
+    const written = created.fields["tick"];
+    expect(typeof written).toBe("number");
+    for (let i = 0; i < 4; i += 1) {
+      call(world, req("tools/call", { name: "whoami", arguments: {} }, 30 + i), ada.sessionToken);
+      world.advanceTick();
+      expect(world.entities.get(created.id)).toBeDefined();
+    }
+    call(world, req("tools/call", { name: "whoami", arguments: {} }, 40), ada.sessionToken);
     world.advanceTick();
     expect(world.entities.get(created.id)).toBeUndefined();
+    expect(world.clerk.tick).toBeGreaterThanOrEqual((written as number) + 5);
   });
 
   it("fires a voted move.end emit after a successful move", () => {

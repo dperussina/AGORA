@@ -106,7 +106,7 @@ describe("heed and follow", () => {
     expect(verbs).toContain("follow");
   });
 
-  it("heeds a guestmark into a seed and leaves thinning and stirring empty-handed", () => {
+  it("heeds guestmark and cache from the loot table, echo as letter, stirring as notice, and rejects thinning", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");
     installWakeVerbs(world);
@@ -114,34 +114,68 @@ describe("heed and follow", () => {
     plantWake(world, "ent:10", "guestmark", at, ada.identityId);
     plantWake(world, "ent:11", "stirring", at, ada.identityId);
     plantWake(world, "ent:12", "thinning", at, ada.identityId);
+    plantWake(world, "ent:13", "echo", at, ada.identityId);
+    plantWake(world, "ent:14", "cache", at, ada.identityId);
 
     expect(
       call(world, req("tools/call", { name: "act", arguments: { verb: "heed", target: "ent:10" } }, 10), ada.sessionToken)
         .result,
     ).toMatchObject({ accepted: true });
     world.advanceTick();
-    const seeds = [...world.entities.values()].filter((item) => item.type === "resource" && item.fields["kind"] === "seed");
-    expect(seeds).toHaveLength(1);
-    expect(seeds[0]?.fields["holder"]).toBe(ada.identityId);
+    const guest = world.log.events().find((event) => event.type === "wake.heeded" && event.payload["id"] === "ent:10");
+    expect(["seed", "cloth", "letter", "ore"]).toContain(guest?.payload["loot"]);
+    expect(
+      [...world.entities.values()].some(
+        (item) => item.type === "resource" && item.fields["kind"] === guest?.payload["loot"] && item.fields["holder"] === ada.identityId,
+      ),
+    ).toBe(true);
     expect(world.entities.get("ent:10")).toBeUndefined();
-    expect(world.log.events().some((event) => event.type === "wake.heeded" && event.payload["id"] === "ent:10")).toBe(true);
 
-    const before = [...world.entities.values()].filter((item) => item.type === "resource").length;
     expect(
       call(world, req("tools/call", { name: "act", arguments: { verb: "heed", target: "ent:11" } }, 11), ada.sessionToken)
         .result,
     ).toMatchObject({ accepted: true });
     world.advanceTick();
     expect(world.entities.get("ent:11")).toBeUndefined();
-    expect([...world.entities.values()].filter((item) => item.type === "resource")).toHaveLength(before);
+    expect([...world.entities.values()].some((item) => item.type === "resource" && item.fields["kind"] === "notice")).toBe(true);
+    expect(world.log.events().some((event) => event.type === "wake.heeded" && event.payload["id"] === "ent:11" && event.payload["loot"] === "notice")).toBe(true);
 
     expect(
       call(world, req("tools/call", { name: "act", arguments: { verb: "heed", target: "ent:12" } }, 12), ada.sessionToken)
         .result,
+    ).toMatchObject({ accepted: false, reason: "not a live heed" });
+
+    expect(
+      call(world, req("tools/call", { name: "act", arguments: { verb: "heed", target: "ent:13" } }, 13), ada.sessionToken)
+        .result,
     ).toMatchObject({ accepted: true });
     world.advanceTick();
-    expect(world.entities.get("ent:12")).toBeUndefined();
-    expect([...world.entities.values()].filter((item) => item.type === "resource")).toHaveLength(before);
+    expect([...world.entities.values()].some((item) => item.type === "resource" && item.fields["kind"] === "letter")).toBe(true);
+
+    expect(
+      call(world, req("tools/call", { name: "act", arguments: { verb: "heed", target: "ent:14" } }, 14), ada.sessionToken)
+        .result,
+    ).toMatchObject({ accepted: true });
+    world.advanceTick();
+    const cache = world.log.events().find((event) => event.type === "wake.heeded" && event.payload["id"] === "ent:14");
+    expect(["seed", "cloth", "letter", "ore"]).toContain(cache?.payload["loot"]);
+  });
+
+  it("rejects heed of an expired wake free", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installWakeVerbs(world);
+    const at = world.bodies.get(ada.identityId)!;
+    world.entities.set("ent:9", {
+      id: "ent:9",
+      type: "wake",
+      fields: { kind: "guestmark", position: `${at.x},${at.y},${at.z}`, traveler: ada.identityId, tick: world.clerk.tick - 5 },
+      position: { ...at },
+    });
+    expect(
+      call(world, req("tools/call", { name: "act", arguments: { verb: "heed", target: "ent:9" } }, 9), ada.sessionToken)
+        .result,
+    ).toMatchObject({ accepted: false, reason: "not a live wake" });
   });
 
   it("rejects heed of a non-wake free", () => {

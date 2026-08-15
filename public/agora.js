@@ -2427,7 +2427,8 @@ function recordLine(item) {
     return `${tick}  ${who(item)} left a ${payload.kind ?? "wake"} at ${payload.position}`;
   }
   if (type === "wake.heeded") {
-    return `${tick}  ${who(item)} heeded ${payload.id} (${payload.kind ?? "wake"})`;
+    const loot = payload.loot ? ` → ${payload.loot}` : "";
+    return `${tick}  ${who(item)} heeded ${payload.id} (${payload.kind ?? "wake"}${loot})`;
   }
   if (type === "wake.followed") {
     const to = payload.to && typeof payload.to === "object" ? payload.to : payload;

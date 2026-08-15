@@ -30,11 +30,14 @@ import { runEffects, type Entity } from "../engine/effects.ts";
 import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName } from "../engine/registry.ts";
 import {
   FOLLOW_FLOOR_IDS,
+  WAKE_AGE,
   formatCell,
+  heedLoot,
   normalizeStep,
   parseCellString,
   pickFollowFloor,
   signStep,
+  wakeIsLive,
   wakeKind,
   wakeRate,
   type CellClass,
@@ -1550,7 +1553,8 @@ export class World {
     const roll = stacked ? null : oracle.int(100);
     const rate = wakeRate(classified.cellClass);
     const hit = roll !== null && roll < rate;
-    const kind = wakeKind(classified.cellClass, classified.anchorClass);
+    const kindRoll = hit && classified.cellClass === "empty" ? oracle.int(100) : null;
+    const kind = wakeKind(classified.cellClass, classified.anchorClass, kindRoll ?? undefined);
     const anchor = this.anchorAt(at);
     this.append("wake.rolled", traveler, {
       position: formatCell(at),
@@ -1559,6 +1563,7 @@ export class World {
       designation: anchor?.designation ?? null,
       roll,
       rate,
+      kindRoll,
       stacked,
       hit,
       kind: hit ? kind : null,
@@ -1582,8 +1587,9 @@ export class World {
   }
 
   private expireEntities(type: string, age: number): void {
+    const life = type === "wake" ? WAKE_AGE : age;
     const doomed = [...this.entities.values()]
-      .filter((entity) => entity.type === type && typeof entity.fields["tick"] === "number" && entity.fields["tick"] + age <= this.clerk.tick)
+      .filter((entity) => entity.type === type && typeof entity.fields["tick"] === "number" && entity.fields["tick"] + life <= this.clerk.tick)
       .sort((a, b) => (a.id < b.id ? -1 : 1));
     for (const entity of doomed) {
       this.entities.delete(entity.id);
@@ -1594,12 +1600,16 @@ export class World {
   private wakeFor(traveler: string, position: Position): Entity | undefined {
     const key = cellKey(position);
     const written = formatCell(position);
-    return [...this.entities.values()].find(
-      (entity) =>
-        entity.type === "wake" &&
-        entity.fields["traveler"] === traveler &&
-        (entity.fields["position"] === written || (entity.position !== undefined && cellKey(entity.position) === key)),
-    );
+    return [...this.entities.values()].find((entity) => {
+      if (entity.type !== "wake" || entity.fields["traveler"] !== traveler) {
+        return false;
+      }
+      const tick = entity.fields["tick"];
+      if (typeof tick !== "number" || !wakeIsLive(tick, this.clerk.tick)) {
+        return false;
+      }
+      return entity.fields["position"] === written || (entity.position !== undefined && cellKey(entity.position) === key);
+    });
   }
 
   private liveWake(target: string | undefined): Entity | undefined {
@@ -1608,6 +1618,10 @@ export class World {
     }
     const entity = this.entities.get(target);
     if (entity === undefined || entity.type !== "wake") {
+      return undefined;
+    }
+    const tick = entity.fields["tick"];
+    if (typeof tick !== "number" || !wakeIsLive(tick, this.clerk.tick)) {
       return undefined;
     }
     return entity;
@@ -1619,8 +1633,11 @@ export class World {
       return "not a live wake";
     }
     const kind = wake.fields["kind"];
-    if (kind !== "guestmark" && kind !== "thinning" && kind !== "stirring") {
-      return "unknown wake kind";
+    if (kind === "thinning") {
+      return "not a live heed";
+    }
+    if (kind !== "guestmark" && kind !== "cache" && kind !== "echo" && kind !== "stirring") {
+      return "not a live wake";
     }
     return null;
   }
@@ -1637,22 +1654,26 @@ export class World {
       return;
     }
     const kind = String(wake.fields["kind"] ?? "");
+    const loot = this.heedLootFor(kind, wake.id);
+    if (loot === null) {
+      this.append("act.heed_failed", intent.identityId, { reason: "not a live heed" });
+      return;
+    }
     this.entities.delete(wake.id);
     this.append("effect.destroy", intent.identityId, { id: wake.id });
-    if (kind === "guestmark") {
-      this.entitySeq += 1;
-      const id = `ent:${this.entitySeq}`;
-      this.entities.set(id, {
-        id,
-        type: "resource",
-        fields: { holder: intent.identityId, kind: "seed", qty: 1 },
-        createdBy: (this.log.tip()?.seq ?? -1) + 1,
-      });
-      this.append("effect.create", intent.identityId, { id, type: "resource" });
-    }
+    this.entitySeq += 1;
+    const id = `ent:${this.entitySeq}`;
+    this.entities.set(id, {
+      id,
+      type: "resource",
+      fields: { holder: intent.identityId, kind: loot, qty: 1 },
+      createdBy: (this.log.tip()?.seq ?? -1) + 1,
+    });
+    this.append("effect.create", intent.identityId, { id, type: "resource" });
     this.append("wake.heeded", intent.identityId, {
       id: wake.id,
       kind,
+      loot,
       traveler: wake.fields["traveler"] ?? intent.identityId,
       tick: this.clerk.tick,
     });
@@ -1663,6 +1684,21 @@ export class World {
     });
     this.witness(intent.identityId, "fame");
     this.fireTriggers("act.end", { selfId: intent.identityId });
+  }
+
+  private heedLootFor(kind: string, wakeId: string): string | null {
+    if (kind === "echo") {
+      return "letter";
+    }
+    if (kind === "stirring") {
+      return "notice";
+    }
+    if (kind === "guestmark" || kind === "cache") {
+      const tip = this.log.tip()?.hash ?? GENESIS_SEED;
+      const oracle = new Oracle(`${tip}:heed:${wakeId}:${this.clerk.tick}`);
+      return heedLoot(oracle.int(100));
+    }
+    return null;
   }
 
   private followWouldFail(identityId: string, args: Record<string, unknown>): string | null {
@@ -1795,7 +1831,7 @@ export class World {
           return false;
         }
         const tick = entity.fields["tick"];
-        if (typeof tick !== "number" || tick > observationalT) {
+        if (typeof tick !== "number" || tick > observationalT || !wakeIsLive(tick, observationalT)) {
           return false;
         }
         if (entity.position !== undefined && cellKey(entity.position) === key) {
