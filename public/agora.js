@@ -1389,19 +1389,19 @@ function visualTone(type) {
     return { color: 0xc45a3a, count: 36, duration: 2200, spread: 6 };
   }
   if (type === "war.struck") {
-    return { color: 0xe8c36a, count: 20, duration: 900, spread: 2 };
+    return { color: 0xe8c36a, count: 48, duration: 1400, spread: 4 };
   }
   if (type === "beast.bit") {
-    return { color: 0x8a3a6a, count: 22, duration: 1000, spread: 2 };
+    return { color: 0xff3a6a, count: 56, duration: 1600, spread: 5 };
   }
   if (type === "body.fell") {
-    return { color: 0x5c6166, count: 40, duration: 2800, spread: 4 };
+    return { color: 0xff6a3a, count: 72, duration: 3200, spread: 6 };
   }
   if (type === "body.rose") {
-    return { color: 0xe8fff8, count: 48, duration: 2600, spread: 5 };
+    return { color: 0x7ad8ff, count: 80, duration: 3000, spread: 6 };
   }
   if (type === "body.died") {
-    return { color: 0x3d4248, count: 28, duration: 2400, spread: 3 };
+    return { color: 0xff8a3a, count: 64, duration: 2800, spread: 5 };
   }
   if (type === "war.yielded") {
     return { color: 0x718a9b, count: 18, duration: 1400, spread: 3 };
@@ -1658,6 +1658,8 @@ const combat = {
   poses: new Map(),
   shots: [],
   bursts: [],
+  clouds: [],
+  locks: [],
 };
 
 const ASH = new THREE.Color(0x5c6166);
@@ -1800,6 +1802,117 @@ function disposeCombatGroup(group) {
   });
 }
 
+function liftCell(at, rise = 0.72) {
+  return new THREE.Vector3(at.x, at.y + rise, at.z);
+}
+
+function isBeastShot(fromId, item) {
+  const type = typeof item?.type === "string" ? item.type : "";
+  if (type === "beast.bit") {
+    return true;
+  }
+  if (typeof fromId === "string" && fromId.startsWith("ent:")) {
+    return true;
+  }
+  const live = world.liveEntities.get(fromId);
+  return live?.type === "beast" || live?.type === "stirring";
+}
+
+function combatPoints(count, color, size) {
+  const positions = new Float32Array(count * 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const dust = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color,
+      size,
+      map: quantum.dust.material.map,
+      transparent: true,
+      opacity: 1,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  return { dust, positions };
+}
+
+function spanBeam(from, to, color, hot, fat) {
+  const group = new THREE.Group();
+  const length = Math.max(0.35, from.distanceTo(to));
+  const mid = from.clone().lerp(to, 0.5);
+  group.position.copy(mid);
+  group.lookAt(to);
+  const bloom = new THREE.Mesh(
+    new THREE.CylinderGeometry(fat * 2.4, fat * 1.6, length, 12, 1, true),
+    glowMat(color, 0.28),
+  );
+  bloom.rotation.x = Math.PI / 2;
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(fat * 0.35, fat * 0.22, length, 8, 1, true),
+    glowMat(hot, 0.95),
+  );
+  core.rotation.x = Math.PI / 2;
+  const sheath = new THREE.Mesh(
+    new THREE.CylinderGeometry(fat * 1.05, fat * 0.7, length, 10, 1, true),
+    glowMat(color, 0.55),
+  );
+  sheath.rotation.x = Math.PI / 2;
+  group.add(bloom, sheath, core);
+  return { group, bloom, sheath, core, length };
+}
+
+function ensureCombatLamp() {
+  if (combat.lamp !== undefined) {
+    return combat.lamp;
+  }
+  const lamp = new THREE.PointLight(0xffe8c8, 0, 22, 2);
+  scene.add(lamp);
+  combat.lamp = lamp;
+  return lamp;
+}
+
+function capFx(list, limit) {
+  while (list.length > limit) {
+    const oldest = list.shift();
+    if (oldest?.group !== undefined) {
+      disposeCombatGroup(oldest.group);
+    }
+  }
+}
+
+function combatCloud(at, now, opts) {
+  const count = reduced ? Math.min(28, opts.count) : opts.count;
+  const { dust, positions } = combatPoints(count, opts.color, opts.size ?? 1.15);
+  const velocities = new Float32Array(count * 3);
+  const seed = (Math.floor(now) ^ count * 17) >>> 0;
+  for (let i = 0; i < count; i += 1) {
+    const theta = sequence(i + seed, 0.61803398875) * Math.PI * 2;
+    const lift = sequence(i + seed, 0.75487766625, 0.13) * 2 - 0.2;
+    const radial = Math.sqrt(Math.max(0, 1 - Math.min(1, lift * lift)));
+    const speed = (opts.speed ?? 2.4) * (0.45 + sequence(i + seed, 0.56984029099, 0.4));
+    const offset = i * 3;
+    velocities[offset] = Math.cos(theta) * radial * speed;
+    velocities[offset + 1] = lift * speed + (opts.up ?? 0.8);
+    velocities[offset + 2] = Math.sin(theta) * radial * speed;
+  }
+  const group = new THREE.Group();
+  group.position.copy(at);
+  group.add(dust);
+  scene.add(group);
+  combat.clouds.push({
+    group,
+    dust,
+    positions,
+    velocities,
+    born: now,
+    duration: opts.duration ?? 1100,
+    gravity: opts.gravity ?? 3.2,
+  });
+  capFx(combat.clouds, 14);
+}
+
 function fireShot(fromId, toId, now, item) {
   const striker = resolveCombatId(fromId, item.payload);
   const target = resolveCombatId(toId, item.payload);
@@ -1808,115 +1921,222 @@ function fireShot(fromId, toId, now, item) {
   if (fromAt === null || toAt === null) {
     return;
   }
-  const style = fireStyle(striker);
-  const color = combatColor(striker);
-  const group = new THREE.Group();
-  const delta = toAt.clone().sub(fromAt);
-  const length = Math.max(0.4, delta.length());
-  const mid = fromAt.clone().lerp(toAt, 0.5);
-  mid.y += 0.55;
-  group.position.copy(mid);
-  group.lookAt(toAt.x, toAt.y + 0.55, toAt.z);
-
-  const core = new THREE.Mesh(
-    new THREE.CylinderGeometry(style === "ember" ? 0.08 : 0.028, style === "needle" ? 0.012 : 0.045, length, 8, 1, true),
-    glowMat(color, 0.85),
-  );
-  core.rotation.x = Math.PI / 2;
-  group.add(core);
-  if (style === "helix" || style === "pulse") {
-    const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 6, 24), glowMat(0xe8fff8, 0.7));
-    wrap.rotation.y = Math.PI / 2;
-    group.add(wrap);
-    group.userData.wrap = wrap;
-  }
+  const beast = isBeastShot(striker, item);
+  const style = beast ? "breath" : fireStyle(striker);
+  const color = beast ? new THREE.Color(0xff3a6a) : combatColor(striker);
+  const hot = beast ? new THREE.Color(0xffc078) : new THREE.Color(0xf4fff8);
+  const from = liftCell(fromAt, 0.78);
+  const to = liftCell(toAt, 0.7);
+  const fat = style === "breath" ? 0.16 : style === "ember" ? 0.12 : style === "needle" ? 0.035 : 0.07;
+  const beam = spanBeam(from, to, color, hot, fat);
   if (style === "fork") {
     for (const side of [-1, 1]) {
-      const tine = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.03, length * 0.72, 6, 1, true), glowMat(color, 0.55));
+      const tine = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.045, beam.length * 0.92, 6, 1, true),
+        glowMat(color, 0.5),
+      );
       tine.rotation.x = Math.PI / 2;
-      tine.position.x = side * 0.18;
-      group.add(tine);
+      tine.position.x = side * 0.22;
+      beam.group.add(tine);
     }
   }
-  const count = style === "ember" ? 48 : 28;
-  const positions = new Float32Array(count * 3);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const dust = new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      color,
-      size: style === "ember" ? 1.15 : 0.7,
-      map: quantum.dust.material.map,
-      transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      sizeAttenuation: true,
-    }),
-  );
-  group.add(dust);
-  scene.add(group);
+  const trailCount = reduced ? 28 : style === "breath" ? 110 : 86;
+  const trail = combatPoints(trailCount, color, style === "breath" ? 1.35 : 0.95);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(style === "breath" ? 0.22 : 0.14, 12, 10), glowMat(hot, 0.95));
+  const corona = new THREE.Mesh(new THREE.SphereGeometry(style === "breath" ? 0.42 : 0.28, 12, 10), glowMat(color, 0.45));
+  const bolt = new THREE.Group();
+  bolt.add(head, corona);
+  scene.add(beam.group, bolt, trail.dust);
   combat.shots.push({
-    group,
-    core,
-    dust,
-    positions,
-    from: fromAt,
-    to: toAt,
+    group: beam.group,
+    bolt,
+    bloom: beam.bloom,
+    sheath: beam.sheath,
+    core: beam.core,
+    head,
+    corona,
+    dust: trail.dust,
+    positions: trail.positions,
+    from,
+    to,
     style,
+    color,
     born: now,
-    duration: style === "ember" ? 920 : style === "needle" ? 380 : 640,
+    duration: style === "breath" ? 980 : style === "needle" ? 420 : style === "ember" ? 880 : 640,
   });
-  setCombatPose(striker, "fire", now, { style, toward: target, duration: 720 });
+  while (combat.shots.length > 10) {
+    const oldest = combat.shots.shift();
+    if (oldest !== undefined) {
+      disposeCombatGroup(oldest.group);
+      disposeCombatGroup(oldest.bolt);
+      disposeCombatGroup(oldest.dust);
+    }
+  }
+  setCombatPose(striker, "fire", now, { style, toward: target, duration: 820 });
   const wounds = (combat.wounds.get(target) ?? 0) + 1;
   combat.wounds.set(target, Math.min(3, wounds));
-  setCombatPose(target, "hit", now, { from: striker, wounds, duration: 520 });
+  setCombatPose(target, "hit", now, { from: striker, wounds, duration: 620 });
 }
 
 function impactBurst(at, now, color) {
   const group = new THREE.Group();
   group.position.copy(at);
-  group.position.y += 0.7;
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), glowMat(color, 0.8));
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.045, 6, 28), glowMat(0xe8fff8, 0.7));
+  group.position.y += 0.18;
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 12), glowMat(color, 0.88));
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), glowMat(0xf8fff4, 0.95));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.055, 6, 36), glowMat(0xe8fff8, 0.8));
+  const shock = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.03, 6, 40), glowMat(color, 0.55));
   ring.rotation.x = Math.PI / 2;
-  group.add(shell, ring);
+  shock.rotation.x = Math.PI / 2;
+  group.add(shell, flash, ring, shock);
   scene.add(group);
-  combat.bursts.push({ group, shell, ring, born: now, duration: 700 });
+  combat.bursts.push({ group, shell, flash, ring, shock, born: now, duration: 860 });
+  combatCloud(group.position.clone(), now, {
+    color,
+    count: reduced ? 32 : 96,
+    duration: 980,
+    speed: 4.8,
+    up: 1.4,
+    size: 1.25,
+    gravity: 4.6,
+  });
+  capFx(combat.bursts, 12);
+}
+
+function lockBeam(fromId, toId, now) {
+  const fromAt = combatHome(fromId);
+  const toAt = combatHome(toId);
+  if (fromAt === null || toAt === null) {
+    return;
+  }
+  const from = liftCell(fromAt, 0.9);
+  const to = liftCell(toAt, 0.9);
+  const color = combatColor(fromId);
+  const beam = spanBeam(from, to, color, new THREE.Color(0xf4fff8), 0.04);
+  scene.add(beam.group);
+  combat.locks.push({ group: beam.group, bloom: beam.bloom, sheath: beam.sheath, core: beam.core, born: now, duration: 1600 });
+  capFx(combat.locks, 6);
+}
+
+function fallBurst(at, now) {
+  impactBurst(at, now, new THREE.Color(0xff6a3a));
+  combatCloud(liftCell(at, 0.4), now, {
+    color: 0x5c6166,
+    count: reduced ? 36 : 120,
+    duration: 2200,
+    speed: 2.2,
+    up: 2.8,
+    size: 1.4,
+    gravity: 5.4,
+  });
+}
+
+function riseFountain(at, now) {
+  const group = new THREE.Group();
+  group.position.copy(liftCell(at, 0.2));
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.42, 3.4, 12, 1, true), glowMat(0x7ad8ff, 0.55));
+  column.position.y = 1.6;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 36), glowMat(0xe8fff8, 0.8));
+  ring.rotation.x = Math.PI / 2;
+  group.add(column, ring);
+  scene.add(group);
+  combat.bursts.push({ group, shell: column, flash: ring, ring, shock: ring, born: now, duration: 2200, rise: true });
+  combatCloud(liftCell(at, 0.3), now, {
+    color: 0x7ad8ff,
+    count: reduced ? 40 : 130,
+    duration: 2400,
+    speed: 1.6,
+    up: 5.2,
+    size: 1.2,
+    gravity: -1.8,
+  });
+}
+
+function deathCollapse(at, now) {
+  fallBurst(at, now);
+  combatCloud(liftCell(at, 0.5), now, {
+    color: 0xff8a3a,
+    count: reduced ? 28 : 80,
+    duration: 1800,
+    speed: 3.4,
+    up: 0.4,
+    size: 1.05,
+    gravity: 2.2,
+  });
 }
 
 function tickCombatFx(now, dt) {
+  let lampAt = null;
+  let lampColor = null;
+  let lampPower = 0;
   for (let i = combat.shots.length - 1; i >= 0; i -= 1) {
     const shot = combat.shots[i];
     const u = (now - shot.born) / shot.duration;
     if (u >= 1) {
       disposeCombatGroup(shot.group);
+      disposeCombatGroup(shot.bolt);
+      disposeCombatGroup(shot.dust);
       combat.shots.splice(i, 1);
       continue;
     }
-    const travel = shot.style === "ember" ? u * u : shot.style === "needle" ? Math.min(1, u * 2.4) : u;
+    const travel =
+      shot.style === "breath" || shot.style === "ember"
+        ? u * u
+        : shot.style === "needle"
+          ? Math.min(1, u * 2.6)
+          : 1 - (1 - u) * (1 - u);
     const along = shot.from.clone().lerp(shot.to, Math.min(1, travel));
-    along.y += 0.55;
-    shot.group.position.copy(along);
-    shot.core.material.opacity = Math.max(0, 0.9 - u * 0.9);
-    if (shot.group.userData.wrap !== undefined) {
-      shot.group.userData.wrap.rotation.z += dt * 14;
-      shot.group.userData.wrap.scale.setScalar(0.7 + Math.sin(u * Math.PI * 4) * 0.35);
+    shot.bolt.position.copy(along);
+    const pulse = 0.75 + Math.sin(now * 0.04 + u * 18) * 0.25;
+    const fade = Math.max(0, 1 - u * 0.55);
+    shot.core.material.opacity = fade * 0.95 * pulse;
+    shot.sheath.material.opacity = fade * 0.5;
+    shot.bloom.material.opacity = fade * (shot.style === "breath" ? 0.42 : 0.28);
+    shot.head.material.opacity = Math.max(0, 0.95 - u * 0.2);
+    shot.corona.scale.setScalar(1 + Math.sin(u * Math.PI * 6) * 0.35);
+    const span = shot.to.clone().sub(shot.from);
+    const across = new THREE.Vector3(-span.z, 0, span.x);
+    if (across.lengthSq() < 0.001) {
+      across.set(0.2, 0, 0);
     }
+    across.normalize();
+    const up = new THREE.Vector3(0, 1, 0);
     for (let n = 0; n < shot.positions.length; n += 3) {
-      const t = n / shot.positions.length;
-      const wobble = shot.style === "helix" ? Math.sin((t + u) * 18) * 0.22 : (Math.random() - 0.5) * 0.08;
-      shot.positions[n] = wobble;
-      shot.positions[n + 1] = (t - 0.5) * 0.9;
-      shot.positions[n + 2] = shot.style === "helix" ? Math.cos((t + u) * 18) * 0.22 : (Math.random() - 0.5) * 0.08;
+      const t = n / Math.max(3, shot.positions.length - 3);
+      const lag = Math.max(0, travel - t * 0.85);
+      const alongTrail = shot.from.clone().lerp(shot.to, lag);
+      const spin = (t + u) * (shot.style === "breath" || shot.style === "helix" ? 22 : 10);
+      const radius = (shot.style === "breath" ? 0.38 : 0.16) * (1 - t) + Math.sin(spin) * 0.04;
+      alongTrail.addScaledVector(across, Math.cos(spin) * radius);
+      alongTrail.addScaledVector(up, Math.sin(spin) * radius * 0.65);
+      shot.positions[n] = alongTrail.x;
+      shot.positions[n + 1] = alongTrail.y;
+      shot.positions[n + 2] = alongTrail.z;
     }
     shot.dust.geometry.attributes.position.needsUpdate = true;
-    shot.dust.material.opacity = Math.max(0, 1 - u);
-    if (u > 0.72 && shot.burst !== true) {
+    shot.dust.material.opacity = Math.max(0, 1 - u * 0.7);
+    if (u > 0.62 && shot.burst !== true) {
       shot.burst = true;
-      impactBurst(shot.to, now, shot.core.material.color);
+      impactBurst(shot.to, now, shot.color);
     }
+    if (u < 0.85) {
+      lampAt = along;
+      lampColor = shot.color;
+      lampPower = Math.max(lampPower, (1 - u) * (shot.style === "breath" ? 8 : 6));
+    }
+  }
+  for (let i = combat.locks.length - 1; i >= 0; i -= 1) {
+    const lock = combat.locks[i];
+    const u = (now - lock.born) / lock.duration;
+    if (u >= 1) {
+      disposeCombatGroup(lock.group);
+      combat.locks.splice(i, 1);
+      continue;
+    }
+    const scan = 0.2 + Math.abs(Math.sin(u * Math.PI * 5)) * 0.55;
+    lock.core.material.opacity = (1 - u) * 0.85;
+    lock.sheath.material.opacity = (1 - u) * scan;
+    lock.bloom.material.opacity = (1 - u) * 0.18;
   }
   for (let i = combat.bursts.length - 1; i >= 0; i -= 1) {
     const burst = combat.bursts[i];
@@ -1926,11 +2146,50 @@ function tickCombatFx(now, dt) {
       combat.bursts.splice(i, 1);
       continue;
     }
-    const grow = 1 + u * 3.4;
-    burst.shell.scale.setScalar(grow);
-    burst.shell.material.opacity = Math.max(0, 0.8 - u);
-    burst.ring.scale.setScalar(1 + u * 5);
-    burst.ring.material.opacity = Math.max(0, 0.7 - u);
+    if (burst.rise === true) {
+      burst.shell.scale.set(1 + u * 0.4, 1 + u * 1.8, 1 + u * 0.4);
+      burst.shell.material.opacity = Math.max(0, 0.6 - u * 0.6);
+      burst.flash.scale.setScalar(1 + u * 6);
+      burst.flash.material.opacity = Math.max(0, 0.8 - u);
+      continue;
+    }
+    burst.shell.scale.setScalar(1 + u * 4.2);
+    burst.shell.material.opacity = Math.max(0, 0.85 - u);
+    if (burst.flash !== undefined && burst.flash !== burst.ring) {
+      burst.flash.scale.setScalar(1 + u * 2.2);
+      burst.flash.material.opacity = Math.max(0, 0.95 - u * 1.4);
+    }
+    burst.ring.scale.setScalar(1 + u * 6.5);
+    burst.ring.material.opacity = Math.max(0, 0.75 - u);
+    if (burst.shock !== undefined && burst.shock !== burst.ring) {
+      burst.shock.scale.setScalar(1 + u * 9);
+      burst.shock.material.opacity = Math.max(0, 0.5 - u);
+    }
+  }
+  for (let i = combat.clouds.length - 1; i >= 0; i -= 1) {
+    const cloud = combat.clouds[i];
+    const age = (now - cloud.born) / cloud.duration;
+    if (age >= 1) {
+      disposeCombatGroup(cloud.group);
+      combat.clouds.splice(i, 1);
+      continue;
+    }
+    const seconds = (now - cloud.born) / 1000;
+    for (let n = 0; n < cloud.positions.length; n += 3) {
+      cloud.positions[n] = cloud.velocities[n] * seconds;
+      cloud.positions[n + 1] = cloud.velocities[n + 1] * seconds - cloud.gravity * seconds * seconds * 0.5;
+      cloud.positions[n + 2] = cloud.velocities[n + 2] * seconds;
+    }
+    cloud.dust.geometry.attributes.position.needsUpdate = true;
+    cloud.dust.material.opacity = Math.max(0, 1 - age);
+  }
+  const lamp = ensureCombatLamp();
+  if (lampAt !== null && !reduced) {
+    lamp.position.copy(lampAt);
+    lamp.color.copy(lampColor);
+    lamp.intensity = lampPower;
+  } else {
+    lamp.intensity = Math.max(0, lamp.intensity - dt * 18);
   }
 }
 
@@ -2047,6 +2306,7 @@ function noteCombat(item, now) {
     combat.wounds.set(defender, 0);
     setCombatPose(attacker, "lock", now, { toward: defender, duration: 1600 });
     setCombatPose(defender, "lock", now, { toward: attacker, duration: 1600 });
+    lockBeam(attacker, defender, now);
     return;
   }
   if (type === "war.struck") {
@@ -2081,7 +2341,7 @@ function noteCombat(item, now) {
     setCombatPose(holder, "fallen", now, { duration: 1e9 });
     const at = combatHome(holder);
     if (at !== null) {
-      impactBurst(at, now, ASH);
+      fallBurst(at, now);
     }
     return;
   }
@@ -2090,6 +2350,10 @@ function noteCombat(item, now) {
     combat.fallen.delete(holder);
     combat.wounds.set(holder, 0);
     setCombatPose(holder, "rise", now, { duration: 2200 });
+    const roseAt = combatHome(holder);
+    if (roseAt !== null) {
+      riseFountain(roseAt, now);
+    }
     return;
   }
   if (type === "body.died") {
@@ -2101,6 +2365,9 @@ function noteCombat(item, now) {
       rememberBody(holder, from);
     }
     setCombatPose(holder, "dead", now, { dest, from, duration: 2400 });
+    if (from !== null) {
+      deathCollapse(cell(from), now);
+    }
   }
 }
 
