@@ -784,22 +784,32 @@ export function wakeArtifact() {
 
 export function beastArtifact() {
   const g = new THREE.Group();
-  const coil = mesh(new THREE.TorusGeometry(0.32, 0.13, 8, 18), MAT.hide, 0, 0.16, 0);
-  coil.rotation.x = Math.PI / 2;
-  g.add(coil);
-  const rise = mesh(new THREE.TorusGeometry(0.2, 0.1, 8, 16), MAT.hide, 0.08, 0.34, 0.06);
-  rise.rotation.x = 0.8;
-  g.add(rise);
-  g.add(mesh(new THREE.SphereGeometry(0.18, 12, 10), MAT.hide, 0.22, 0.48, 0.18));
-  const jaw = mesh(new THREE.ConeGeometry(0.12, 0.2, 7, 1, true), MAT.secret, 0.28, 0.46, 0.32);
+  const body = new THREE.Group();
+  body.userData.motion = "writhe";
+  body.userData.phase = 0.4;
+  const base = mesh(new THREE.TorusGeometry(0.38, 0.14, 8, 22), MAT.hide, 0, 0.16, 0);
+  base.rotation.x = Math.PI / 2;
+  body.add(base);
+  const mid = mesh(new THREE.TorusGeometry(0.26, 0.12, 8, 18), MAT.hide, 0.1, 0.34, 0.08);
+  mid.rotation.x = 0.95;
+  mid.rotation.z = 0.35;
+  body.add(mid);
+  const neck = mesh(new THREE.TorusGeometry(0.16, 0.1, 8, 16), MAT.hide, 0.22, 0.52, 0.16);
+  neck.rotation.x = 1.15;
+  body.add(neck);
+  g.add(body);
+  g.add(mesh(new THREE.SphereGeometry(0.2, 12, 10), MAT.hide, 0.3, 0.68, 0.28));
+  const jaw = mesh(new THREE.ConeGeometry(0.13, 0.24, 7, 1, true), MAT.secret, 0.38, 0.64, 0.44);
   jaw.rotation.x = Math.PI / 2;
   g.add(jaw);
+  g.add(mesh(new THREE.ConeGeometry(0.06, 0.1, 5), MAT.hide, 0.22, 0.82, 0.22));
+  g.add(mesh(new THREE.ConeGeometry(0.05, 0.08, 5), MAT.hide, 0.36, 0.8, 0.2));
   for (const side of [-1, 1]) {
-    const eye = mesh(new THREE.SphereGeometry(0.045, 8, 6), MAT.ember, 0.22 + side * 0.08, 0.56, 0.28);
+    const eye = mesh(new THREE.SphereGeometry(0.05, 8, 6), MAT.ember, 0.3 + side * 0.09, 0.76, 0.38);
     eye.userData.motion = "pulse";
     g.add(eye);
   }
-  const coal = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.ember, 0.26, 0.44, 0.22);
+  const coal = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.ember, 0.36, 0.62, 0.34);
   coal.userData.motion = "pulse";
   g.add(coal);
   return sitOnCell(g);
@@ -932,38 +942,45 @@ function landerHull(skin, canopy, lit) {
     mesh(
       lathe(
         [
-          [0.02, 0],
-          [0.26, 0.06],
-          [0.4, 0.2],
-          [0.34, 0.4],
-          [0.14, 0.55],
-          [0.03, 0.64],
+          [0.04, 0.02],
+          [0.22, 0.06],
+          [0.58, 0.12],
+          [0.78, 0.2],
+          [0.72, 0.28],
+          [0.42, 0.34],
+          [0.16, 0.36],
         ],
-        20,
+        28,
       ),
       skin,
     ),
   );
-  g.add(mesh(new THREE.SphereGeometry(0.16, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), canopy, 0, 0.4, 0));
-  for (const yaw of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
-    const fin = mesh(new THREE.BoxGeometry(0.06, 0.1, 0.26), MAT.rim, Math.sin(yaw) * 0.3, 0.1, Math.cos(yaw) * 0.3);
-    fin.rotation.y = yaw;
-    g.add(fin);
+  const rim = mesh(new THREE.TorusGeometry(0.74, 0.035, 8, 36), lit ? MAT.rim : MAT.echo, 0, 0.22, 0);
+  rim.rotation.x = Math.PI / 2;
+  g.add(rim);
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 20), lit ? MAT.slate : MAT.echo, 0, 0.36, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.22, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), canopy, 0, 0.36, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.16, 0.28, 0.06, 16), lit ? MAT.hull : MAT.echo, 0, 0.08, 0));
+  const well = mesh(new THREE.CircleGeometry(0.14, 16), lit ? MAT.aqua : MAT.nav, 0, 0.05, 0);
+  well.rotation.x = Math.PI / 2;
+  g.add(well);
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2;
+    const lamp = mesh(
+      new THREE.SphereGeometry(0.035, 8, 6),
+      lit ? (i % 2 === 0 ? MAT.aqua : MAT.navWarm) : MAT.nav,
+      Math.cos(a) * 0.7,
+      0.22,
+      Math.sin(a) * 0.7,
+    );
+    if (lit && i % 2 === 0) {
+      lamp.userData.motion = "pulse";
+    }
+    g.add(lamp);
   }
   if (lit) {
-    g.add(mesh(new THREE.SphereGeometry(0.1, 10, 8), MAT.aqua, 0, 0.38, 0));
-    const wake = mesh(new THREE.ConeGeometry(0.2, 0.48, 10, 1, true), MAT.aquaFlame, 0, -0.08, 0);
-    wake.rotation.x = Math.PI;
-    g.add(wake);
-    const corona = mesh(new THREE.SphereGeometry(0.26, 12, 10), MAT.aquaFlame, 0, 0.38, 0);
-    corona.userData.motion = "pulse";
-    g.add(corona);
-    bellyLight(g, MAT.aqua, -0.14, 0.08);
-  } else {
-    const wake = mesh(new THREE.ConeGeometry(0.16, 0.36, 8, 1, true), MAT.echo, 0, -0.04, 0);
-    wake.rotation.x = Math.PI;
-    g.add(wake);
-    bellyLight(g, MAT.nav, -0.12, 0.07);
+    const wash = mesh(new THREE.CylinderGeometry(0.12, 0.32, 0.28, 12, 1, true), MAT.aquaFlame, 0, -0.06, 0);
+    g.add(wash);
   }
   return g;
 }
