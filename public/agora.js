@@ -520,6 +520,9 @@ plane.rotation.x = -Math.PI / 2;
 scene.add(plane);
 
 const sparks = [];
+const sparkQueue = [];
+let sparkReady = 0;
+const SPARK_GAP = 100;
 const dummy = new THREE.Object3D();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -910,6 +913,14 @@ function eventPosition(item) {
     if (centre !== null) {
       return centre;
     }
+    const path = typeof patch.path === "string" ? patch.path : "";
+    const named = /^text\.anchors\.([^.]+)\./.exec(path);
+    if (named?.[1] !== undefined) {
+      const anchor = world.anchors.find((row) => row.designation === named[1]);
+      if (anchor?.centre !== undefined) {
+        return anchor.centre;
+      }
+    }
   }
   if (typeof payload.id === "string" && world.liveEntities.has(payload.id)) {
     return world.liveEntities.get(payload.id).position ?? null;
@@ -922,7 +933,7 @@ function visualTone(type) {
     return { color: 0xc4a574, count: 32, duration: 1900, spread: 8 };
   }
   if (type === "speak" || type === "speak.warden") {
-    return { color: 0x5e9a92, count: 22, duration: 1700, spread: 4 };
+    return { color: 0x5e9a92, count: 22, duration: 4200, spread: 4 };
   }
   if (type === "act.mark") {
     return { color: 0xe0c089, count: 30, duration: 1800, spread: 5 };
@@ -940,13 +951,24 @@ function visualTone(type) {
 }
 
 function visualEvent(type) {
+  return visualDeed(type);
+}
+
+function visualDeed(type) {
+  if (type === "act.wait" || type === "wake.rolled" || type === "act.follow" || type === "act.heed") {
+    return false;
+  }
+  if (type === "effect.create" || type === "effect.destroy") {
+    return false;
+  }
   return (
     type === "speak" ||
     type === "speak.warden" ||
-    (type.startsWith("act.") && type !== "act.wait") ||
-    type.startsWith("effect.") ||
+    type.startsWith("act.") ||
     type.startsWith("amendment.") ||
-    type.startsWith("wake.") ||
+    type === "wake.left" ||
+    type === "wake.heeded" ||
+    type === "wake.followed" ||
     type.endsWith("_failed")
   );
 }
@@ -1119,6 +1141,26 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / Math.max(1, h);
   camera.updateProjectionMatrix();
+}
+
+function enqueueSpark(item, context = {}) {
+  const type = typeof item.type === "string" ? item.type : "event";
+  if (!visualDeed(type)) {
+    return;
+  }
+  sparkQueue.push({ item, context });
+}
+
+function tickSparkQueue(now) {
+  if (sparkQueue.length === 0 || now < sparkReady) {
+    return;
+  }
+  const next = sparkQueue.shift();
+  if (next === undefined) {
+    return;
+  }
+  sparkAt(next.item, next.context);
+  sparkReady = now + SPARK_GAP;
 }
 
 function tickSparks(now) {
@@ -2089,6 +2131,7 @@ function frame(now) {
   tickFly(now);
   controls.update();
   if (!reduced) {
+    tickSparkQueue(now);
     tickSparks(now);
     tickQuantum(now);
     const used = bodyMesh.count;
@@ -2410,6 +2453,59 @@ function clip(text, max = 72) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+function heardEntry(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const type = typeof item.type === "string" ? item.type : "";
+  if (type === "speak" || type === "speak.warden") {
+    const text = String(payload.text ?? "").trim();
+    return text.length === 0 ? null : { kind: "speak", who: who(item), text };
+  }
+  if (type === "act.mark") {
+    const text = String(payload.text ?? "").trim();
+    return text.length === 0 ? null : { kind: "mark", who: who(item), text: `marked “${clip(text, 48)}”` };
+  }
+  if (type === "amendment.applied" || type === "amendment.provisional") {
+    const patch = payload.patch && typeof payload.patch === "object" ? payload.patch : {};
+    if (patch.kind === "text.set" && typeof patch.path === "string" && typeof patch.value === "string") {
+      const place = /^text\.anchors\.([^.]+)\.name$/.exec(patch.path);
+      if (place?.[1] !== undefined) {
+        return { kind: "statute", who: "the floor", text: `named ${place[1]} ${patch.value}` };
+      }
+      if (patch.path === "text.world_name") {
+        return { kind: "statute", who: "the floor", text: `the lattice is ${patch.value}` };
+      }
+    }
+  }
+  return null;
+}
+
+function noteHeard(item) {
+  const entry = heardEntry(item);
+  if (entry === null) {
+    return;
+  }
+  const root = $("heard-log");
+  if (root === null) {
+    return;
+  }
+  const empty = root.querySelector(".empty");
+  if (empty) {
+    empty.remove();
+  }
+  const li = document.createElement("li");
+  li.className = entry.kind;
+  const whoLine = document.createElement("span");
+  whoLine.className = "who";
+  whoLine.textContent = entry.who;
+  const text = document.createElement("span");
+  text.textContent = entry.text;
+  li.append(whoLine, text);
+  root.prepend(li);
+  while (root.children.length > 8) {
+    root.lastElementChild?.remove();
+  }
+}
+
 function recordLine(item) {
   const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
   const tick = `t${item.tick}`;
@@ -2482,7 +2578,22 @@ function recordLine(item) {
 }
 
 function streamNoise(type) {
-  return type === "tick.boundary" || type === "world.dormancy_gap";
+  return (
+    type === "tick.boundary" ||
+    type === "world.dormancy_gap" ||
+    type === "act.wait" ||
+    type === "wake.rolled"
+  );
+}
+
+function tapeNoise(type) {
+  return (
+    streamNoise(type) ||
+    type === "effect.create" ||
+    type === "effect.destroy" ||
+    type === "act.follow" ||
+    type === "act.heed"
+  );
 }
 
 function arbiterRecord(type) {
@@ -2778,9 +2889,10 @@ function appendRecord(item) {
   if (arbiterRecord(item.type) && !streamNoise(item.type)) {
     prependEvent("record-log", item);
   }
-  if (!streamNoise(item.type)) {
+  if (!tapeNoise(item.type)) {
     prependEvent("happening", item);
   }
+  noteHeard(item);
   const id = actorId(item);
   const at = payloadPosition(item.payload);
   const previousBody = world.liveBodies.get(id)?.position ?? null;
@@ -2822,7 +2934,7 @@ function appendRecord(item) {
   drawRibbon();
   drawSlice();
   if (!reduced && world.streamLive && !streamNoise(item.type)) {
-    sparkAt(item, {
+    enqueueSpark(item, {
       from: item.type === "act.move" ? previousBody : item.type === "effect.move" ? previousEntity : null,
       at: item.type === "effect.destroy" ? previousEntity : undefined,
     });
@@ -2843,6 +2955,14 @@ function listen() {
     wait.className = "empty";
     wait.textContent = "Waiting on GET /listen…";
     live.append(wait);
+  }
+  const heard = $("heard-log");
+  if (heard) {
+    heard.replaceChildren();
+    const wait = document.createElement("li");
+    wait.className = "empty";
+    wait.textContent = "The lattice is quiet.";
+    heard.append(wait);
   }
   const source = new EventSource("/listen");
   source.addEventListener("error", () => {

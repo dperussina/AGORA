@@ -1539,6 +1539,11 @@ export class World {
     });
   }
 
+  private mintEntityId(): string {
+    this.entitySeq += 1;
+    return `ent:${this.entitySeq}`;
+  }
+
   private leaveWake(traveler: string): void {
     const at = this.bodies.get(traveler);
     if (at === undefined) {
@@ -1569,8 +1574,7 @@ export class World {
     if (!hit) {
       return;
     }
-    this.entitySeq += 1;
-    const id = `ent:${this.entitySeq}`;
+    const id = this.mintEntityId();
     const position = formatCell(at);
     const tick = this.clerk.tick;
     this.entities.set(id, {
@@ -1659,8 +1663,7 @@ export class World {
     }
     this.entities.delete(wake.id);
     this.append("effect.destroy", intent.identityId, { id: wake.id });
-    this.entitySeq += 1;
-    const id = `ent:${this.entitySeq}`;
+    const id = this.mintEntityId();
     this.entities.set(id, {
       id,
       type: "resource",
@@ -1953,8 +1956,7 @@ export class World {
       this.append("act.depict_failed", intent.identityId, { reason: stored.reason });
       return;
     }
-    this.entitySeq += 1;
-    const id = `ent:${this.entitySeq}`;
+    const id = this.mintEntityId();
     this.entities.set(id, {
       id,
       type: kind,
@@ -2327,7 +2329,7 @@ export class World {
     for (const [id, entity] of snapshot.entities) {
       this.entities.set(id, entity);
     }
-    this.entitySeq = snapshot.entitySeq;
+    this.entitySeq = Math.max(snapshot.entitySeq, view.entitySeq);
     this.drifts.length = 0;
     this.drifts.push(...snapshot.drifts);
     this.driftSeq = snapshot.driftSeq;
@@ -2366,10 +2368,7 @@ export class World {
       entities: this.entities,
       emit: () => undefined,
       ...extras,
-      nextId: () => {
-        seq += 1;
-        return `ent:${seq}`;
-      },
+      nextId: () => this.mintEntityId(),
       peekCurrency: (id) => this.clerk.identities.get(id)?.currency,
       applyCurrency: (balances) => {
         for (const [id, value] of balances) {
@@ -2384,7 +2383,7 @@ export class World {
     return {
       ctx,
       commitSeq: () => {
-        this.entitySeq = seq;
+        this.entitySeq = Math.max(this.entitySeq, seq);
       },
     };
   }

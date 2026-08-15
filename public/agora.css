@@ -467,6 +467,69 @@ body {
   display: none;
 }
 
+.heard {
+  position: absolute;
+  left: 1rem;
+  bottom: 7.4rem;
+  z-index: 3;
+  width: min(28rem, 46vw);
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.55rem 0.75rem 0.65rem;
+  background: rgba(16, 22, 28, 0.78);
+  border: 1px solid #2a343c;
+  pointer-events: none;
+}
+
+.heard .kicker {
+  color: #5e9a92;
+  margin: 0 0 0.35rem;
+}
+
+.heard ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.heard li {
+  margin: 0;
+  padding: 0.35rem 0 0.4rem;
+  border-top: 1px solid #2a343c;
+  color: var(--foam);
+  font-family: "Source Sans 3", sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.heard li:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.heard li.speak {
+  color: #dce6ec;
+}
+
+.heard li .who {
+  display: block;
+  color: #5e9a92;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.heard li.mark .who,
+.heard li.statute .who {
+  color: #c4a574;
+}
+
+.heard .empty {
+  border: 0;
+  color: #8b99a3;
+}
+
 .tape {
   position: absolute;
   top: 3.6rem;
@@ -1376,6 +1439,13 @@ code {
   .tape {
     width: min(12rem, 42vw);
     max-height: calc(100vh - 12.5rem);
+  }
+
+  .heard {
+    left: 0.7rem;
+    bottom: 6.6rem;
+    width: min(22rem, 72vw);
+    max-height: 10rem;
   }
 
   .stats {

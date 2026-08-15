@@ -61,6 +61,9 @@ export function foldWorld(events: readonly Event[]): WorldView {
         bodies[actor] = { x, y, z };
       }
     }
+    if (event.type === "effect.create" && typeof event.payload["id"] === "string") {
+      entitySeq = Math.max(entitySeq, entityNumber(event.payload["id"]));
+    }
     if (event.type === "wake.left" && typeof event.payload["id"] === "string") {
       const id = event.payload["id"];
       const position =

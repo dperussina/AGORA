@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cellsInVolume } from "../../src/engine/geography.ts";
 import { Oracle } from "../../src/engine/oracle.ts";
 import { heedLoot, wakeKind, wakeRate } from "../../src/engine/wake.ts";
+import { foldWorld } from "../../src/engine/world-fold.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -212,5 +213,153 @@ describe("wake hook", () => {
     const at = world.bodies.get(ada.identityId) ?? { x: 32, y: 32, z: 32 };
     stepOnto(world, ada, { x: Math.min(63, at.x + 1), y: at.y, z: at.z });
     expect(world.log.events().some((event) => event.type === "stepped")).toBe(true);
+  });
+});
+
+function entityNumber(id: string): number {
+  const match = /^ent:(\d+)$/.exec(id);
+  return match?.[1] === undefined ? 0 : Number(match[1]);
+}
+
+function installMint(world: World) {
+  world.clerk.registry.verbs["mint"] = {
+    cost: 0,
+    params: {},
+    preconditions: [],
+    effects: [
+      { effect: "create", args: ["resource", null, { kind: "seed" }] },
+      { effect: "create", args: ["resource", null, { kind: "cloth" }] },
+    ],
+  };
+  world.clerk.registry.verbs["mint_one"] = {
+    cost: 0,
+    params: {},
+    preconditions: [],
+    effects: [{ effect: "create", args: ["resource", null, { kind: "ore" }] }],
+  };
+  world.clerk.registry.verbs["burn"] = {
+    cost: 0,
+    params: { target: "id" },
+    preconditions: [],
+    effects: [{ effect: "destroy", args: ["$target"] }],
+  };
+}
+
+function createdIds(world: World, type = "resource"): string[] {
+  return world.log
+    .events()
+    .filter((event) => event.type === "effect.create" && event.payload["type"] === type)
+    .map((event) => String(event.payload["id"]));
+}
+
+describe("entity id allocator", () => {
+  it("gives two same-tick creates different ids", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const bob = registerNamed(world, "Bob");
+    installMint(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint_one" } }, 10), ada.sessionToken);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint_one" } }, 11), bob.sessionToken);
+    world.advanceTick();
+    const ids = createdIds(world);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(entityNumber(ids[1]!)).toBeGreaterThan(entityNumber(ids[0]!));
+  });
+
+  it("gives two same-tick wakes different ids that stay at their cells", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const bob = registerNamed(world, "Bob");
+    const hollows = world.anchors.filter((item) => item.class === "hollow");
+    const first = cellsInVolume(hollows[0]!.centre, 2).find((cell) => cell.x > 0) ?? hollows[0]!.centre;
+    const second = cellsInVolume(hollows[1]!.centre, 2).find((cell) => cell.x > 0) ?? hollows[1]!.centre;
+    world.bodies.set(ada.identityId, { x: first.x > 0 ? first.x - 1 : first.x + 1, y: first.y, z: first.z });
+    world.bodies.set(bob.identityId, { x: second.x > 0 ? second.x - 1 : second.x + 1, y: second.y, z: second.z });
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: first.x - (world.bodies.get(ada.identityId)?.x ?? 0), y: 0, z: 0 } } }, 10),
+      ada.sessionToken,
+    );
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: second.x - (world.bodies.get(bob.identityId)?.x ?? 0), y: 0, z: 0 } } }, 11),
+      bob.sessionToken,
+    );
+    world.advanceTick();
+    const left = world.log.events().filter((event) => event.type === "wake.left");
+    const ids = left.map((event) => String(event.payload["id"]));
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const event of left) {
+      const id = String(event.payload["id"]);
+      const wake = world.entities.get(id);
+      expect(wake?.fields["position"]).toBe(event.payload["position"]);
+      expect(wake?.fields["traveler"]).toBe(event.payload["traveler"]);
+    }
+    if (left.length >= 2) {
+      expect(entityNumber(ids[1]!)).toBeGreaterThan(entityNumber(ids[0]!));
+    }
+  });
+
+  it("mints consecutive unique ids for two creates in one action", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installMint(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    const ids = createdIds(world);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(entityNumber(ids[1]!)).toBe(entityNumber(ids[0]!) + 1);
+  });
+
+  it("does not reuse an id after the highest entity is destroyed", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installMint(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint_one" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    const first = createdIds(world)[0]!;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "burn", target: first } }, 11), ada.sessionToken);
+    world.advanceTick();
+    expect(world.entities.has(first)).toBe(false);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint_one" } }, 12), ada.sessionToken);
+    world.advanceTick();
+    const ids = createdIds(world);
+    expect(ids).toHaveLength(2);
+    expect(entityNumber(ids[1]!)).toBeGreaterThan(entityNumber(first));
+    expect(world.entities.has(ids[1]!)).toBe(true);
+    expect(world.entities.has(first)).toBe(false);
+  });
+
+  it("keeps the high-water mark across hydrate after a destroy", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installMint(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint_one" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    const first = createdIds(world)[0]!;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "burn", target: first } }, 11), ada.sessionToken);
+    world.advanceTick();
+    world.hydrate(world.capture());
+    installMint(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint_one" } }, 12), ada.sessionToken);
+    world.advanceTick();
+    const next = createdIds(world).at(-1)!;
+    expect(entityNumber(next)).toBeGreaterThan(entityNumber(first));
+  });
+
+  it("folds destroyed creates into the allocator high-water mark", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installMint(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "mint" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    const ids = createdIds(world);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "burn", target: ids[1] } }, 11), ada.sessionToken);
+    world.advanceTick();
+    const view = foldWorld(world.log.events());
+    expect(view.entitySeq).toBeGreaterThanOrEqual(entityNumber(ids[1]!));
+    expect(view.entities[ids[1]!]).toBeUndefined();
   });
 });
