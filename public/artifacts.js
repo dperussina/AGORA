@@ -511,13 +511,21 @@ function tableBlock() {
 
 function lampBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.08, 8), MAT.iron, 0, 0.04, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.72, 8), MAT.iron, 0, 0.42, 0));
-  const globe = mesh(new THREE.SphereGeometry(0.16, 12, 10), MAT.lamp, 0, 0.86, 0);
+  g.add(mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.1, 8), MAT.stoneDark, 0, 0.05, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.08, 8), MAT.iron, 0, 0.12, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.045, 0.055, 1.05, 8), MAT.iron, 0, 0.66, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 0.36), MAT.iron, 0.12, 1.16, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 8), MAT.brass, 0.28, 1.08, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.22, 0.03, 0.22), MAT.brass, 0.28, 1.22, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), MAT.iron, 0.18, 1.06, 0.08));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), MAT.iron, 0.38, 1.06, 0.08));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), MAT.iron, 0.18, 1.06, -0.08));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), MAT.iron, 0.38, 1.06, -0.08));
+  g.add(mesh(new THREE.BoxGeometry(0.22, 0.03, 0.22), MAT.iron, 0.28, 0.9, 0));
+  const globe = mesh(new THREE.SphereGeometry(0.14, 12, 10), MAT.lamp, 0.28, 1.06, 0);
   globe.userData.motion = "pulse";
   g.add(globe);
-  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.12, 0.05, 8), MAT.brass, 0, 1.02, 0));
-  const wash = mesh(new THREE.CylinderGeometry(0.28, 0.04, 0.55, 10, 1, true), MAT.godFlame, 0, 0.72, 0);
+  const wash = mesh(new THREE.CylinderGeometry(0.26, 0.04, 0.5, 10, 1, true), MAT.godFlame, 0.28, 0.88, 0);
   g.add(wash);
   return g;
 }
@@ -1060,8 +1068,8 @@ const FACE_WALLS = new Set([
 
 const BLOCK_LIGHTS = {
   hearth: { color: 0xff7a28, intensity: 1.4, distance: 3.6, y: 0.42 },
-  lamp: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 0.72 },
-  lantern: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 0.72 },
+  lamp: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 1.06 },
+  lantern: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 1.06 },
   chimney: { color: 0xff6a20, intensity: 0.85, distance: 2.6, y: 1.05 },
   window: { color: 0xffe2a8, intensity: 0.7, distance: 2.4, y: 0.58 },
 };

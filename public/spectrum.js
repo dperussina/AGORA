@@ -1370,7 +1370,7 @@ function beginDogfight(fromId, toId, item, now) {
       mid,
       radius: hollow ? Math.min(5.4, Math.max(2.8, span * 0.42)) : Math.min(3.8, Math.max(1.8, span * 0.38)),
       born: now,
-      until: now + 4600,
+      until: now + 6400,
       seed: (fnv(key) % 628) / 100,
       hitA: 0,
       hitB: 0,
@@ -1387,7 +1387,7 @@ function beginDogfight(fromId, toId, item, now) {
     state.flights.delete(fromId);
     state.flights.delete(toId);
   } else {
-    fight.until = Math.max(fight.until, now + 4600);
+    fight.until = Math.max(fight.until, now + 6400);
     if (nodeA) {
       fight.homeA.copy(nodeA.userData.combatHome ?? fight.homeA);
     }
@@ -1421,7 +1421,7 @@ function markFightHit(fight, toId, now) {
   if (toId === fight.b) {
     fight.hitB = now;
   }
-  fight.until = Math.max(fight.until, now + 4200);
+  fight.until = Math.max(fight.until, now + 5600);
 }
 
 function spawnFoldShot(from, to, fromId, toId, kind, now) {
@@ -1468,9 +1468,12 @@ function spawnFoldShot(from, to, fromId, toId, kind, now) {
     toId,
     kind,
     born: now,
-    duration: rocket ? 820 : bite ? 980 : blast ? 560 : 380,
+    duration: rocket ? 820 : bite ? 980 : blast ? 640 : 720,
     boom: rocket || blast,
+    track: !rocket,
+    length,
   });
+  puffJet(from, to.clone().sub(from).normalize(), now, 5);
   while (foldShots.length > 16) {
     const oldest = foldShots.shift();
     if (oldest !== undefined) {
@@ -1607,10 +1610,10 @@ function dogfightPose(fight, side, now) {
       pitch: Math.cos(t * 1.6) * 0.08,
     };
   }
-  const ang = t * 1.28 + phase + fight.seed;
-  const weave = Math.sin(t * 2.35 + phase) * 0.72;
-  const climb = Math.sin(t * 1.55 + phase * 0.7) * 0.82;
-  const jink = Math.sin(t * 4.05 + fight.seed + phase) * 0.38;
+  const ang = t * 1.72 + phase + fight.seed;
+  const weave = Math.sin(t * 2.85 + phase) * 0.88;
+  const climb = Math.sin(t * 1.95 + phase * 0.7) * 1.05;
+  const jink = Math.sin(t * 5.15 + fight.seed + phase) * 0.52;
   const radius = fight.radius + weave;
   return {
     x: fight.mid.x + Math.cos(ang) * radius + Math.cos(ang + 1.2) * jink,
@@ -1834,7 +1837,7 @@ function tickDogfights(now) {
     if (fight.dead !== null || reduced) {
       continue;
     }
-    if (now - fight.lastVolley < 300) {
+    if (now - fight.lastVolley < 170) {
       continue;
     }
     fight.lastVolley = now;
@@ -1866,6 +1869,18 @@ function tickShots(now) {
       scene.remove(shot.group, shot.bolt);
       foldShots.splice(i, 1);
       continue;
+    }
+    if (shot.track) {
+      const liveFrom = shotMuzzle(shot.fromId, shot.from);
+      const liveTo = shotMuzzle(shot.toId, shot.to);
+      shot.from.copy(liveFrom);
+      shot.to.copy(liveTo);
+      const len = Math.max(0.35, liveFrom.distanceTo(liveTo));
+      shot.group.position.copy(liveFrom.clone().lerp(liveTo, 0.5));
+      shot.group.lookAt(liveTo);
+      const stretch = len / Math.max(0.35, shot.length);
+      shot.bloom.scale.y = stretch;
+      shot.core.scale.y = stretch;
     }
     const travel = shot.kind === "rocket" ? u * u * (3 - 2 * u) : 1 - (1 - u) * (1 - u);
     const at = shot.from.clone().lerp(shot.to, Math.min(1, travel));
