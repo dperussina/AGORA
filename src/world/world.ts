@@ -898,7 +898,7 @@ export class World {
     const defined = this.clerk.registry.verbs[intent.verb];
     if (defined !== undefined && defined.effects.length > 0) {
       const targetEntity = intent.target === undefined ? undefined : this.entities.get(intent.target);
-      const blocked = checkPreconditions(defined.preconditions, {
+      const blocked = checkPreconditions(defined.preconditions ?? [], {
         inBounds: true,
         occupied: false,
         marked: false,

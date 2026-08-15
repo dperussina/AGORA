@@ -200,6 +200,25 @@ describe("applyPatch", () => {
     expect(next.types["agent"]?.fields["note"]).toEqual({ type: "string" });
   });
 
+  it("treats a missing action.define preconditions list as empty", () => {
+    const registry = seedRegistry();
+    const next = applyPatch(
+      registry,
+      {
+        kind: "action.define",
+        name: "rise",
+        cost: 1,
+        params: { target: "id" },
+        effects: [
+          { effect: "destroy", args: ["$target"] },
+          { effect: "emit", args: ["body.rose"] },
+        ],
+      } as unknown as Patch,
+      1,
+    );
+    expect(next.verbs["rise"]?.preconditions).toEqual([]);
+  });
+
   it("does not mutate the source registry", () => {
     const registry = seedRegistry();
     const next = applyPatch(

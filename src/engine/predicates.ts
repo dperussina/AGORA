@@ -12,9 +12,9 @@ export interface PredicateContext {
   targetPosition?: Position;
 }
 
-/** Returns a failure reason, or null if every precondition holds. */
-export function checkPreconditions(list: readonly unknown[], ctx: PredicateContext): string | null {
-  for (const item of list) {
+/** Returns a failure reason, or null if every precondition holds. Missing list is empty. */
+export function checkPreconditions(list: readonly unknown[] | undefined, ctx: PredicateContext): string | null {
+  for (const item of list ?? []) {
     if (typeof item === "string") {
       if (!namedOk(item, ctx)) {
         return item === "unoccupied" ? "destination occupied" : item;

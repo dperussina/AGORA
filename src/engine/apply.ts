@@ -86,7 +86,7 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
       next.verbs[patch.name] = {
         cost: patch.cost,
         params: patch.params,
-        preconditions: patch.preconditions,
+        preconditions: Array.isArray(patch.preconditions) ? patch.preconditions : [],
         effects: patch.effects,
       };
       break;
