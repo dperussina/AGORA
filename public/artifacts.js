@@ -682,52 +682,115 @@ function rugBlock() {
 
 function wellBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.36, 0.4, 0.42, 14), MAT.stone, 0, 0.21, 0));
-  g.add(mesh(new THREE.TorusGeometry(0.38, 0.06, 8, 16), MAT.stoneDark, 0, 0.44, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 14), MAT.water, 0, 0.28, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.07, 0.5, 0.07), MAT.timber, -0.3, 0.68, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.07, 0.5, 0.07), MAT.timber, 0.3, 0.68, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.68, 0.06, 0.06), MAT.timberDark, 0, 0.94, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.12, 8), MAT.iron, 0, 0.72, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.48, 0.52, 0.1, 14), MAT.stoneDark, 0, 0.05, 0));
+  g.add(
+    mesh(
+      lathe(
+        [
+          [0.22, 0.08],
+          [0.4, 0.1],
+          [0.42, 0.28],
+          [0.38, 0.48],
+          [0.4, 0.56],
+        ],
+        16,
+      ),
+      MAT.stone,
+    ),
+  );
+  g.add(mesh(new THREE.TorusGeometry(0.4, 0.055, 8, 16), MAT.stoneDark, 0, 0.56, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.06, 14), MAT.coal, 0, 0.22, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.04, 16), MAT.water, 0, 0.34, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.72, 0.08), MAT.timberDark, -0.34, 0.82, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.72, 0.08), MAT.timberDark, 0.34, 0.82, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.78, 0.07, 0.07), MAT.timber, 0, 1.16, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.22, 10), MAT.iron, 0, 1.1, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.04, 0.22), MAT.iron, 0.14, 1.1, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), MAT.iron, 0.24, 1.02, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.36, 6), MAT.iron, 0, 0.86, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.12, 10), MAT.timber, 0, 0.66, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.09, 0.015, 6, 10), MAT.iron, 0, 0.72, 0));
   return g;
 }
 
 function fenceBlock() {
   const g = new THREE.Group();
-  for (const x of [-0.36, 0, 0.36]) {
-    g.add(mesh(new THREE.BoxGeometry(0.08, 0.62, 0.08), MAT.timberDark, x, 0.31, 0));
+  g.add(mesh(new THREE.BoxGeometry(1, 0.1, 0.16), MAT.stoneDark, 0, 0.05, 0));
+  for (const x of [-0.44, 0, 0.44]) {
+    g.add(mesh(new THREE.BoxGeometry(0.1, 0.78, 0.1), MAT.timberDark, x, 0.45, 0));
+    g.add(mesh(new THREE.BoxGeometry(0.14, 0.06, 0.14), MAT.timber, x, 0.86, 0));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.82, 0.06, 0.05), MAT.timber, 0, 0.22, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.82, 0.06, 0.05), MAT.timber, 0, 0.42, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.98, 0.06, 0.06), MAT.timber, 0, 0.28, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.98, 0.06, 0.06), MAT.timber, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.98, 0.05, 0.05), MAT.timber, 0, 0.7, 0));
+  for (const x of [-0.22, 0.22]) {
+    g.add(mesh(new THREE.BoxGeometry(0.05, 0.58, 0.05), MAT.timberDark, x, 0.42, 0));
+  }
   return g;
 }
 
 function gateBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.1, 0.88, 0.1), MAT.timberDark, -0.36, 0.44, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.1, 0.88, 0.1), MAT.timberDark, 0.36, 0.44, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.72, 0.08, 0.08), MAT.timberDark, 0, 0.86, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.28, 0.62, 0.05), MAT.timber, -0.16, 0.42, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.28, 0.62, 0.05), MAT.timber, 0.16, 0.42, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 0.1), MAT.iron, 0.08, 0.44, 0.05));
+  g.add(mesh(new THREE.BoxGeometry(0.96, 0.1, 0.22), MAT.stoneDark, 0, 0.05, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), MAT.timberDark, -0.42, 0.58, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), MAT.timberDark, 0.42, 0.58, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.18, 0.08, 0.18), MAT.timber, -0.42, 1.12, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.18, 0.08, 0.18), MAT.timber, 0.42, 1.12, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.96, 0.1, 0.12), MAT.timberDark, 0, 1.08, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.28, 0.08, 0.1), MAT.timber, -0.22, 1.16, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.28, 0.08, 0.1), MAT.timber, 0.22, 1.16, 0));
+  const left = mesh(new THREE.BoxGeometry(0.32, 0.78, 0.06), MAT.timber, -0.16, 0.52, 0.02);
+  left.rotation.y = 0.18;
+  g.add(left);
+  const right = mesh(new THREE.BoxGeometry(0.32, 0.78, 0.06), MAT.timber, 0.16, 0.52, 0.02);
+  right.rotation.y = -0.14;
+  g.add(right);
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.7, 0.03), MAT.iron, -0.28, 0.52, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.7, 0.03), MAT.iron, 0.28, 0.52, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.22, 0.05, 0.04), MAT.iron, 0, 0.56, 0.08));
+  g.add(mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 10), MAT.iron, 0.08, 0.56, 0.1));
   return g;
 }
 
 function signBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.98, 0.08), MAT.timberDark, 0, 0.49, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.62, 0.36, 0.05), MAT.timber, 0, 0.88, 0.06));
-  g.add(mesh(new THREE.BoxGeometry(0.48, 0.04, 0.02), MAT.brass, 0, 0.94, 0.1));
-  g.add(mesh(new THREE.BoxGeometry(0.4, 0.03, 0.02), MAT.brass, 0, 0.84, 0.1));
+  g.add(mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.1, 8), MAT.stoneDark, 0, 0.05, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.09, 1.18, 0.09), MAT.timberDark, 0, 0.64, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.06, 0.12), MAT.iron, 0, 1.22, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.06, 0.06, 0.42), MAT.iron, 0, 1.12, 0.18));
+  const board = mesh(new THREE.BoxGeometry(0.72, 0.42, 0.06), MAT.timber, 0, 0.86, 0.28);
+  g.add(board);
+  g.add(mesh(new THREE.BoxGeometry(0.76, 0.05, 0.08), MAT.timberDark, 0, 1.08, 0.28));
+  g.add(mesh(new THREE.BoxGeometry(0.76, 0.05, 0.08), MAT.timberDark, 0, 0.64, 0.28));
+  g.add(mesh(new THREE.TorusGeometry(0.035, 0.01, 6, 8), MAT.iron, -0.2, 1.1, 0.22));
+  g.add(mesh(new THREE.TorusGeometry(0.035, 0.01, 6, 8), MAT.iron, 0.2, 1.1, 0.22));
+  g.add(mesh(new THREE.BoxGeometry(0.48, 0.035, 0.02), MAT.brass, 0, 0.96, 0.32));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.03, 0.02), MAT.brass, 0, 0.86, 0.32));
+  g.add(mesh(new THREE.BoxGeometry(0.32, 0.025, 0.02), MAT.brass, 0, 0.76, 0.32));
+  g.add(mesh(new THREE.BoxGeometry(0.05, 0.36, 0.05), MAT.timberDark, -0.18, 0.42, 0.08));
   return g;
 }
 
 function bannerBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.2, 8), MAT.iron, 0, 0.6, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.62, 0.03), MAT.cloth, 0.26, 0.82, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.05, 0.04), MAT.brass, 0.26, 1.12, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.02), MAT.brass, 0.26, 0.92, 0.02));
+  g.add(mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.1, 8), MAT.stoneDark, 0, 0.05, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.045, 0.055, 1.42, 8), MAT.iron, 0, 0.76, 0));
+  g.add(mesh(new THREE.ConeGeometry(0.07, 0.16, 7), MAT.brass, 0, 1.54, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.05, 0.05), MAT.iron, 0.3, 1.36, 0));
+  const cloth = mesh(new THREE.BoxGeometry(0.58, 0.72, 0.03), MAT.cloth, 0.32, 0.96, 0.02);
+  cloth.rotation.z = 0.04;
+  g.add(cloth);
+  const fold = mesh(new THREE.BoxGeometry(0.2, 0.58, 0.025), MAT.cloth, 0.58, 0.9, 0.04);
+  fold.rotation.y = 0.35;
+  fold.rotation.z = 0.08;
+  g.add(fold);
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.05, 0.04), MAT.brass, 0.32, 1.34, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.14, 0.12, 0.02), MAT.brass, 0.32, 1.12, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.16, 0.02), MAT.cloth, 0.18, 0.54, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.14, 0.02), MAT.cloth, 0.32, 0.53, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.04, 0.12, 0.02), MAT.cloth, 0.46, 0.52, 0.02));
+  g.add(mesh(new THREE.TorusGeometry(0.03, 0.008, 5, 8), MAT.brass, 0.12, 1.36, 0));
+  g.add(mesh(new THREE.TorusGeometry(0.03, 0.008, 5, 8), MAT.brass, 0.52, 1.36, 0));
   return g;
 }
 
