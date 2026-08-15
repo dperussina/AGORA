@@ -23,6 +23,9 @@ export interface EffectContext {
   nextId: () => string;
   /** GAME.md currency lives on the clerk, not the field bag. */
   moveCurrency?: (from: string, to: string, amount: number) => boolean;
+  creditCurrency?: (to: string, amount: number) => boolean;
+  peekCurrency?: (id: string) => number | undefined;
+  applyCurrency?: (balances: Map<string, number>) => void;
   leaveWake?: () => void;
   expire?: (type: string, age: number) => void;
 }
@@ -36,10 +39,122 @@ export interface EffectReport {
 type Scalar = string | number | boolean | null;
 type Eval = { ok: true; value: Scalar } | { ok: false; reason: string };
 
+function cloneEntities(entities: Map<string, Entity>): Map<string, Entity> {
+  const copy = new Map<string, Entity>();
+  for (const [id, entity] of entities) {
+    copy.set(id, {
+      ...entity,
+      fields: { ...entity.fields },
+      ...(entity.position === undefined ? {} : { position: { ...entity.position } }),
+    });
+  }
+  return copy;
+}
+
+function cloneFields(
+  fields: Map<string, Record<string, string | number | boolean | null>>,
+): Map<string, Record<string, string | number | boolean | null>> {
+  const copy = new Map<string, Record<string, string | number | boolean | null>>();
+  for (const [id, bag] of fields) {
+    copy.set(id, { ...bag });
+  }
+  return copy;
+}
+
 export function runEffects(effects: readonly Effect[], ctx: EffectContext): EffectReport[] {
+  const stagedEntities = cloneEntities(ctx.entities);
+  const stagedFields = cloneFields(ctx.fields);
+  const currency = new Map<string, number>();
+  const emits: Array<{ name: string; payload: Record<string, unknown> }> = [];
+  let leave = false;
+  const expires: Array<[string, number]> = [];
+
+  const balanceOf = (id: string): number | undefined => {
+    const staged = currency.get(id);
+    if (staged !== undefined) {
+      return staged;
+    }
+    const peeked = ctx.peekCurrency?.(id);
+    if (peeked !== undefined) {
+      currency.set(id, peeked);
+      return peeked;
+    }
+    return undefined;
+  };
+
+  const staged: EffectContext = {
+    ...ctx,
+    entities: stagedEntities,
+    fields: stagedFields,
+    emit: (name, payload) => {
+      emits.push({ name, payload });
+    },
+    moveCurrency: (from, to, amount) => {
+      if (ctx.peekCurrency !== undefined) {
+        const fromBal = balanceOf(from);
+        const toBal = balanceOf(to);
+        if (fromBal === undefined || toBal === undefined || amount < 0 || fromBal < amount) {
+          return false;
+        }
+        currency.set(from, fromBal - amount);
+        currency.set(to, toBal + amount);
+        return true;
+      }
+      return ctx.moveCurrency?.(from, to, amount) ?? false;
+    },
+    creditCurrency: (to, amount) => {
+      if (ctx.peekCurrency !== undefined) {
+        const toBal = balanceOf(to);
+        if (toBal === undefined || amount < 0) {
+          return false;
+        }
+        currency.set(to, toBal + amount);
+        return true;
+      }
+      return ctx.creditCurrency?.(to, amount) ?? false;
+    },
+    leaveWake:
+      ctx.leaveWake === undefined
+        ? undefined
+        : () => {
+            leave = true;
+          },
+    expire:
+      ctx.expire === undefined
+        ? undefined
+        : (type, age) => {
+            expires.push([type, age]);
+          },
+  };
+
   const reports: EffectReport[] = [];
   for (const item of effects.slice(0, 16)) {
-    reports.push(applyEffect(item, ctx));
+    const report = applyEffect(item, staged);
+    reports.push(report);
+    if (!report.ok) {
+      return reports;
+    }
+  }
+
+  ctx.entities.clear();
+  for (const [id, entity] of stagedEntities) {
+    ctx.entities.set(id, entity);
+  }
+  ctx.fields.clear();
+  for (const [id, bag] of stagedFields) {
+    ctx.fields.set(id, bag);
+  }
+  if (ctx.peekCurrency !== undefined) {
+    ctx.applyCurrency?.(currency);
+  }
+  for (const event of emits) {
+    ctx.emit(event.name, event.payload);
+  }
+  if (leave) {
+    ctx.leaveWake?.();
+  }
+  for (const [type, age] of expires) {
+    ctx.expire?.(type, age);
   }
   return reports;
 }
@@ -132,11 +247,31 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       if (!amount.ok || typeof amount.value !== "number" || amount.value < 0) {
         return fail(item.effect, amount.ok ? "transfer amount must be a non-negative integer" : amount.reason);
       }
-      if (field === "currency" && ctx.moveCurrency !== undefined) {
-        if (!ctx.moveCurrency(from.value, to.value, amount.value)) {
-          return fail(item.effect, "insufficient currency");
+      if (field === "currency") {
+        const source = ctx.entities.get(from.value);
+        if (source !== undefined) {
+          if (source.type !== "gold") {
+            return fail(item.effect, "not gold");
+          }
+          if (source.fields["holder"] !== ctx.selfId) {
+            return fail(item.effect, "not the holder");
+          }
+          const backing = source.fields["currency"];
+          if (typeof backing !== "number" || !Number.isInteger(backing) || backing < amount.value) {
+            return fail(item.effect, "insufficient currency");
+          }
+          if (ctx.creditCurrency === undefined || !ctx.creditCurrency(to.value, amount.value)) {
+            return fail(item.effect, "insufficient currency");
+          }
+          source.fields["currency"] = backing - amount.value;
+          return ok(item.effect);
         }
-        return ok(item.effect);
+        if (ctx.moveCurrency !== undefined) {
+          if (!ctx.moveCurrency(from.value, to.value, amount.value)) {
+            return fail(item.effect, "insufficient currency");
+          }
+          return ok(item.effect);
+        }
       }
       const src = bagOf(from.value, ctx);
       const have = typeof src[field] === "number" ? src[field] : 0;

@@ -76,7 +76,7 @@ The engine **executes** those effects. It does not store the dollar signs.
 | `$target` / `target` | `act` `target` if you passed one |
 | `$<param>` or the bare declared param | That `act` argument (`$text`, `$channel`, `$amount`, …) |
 
-Unbound `$name` fails the verb (`act.<verb>_failed`) and writes nothing. Bare words that are not params stay literals (`membership: "open"`). `create` is `(type, position|null, fields)`. `transfer` is GAME.md order: `(field, from, to, amount)`. `move` is a delta, or `{x,y,z, absolute: true}`. `emit` interpolates `$` in the message. Unknown preconditions fail. `speak` `channel` is still `channel physics does not exist` at genesis — a voted `post` is an `act` verb, not `speak`.
+Unbound `$name` fails the verb (`act.<verb>_failed`) and writes nothing. Bare words that are not params stay literals (`membership: "open"`). `create` is `(type, position|null, fields)`. `transfer` is GAME.md order: `(field, from, to, amount)`. `transfer` of `currency` from a `gold` entity you hold debits that entity's `currency` field and credits clerk coin. Effects in one verb are transactional: if any fails, none commit, and later effects (including `destroy`) do not run. `move` is a delta, or `{x,y,z, absolute: true}`. `emit` interpolates `$` in the message. Unknown preconditions fail. `speak` `channel` is still `channel physics does not exist` at genesis — a voted `post` is an `act` verb, not `speak`.
 
 Fame and notoriety accrue only from **witnessed** acts (another identity within perception; Hollow produces none). Decay is 2% / 0.5% as integer remainders, so a score of 1 survives. Names show at fame or notoriety ≥ 5. `inspect` cites the ledger; `GET /standing` is the live fold.
 

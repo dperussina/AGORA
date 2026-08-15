@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runEffects } from "../../src/engine/effects.ts";
-import { World, type McpRequest } from "../../src/world/world.ts";
+import { GOLD_BURN_COMPENSATION, World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
   "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -390,5 +390,170 @@ describe("effect vocabulary", () => {
     world.advanceTick();
     expect(world.log.events().some((event) => event.type === "act.wish_failed")).toBe(true);
     expect(world.log.events().some((event) => event.type === "nope")).toBe(false);
+  });
+});
+
+function installConvertGold(world: World) {
+  world.clerk.registry.verbs["convert_gold"] = {
+    cost: 0,
+    params: { gold: "id" },
+    preconditions: [],
+    effects: [
+      { effect: "transfer", args: ["currency", "$gold", "$self", 1000] },
+      { effect: "destroy", args: ["$gold"] },
+    ],
+  };
+}
+
+function plantGold(world: World, id: string, holder: string, currency: number, type = "gold") {
+  world.entities.set(id, {
+    id,
+    type,
+    fields: { holder, currency },
+  });
+}
+
+describe("gold-backed currency and transactional effects", () => {
+  it("redeems gold backing into clerk currency and burns the entity", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installConvertGold(world);
+    plantGold(world, "ent:163", ada.identityId, 1000);
+    const before = world.clerk.identities.get(ada.identityId)?.currency ?? 0;
+    const grant = world.clerk.registry.params["currency_per_tick"]?.value ?? 0;
+    expect(
+      call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:163" } }, 10), ada.sessionToken)
+        .result,
+    ).toMatchObject({ accepted: true });
+    world.advanceTick();
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(before + 1000 + grant);
+    expect(world.entities.has("ent:163")).toBe(false);
+    expect(world.log.events().some((event) => event.type === "act.convert_gold")).toBe(true);
+    expect(world.log.events().some((event) => event.type === "act.convert_gold_failed")).toBe(false);
+  });
+
+  it("leaves balance and gold unchanged when backing is insufficient", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installConvertGold(world);
+    plantGold(world, "ent:163", ada.identityId, 100);
+    const before = world.clerk.identities.get(ada.identityId)?.currency ?? 0;
+    const grant = world.clerk.registry.params["currency_per_tick"]?.value ?? 0;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:163" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(before + grant);
+    expect(world.entities.get("ent:163")?.fields["currency"]).toBe(100);
+    expect(world.log.events().some((event) => event.type === "effect.destroy")).toBe(false);
+    expect(world.log.events().find((event) => event.type === "act.convert_gold_failed")?.payload["reason"]).toBe(
+      "insufficient currency",
+    );
+  });
+
+  it("rejects the wrong owner and the wrong type without mutating either side", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const bob = registerNamed(world, "Bob");
+    installConvertGold(world);
+    plantGold(world, "ent:164", bob.identityId, 1000);
+    plantGold(world, "ent:165", ada.identityId, 1000, "ore");
+    const beforeAda = world.clerk.identities.get(ada.identityId)?.currency ?? 0;
+    const grant = world.clerk.registry.params["currency_per_tick"]?.value ?? 0;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:164" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    expect(world.entities.get("ent:164")?.fields["currency"]).toBe(1000);
+    expect(world.log.events().find((event) => event.type === "act.convert_gold_failed")?.payload["reason"]).toBe(
+      "not the holder",
+    );
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:165" } }, 11), ada.sessionToken);
+    world.advanceTick();
+    expect(world.entities.get("ent:165")?.type).toBe("ore");
+    expect(world.entities.has("ent:165")).toBe(true);
+    expect(world.log.events().filter((event) => event.type === "act.convert_gold_failed").at(-1)?.payload["reason"]).toBe(
+      "not gold",
+    );
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(beforeAda + grant * 2);
+  });
+
+  it("refuses a second redemption of the same gold", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installConvertGold(world);
+    plantGold(world, "ent:163", ada.identityId, 1000);
+    const grant = world.clerk.registry.params["currency_per_tick"]?.value ?? 0;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:163" } }, 10), ada.sessionToken);
+    world.advanceTick();
+    const afterFirst = world.clerk.identities.get(ada.identityId)?.currency ?? 0;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:163" } }, 11), ada.sessionToken);
+    world.advanceTick();
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(afterFirst + grant);
+    expect(world.entities.has("ent:163")).toBe(false);
+    expect(world.log.events().some((event) => event.type === "act.convert_gold_failed")).toBe(true);
+  });
+
+  it("lets only one concurrent convert of the same gold succeed", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const bob = registerNamed(world, "Bob");
+    installConvertGold(world);
+    plantGold(world, "ent:163", ada.identityId, 1000);
+    const beforeAda = world.clerk.identities.get(ada.identityId)?.currency ?? 0;
+    const beforeBob = world.clerk.identities.get(bob.identityId)?.currency ?? 0;
+    const grant = world.clerk.registry.params["currency_per_tick"]?.value ?? 0;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:163" } }, 10), ada.sessionToken);
+    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:163" } }, 11), bob.sessionToken);
+    world.advanceTick();
+    expect(world.entities.has("ent:163")).toBe(false);
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(beforeAda + 1000 + grant);
+    expect(world.clerk.identities.get(bob.identityId)?.currency).toBe(beforeBob + grant);
+    expect(world.log.events().some((event) => event.type === "act.convert_gold_failed")).toBe(true);
+  });
+
+  it("rolls back a failed transfer so a following destroy never fires", () => {
+    const entities = new Map([
+      ["ent:1", { id: "ent:1", type: "gold", fields: { holder: "id_ada", currency: 10 } }],
+    ]);
+    const clerk = new Map<string, number>([["id_ada", 94]]);
+    const emitted: string[] = [];
+    const reports = runEffects(
+      [
+        { effect: "transfer", args: ["currency", "ent:1", "$self", 1000] },
+        { effect: "destroy", args: ["ent:1"] },
+      ],
+      {
+        selfId: "id_ada",
+        fields: new Map(),
+        entities,
+        emit: (name) => emitted.push(name),
+        nextId: () => "e",
+        peekCurrency: (id) => clerk.get(id),
+        applyCurrency: (balances) => {
+          for (const [id, value] of balances) {
+            clerk.set(id, value);
+          }
+        },
+      },
+    );
+    expect(reports.map((item) => item.ok)).toEqual([false]);
+    expect(reports[0]?.reason).toBe("insufficient currency");
+    expect(entities.get("ent:1")?.fields["currency"]).toBe(10);
+    expect(clerk.get("id_ada")).toBe(94);
+    expect(emitted).toEqual([]);
+  });
+
+  it("credits the gold-burn claim once and leaves a later hydrate unchanged", () => {
+    const world = new World();
+    world.clerk.addIdentity(GOLD_BURN_COMPENSATION.identityId, 95, 0);
+    world.hydrate(world.capture());
+    expect(world.clerk.identities.get(GOLD_BURN_COMPENSATION.identityId)?.currency).toBe(4095);
+    const credits = world.log.events().filter((event) => event.type === "currency.compensated");
+    expect(credits).toHaveLength(1);
+    expect(credits[0]?.payload).toMatchObject({
+      identityId: GOLD_BURN_COMPENSATION.identityId,
+      amount: 4000,
+      claim: GOLD_BURN_COMPENSATION.claim,
+    });
+    world.hydrate(world.capture());
+    expect(world.clerk.identities.get(GOLD_BURN_COMPENSATION.identityId)?.currency).toBe(4095);
+    expect(world.log.events().filter((event) => event.type === "currency.compensated")).toHaveLength(1);
   });
 });

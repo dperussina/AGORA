@@ -26,7 +26,7 @@ import {
   type Warden,
 } from "../engine/geography.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
-import { runEffects, type Entity } from "../engine/effects.ts";
+import { runEffects, type EffectContext, type Entity } from "../engine/effects.ts";
 import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName } from "../engine/registry.ts";
 import {
   FOLLOW_FLOOR_IDS,
@@ -85,6 +85,13 @@ import { asDelta, deserializeProposal, parseCell, serializeProposal } from "./pr
 export const PROTOCOL_VERSION = "2026-07-28";
 const HISTORY_PAGE = 50;
 const HISTORY_MAX = 200;
+
+/** One-time restitution for convert_gold burning ent:163–166 without credit. */
+export const GOLD_BURN_COMPENSATION = {
+  identityId: "id_3f0c3060f08f7469a037ee102ac646e0",
+  amount: 4000,
+  claim: "gold-burn-ent-163-166",
+} as const;
 
 export interface McpRequest {
   jsonrpc: "2.0";
@@ -875,22 +882,15 @@ export class World {
         this.append(`act.${intent.verb}_failed`, intent.identityId, { reason: blocked });
         return;
       }
-      const reports = runEffects(defined.effects as Array<{ effect: string; args: unknown[] }>, {
-        selfId: intent.identityId,
+      const runtime = this.bindEffects(intent.identityId, {
         targetId: intent.target,
         params: effectParams(intent),
-        fields: this.fields,
-        entities: this.entities,
         emit: (name, payload) => {
           this.append(name, intent.identityId, { ...payload, identityId: intent.identityId });
           this.witness(intent.identityId, name === "effect.destroy" ? "notoriety" : "fame");
         },
-        nextId: () => {
-          this.entitySeq += 1;
-          return `ent:${this.entitySeq}`;
-        },
-        moveCurrency: (from, to, amount) => this.moveCurrency(from, to, amount),
       });
+      const reports = runEffects(defined.effects as Array<{ effect: string; args: unknown[] }>, runtime.ctx);
       const failed = reports.find((item) => !item.ok);
       if (failed !== undefined) {
         this.append(`act.${intent.verb}_failed`, intent.identityId, {
@@ -900,6 +900,7 @@ export class World {
         });
         return;
       }
+      runtime.commitSeq();
       this.append(`act.${intent.verb}`, intent.identityId, {
         identityId: intent.identityId,
         verb: intent.verb,
@@ -1485,8 +1486,7 @@ export class World {
           this.walkDrifts();
           continue;
         }
-        runEffects([effect], {
-          selfId,
+        const runtime = this.bindEffects(selfId, {
           params: {
             self: selfId,
             ...(at === undefined ? {} : { position: formatCell(at) }),
@@ -1498,18 +1498,16 @@ export class World {
                   ...(classified.anchorClass === null ? {} : { anchor_class: classified.anchorClass }),
                 }),
           },
-          fields: this.fields,
-          entities: this.entities,
           emit: (name, payload) => {
             this.append(name, selfId === "ARBITER" ? "ARBITER" : selfId, { ...payload, triggerId: id });
-          },
-          nextId: () => {
-            this.entitySeq += 1;
-            return `ent:${this.entitySeq}`;
           },
           leaveWake: () => this.leaveWake(selfId),
           expire: (type, age) => this.expireEntities(type, age),
         });
+        const reports = runEffects([effect], runtime.ctx);
+        if (reports.every((item) => item.ok)) {
+          runtime.commitSeq();
+        }
         if (effect.effect === "transfer" || effect.effect === "set_field") {
           this.append(`effect.${effect.effect}`, "ARBITER", { triggerId: id });
         }
@@ -2296,8 +2294,10 @@ export class World {
         this.entities.set(id, entity);
       }
       this.entitySeq = view.entitySeq;
+      this.applyCompensatedCurrency();
       this.rebuildListenLog();
       this.rebuildLastSteps();
+      this.ensureGoldBurnCompensation();
       return;
     }
     this.clerk.restore({
@@ -2352,6 +2352,81 @@ export class World {
       }
     }
     this.rebuildLastSteps();
+    this.ensureGoldBurnCompensation();
+  }
+
+  private bindEffects(
+    selfId: string,
+    extras: Partial<EffectContext>,
+  ): { ctx: EffectContext; commitSeq: () => void } {
+    let seq = this.entitySeq;
+    const ctx: EffectContext = {
+      selfId,
+      fields: this.fields,
+      entities: this.entities,
+      emit: () => undefined,
+      ...extras,
+      nextId: () => {
+        seq += 1;
+        return `ent:${seq}`;
+      },
+      peekCurrency: (id) => this.clerk.identities.get(id)?.currency,
+      applyCurrency: (balances) => {
+        for (const [id, value] of balances) {
+          const ident = this.clerk.identities.get(id);
+          if (ident !== undefined && Number.isInteger(value) && value >= 0) {
+            ident.currency = value;
+          }
+        }
+      },
+      moveCurrency: (from, to, amount) => this.moveCurrency(from, to, amount),
+    };
+    return {
+      ctx,
+      commitSeq: () => {
+        this.entitySeq = seq;
+      },
+    };
+  }
+
+  private applyCompensatedCurrency(): void {
+    for (const event of this.log.events()) {
+      if (event.type !== "currency.compensated") {
+        continue;
+      }
+      const id = event.payload["identityId"];
+      const amount = event.payload["amount"];
+      if (typeof id !== "string" || typeof amount !== "number" || !Number.isInteger(amount) || amount < 0) {
+        continue;
+      }
+      const ident = this.clerk.identities.get(id);
+      if (ident !== undefined) {
+        ident.currency += amount;
+      }
+    }
+  }
+
+  private ensureGoldBurnCompensation(): void {
+    if (
+      this.log.events().some(
+        (event) =>
+          event.type === "currency.compensated" && event.payload["claim"] === GOLD_BURN_COMPENSATION.claim,
+      )
+    ) {
+      return;
+    }
+    const ident = this.clerk.identities.get(GOLD_BURN_COMPENSATION.identityId);
+    if (ident === undefined) {
+      return;
+    }
+    ident.currency += GOLD_BURN_COMPENSATION.amount;
+    this.append("currency.compensated", "ARBITER", {
+      identityId: GOLD_BURN_COMPENSATION.identityId,
+      amount: GOLD_BURN_COMPENSATION.amount,
+      claim: GOLD_BURN_COMPENSATION.claim,
+      reason: "convert_gold burned ent:163-166 without credit",
+      entities: ["ent:163", "ent:164", "ent:165", "ent:166"],
+    });
   }
 
   private rebuildLastSteps(): void {
