@@ -162,7 +162,7 @@ describe("clerk", () => {
 });
 
 describe("applyPatch", () => {
-  it("fails a passed extend_type that has fields instead of field, without throwing", () => {
+  it("applies extend_type from a fields bag", () => {
     const clerk = populatedClerk();
     clerk.registry.types["gold"] = { fields: { holder: { type: "id" } } };
     clerk.proposals.push({
@@ -172,7 +172,7 @@ describe("applyPatch", () => {
         kind: "schema.extend_type",
         type: "gold",
         fields: { currency: { type: "int", default: 1000 } },
-      } as unknown as Patch,
+      },
       tier: 2,
       resolutionTick: 0,
       status: "docketed",
@@ -182,10 +182,22 @@ describe("applyPatch", () => {
       ]),
     });
     const [done] = clerk.resolveTick();
-    expect(done?.status).toBe("failed");
-    expect(done?.failReason).toBe("schema.extend_type requires field.name");
-    expect(clerk.registry.types["gold"]?.fields["currency"]).toBeUndefined();
-    expect(clerk.applied).toHaveLength(0);
+    expect(done?.status).toBe("applied");
+    expect(clerk.registry.types["gold"]?.fields["currency"]).toEqual({ type: "int", default: 1000 });
+  });
+
+  it("replays a legacy singular field without making it a second propose shape", () => {
+    const registry = seedRegistry();
+    const next = applyPatch(
+      registry,
+      {
+        kind: "schema.extend_type",
+        type: "agent",
+        field: { name: "note", type: "string" },
+      } as unknown as Patch,
+      1,
+    );
+    expect(next.types["agent"]?.fields["note"]).toEqual({ type: "string" });
   });
 
   it("does not mutate the source registry", () => {

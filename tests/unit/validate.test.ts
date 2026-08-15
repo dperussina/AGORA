@@ -144,26 +144,26 @@ describe("validatePatch", () => {
     ).toEqual({ ok: true, tier: 2 });
   });
 
-  it("rejects schema.extend_type without field {name, type}", () => {
-    const bag = validatePatch(registry, {
+  it("rejects schema.extend_type without a fields bag", () => {
+    const singular = validatePatch(registry, {
       kind: "schema.extend_type",
       type: "agent",
-      fields: { currency: { type: "int", default: 1000 } },
+      field: { name: "note", type: "string" },
     });
-    expect(bag.ok).toBe(false);
-    if (!bag.ok) {
-      expect(bag.code).toBe("schema");
+    expect(singular.ok).toBe(false);
+    if (!singular.ok) {
+      expect(singular.code).toBe("schema");
     }
     const missing = validatePatch(registry, { kind: "schema.extend_type", type: "agent" });
     expect(missing.ok).toBe(false);
   });
 
-  it("accepts schema.extend_type with a single field", () => {
+  it("accepts schema.extend_type with the same fields bag as define_type", () => {
     expect(
       validatePatch(registry, {
         kind: "schema.extend_type",
         type: "agent",
-        field: { name: "note", type: "string" },
+        fields: { note: { type: "string" } },
       }),
     ).toEqual({ ok: true, tier: 2 });
   });

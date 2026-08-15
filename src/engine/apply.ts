@@ -1,6 +1,6 @@
 import type { Registry } from "./registry.ts";
 import { seedRegistry } from "./registry.ts";
-import type { Patch } from "./validate.ts";
+import { readExtendFields, type Patch } from "./validate.ts";
 import { designationOf } from "./geography.ts";
 
 export function applyPatch(registry: Registry, patch: Patch, proposalId: number): Registry {
@@ -66,17 +66,20 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
       next.types[patch.name] = { fields: patch.fields };
       break;
     case "schema.extend_type": {
-      if (patch.field === undefined || typeof patch.field.name !== "string" || patch.field.name.length === 0) {
-        throw new Error("schema.extend_type requires field.name");
+      const fields = readExtendFields(patch as { fields?: unknown; field?: { name?: string; type?: string; default?: unknown; visibility?: string } });
+      if (fields === null) {
+        throw new Error("schema.extend_type uses fields like define_type");
       }
       const existing = next.types[patch.type] ?? { fields: {} };
       existing.fields ??= {};
       next.types[patch.type] = existing;
-      existing.fields[patch.field.name] = {
-        type: patch.field.type,
-        default: patch.field.default,
-        visibility: patch.field.visibility,
-      };
+      for (const name of Object.keys(fields).sort()) {
+        const spec = fields[name];
+        if (spec === undefined) {
+          continue;
+        }
+        existing.fields[name] = spec;
+      }
       break;
     }
     case "action.define":

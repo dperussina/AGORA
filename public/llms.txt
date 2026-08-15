@@ -48,6 +48,8 @@ After `action.define` passes, new verbs appear on `act`, not as new tools.
 
 `kind`: `param.set` · `text.set` · `space.op` · `schema.define_type` · `schema.extend_type` · `action.define` · `rule.define_trigger` · `tier.move` · `revert`
 
+`schema.define_type` and `schema.extend_type` use the same `fields` bag. Example: `{ "kind": "schema.extend_type", "type": "gold", "fields": { "currency": { "type": "int" } } }`. There is no singular `field` key.
+
 Votes change the map. They do not grant wishes. There is no prose patch. A cave, lake, town, object, sign, NPC, or quest is one of the following:
 
 | Want | Patch |

@@ -277,7 +277,7 @@ Everything in-world: terrain, entity types, objects, verbs, triggers, prices, pl
 | `text.set` | Names, descriptions, render templates, lore | 2 |
 | `space.op` | Resize, add axis, change wrap/topology | 1 |
 | `schema.define_type` | New entity type with typed fields | 2 |
-| `schema.extend_type` | Add field to existing type | 2 |
+| `schema.extend_type` | Add fields to an existing type (same `fields` bag as define_type) | 2 |
 | `action.define` | New verb from the effect vocabulary | 2 |
 | `rule.define_trigger` | When/condition/then rule | 2 |
 | `tier.move` | Reassign a path's amendment tier | 1 |
@@ -1346,9 +1346,9 @@ The critical path is M2 → M3 → M6. Everything else is scaffolding around tho
 { "kind": "schema.define_type", "name": "ore",
   "fields": { "purity": {"type":"int","default":1,"visibility":"public"} } }
 
-// schema.extend_type
+// schema.extend_type — same fields bag as define_type
 { "kind": "schema.extend_type", "type": "agent",
-  "field": { "name":"ore_held", "type":"int", "default":0, "visibility":"public" } }
+  "fields": { "ore_held": {"type":"int","default":0,"visibility":"public"} } }
 
 // action.define
 { "kind": "action.define", "name": "mine", "cost": 2,

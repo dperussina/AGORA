@@ -19,8 +19,8 @@ export type Patch =
       class?: string;
       centre?: { x: number; y: number; z: number };
     }
-  | { kind: "schema.define_type"; name: string; fields: Record<string, { type: string; default?: unknown; visibility?: string }> }
-  | { kind: "schema.extend_type"; type: string; field: { name: string; type: string; default?: unknown; visibility?: string } }
+  | { kind: "schema.define_type"; name: string; fields: Record<string, SchemaField> }
+  | { kind: "schema.extend_type"; type: string; fields: Record<string, SchemaField> }
   | {
       kind: "action.define";
       name: string;
@@ -33,9 +33,56 @@ export type Patch =
   | { kind: "tier.move"; path: string; tier: 1 | 2 }
   | { kind: "revert"; proposalId: number };
 
+export type SchemaField = { type: string; default?: unknown; visibility?: string };
+
+export const EXTEND_TYPE_SHAPE =
+  'schema.extend_type uses fields like define_type: {"kind":"schema.extend_type","type":"gold","fields":{"currency":{"type":"int"}}}';
+
 export type Validation =
   | { ok: true; tier: 1 | 2 }
   | { ok: false; code: string; reason: string };
+
+/** Canonical bag. A legacy singular `field` is replay-only and not a second propose shape. */
+export function readExtendFields(patch: {
+  fields?: unknown;
+  field?: { name?: unknown; type?: unknown; default?: unknown; visibility?: unknown };
+}): Record<string, SchemaField> | null {
+  if (patch.fields !== null && typeof patch.fields === "object" && !Array.isArray(patch.fields)) {
+    const out: Record<string, SchemaField> = {};
+    for (const [name, spec] of Object.entries(patch.fields as Record<string, unknown>)) {
+      if (name.length === 0 || spec === null || typeof spec !== "object" || Array.isArray(spec)) {
+        return null;
+      }
+      const row = spec as { type?: unknown; default?: unknown; visibility?: unknown };
+      if (typeof row.type !== "string" || row.type.length === 0) {
+        return null;
+      }
+      out[name] = {
+        type: row.type,
+        ...(row.default === undefined ? {} : { default: row.default }),
+        ...(typeof row.visibility === "string" ? { visibility: row.visibility } : {}),
+      };
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  }
+  const legacy = patch.field;
+  if (
+    legacy !== undefined &&
+    typeof legacy.name === "string" &&
+    legacy.name.length > 0 &&
+    typeof legacy.type === "string" &&
+    legacy.type.length > 0
+  ) {
+    return {
+      [legacy.name]: {
+        type: legacy.type,
+        ...(legacy.default === undefined ? {} : { default: legacy.default }),
+        ...(typeof legacy.visibility === "string" ? { visibility: legacy.visibility } : {}),
+      },
+    };
+  }
+  return null;
+}
 
 const KINDS = new Set([
   "param.set",
@@ -76,14 +123,10 @@ export function validatePatch(registry: Registry, patch: unknown): Validation {
         return fail("missing_path", `unknown type ${String(body.type)}`);
       }
       if (
-        body.field === null ||
-        typeof body.field !== "object" ||
-        typeof body.field.name !== "string" ||
-        body.field.name.length === 0 ||
-        typeof body.field.type !== "string" ||
-        body.field.type.length === 0
+        body.fields === undefined ||
+        readExtendFields({ fields: body.fields }) === null
       ) {
-        return fail("schema", "schema.extend_type requires field {name, type}");
+        return fail("schema", EXTEND_TYPE_SHAPE);
       }
       return { ok: true, tier: 2 };
     case "action.define":
