@@ -53,7 +53,7 @@ export function foldWorld(events: readonly Event[]): WorldView {
         bodies[actor] = { x, y, z };
       }
     }
-    if (event.type === "act.move" && actor !== undefined) {
+    if ((event.type === "act.move" || event.type === "act.follow") && actor !== undefined) {
       const x = event.payload["x"];
       const y = event.payload["y"];
       const z = event.payload["z"];
@@ -97,8 +97,20 @@ export function foldWorld(events: readonly Event[]): WorldView {
       };
       entitySeq = Math.max(entitySeq, entityNumber(id));
     }
-    if (event.type === "effect.destroy" && typeof event.payload["id"] === "string") {
+    if (
+      (event.type === "effect.destroy" || event.type === "wake.heeded" || event.type === "wake.followed") &&
+      typeof event.payload["id"] === "string"
+    ) {
       delete entities[event.payload["id"]];
+    }
+    if (event.type === "wake.followed" && actor !== undefined) {
+      const to = event.payload["to"];
+      if (to !== null && typeof to === "object" && !Array.isArray(to)) {
+        const row = to as { x?: unknown; y?: unknown; z?: unknown };
+        if (typeof row.x === "number" && typeof row.y === "number" && typeof row.z === "number") {
+          bodies[actor] = { x: row.x, y: row.y, z: row.z };
+        }
+      }
     }
     if (event.type === "act.mark" && actor !== undefined && typeof event.payload["text"] === "string") {
       const x = event.payload["x"];
@@ -171,7 +183,7 @@ export function occupancyAtTick(
     if (event.type === "identity.name" && typeof event.payload["identityId"] === "string" && typeof event.payload["name"] === "string") {
       names[event.payload["identityId"]] = event.payload["name"];
     }
-    if ((event.type === "identity.spawn" || event.type === "act.move") && actor !== undefined) {
+    if ((event.type === "identity.spawn" || event.type === "act.move" || event.type === "act.follow") && actor !== undefined) {
       const x = event.payload["x"];
       const y = event.payload["y"];
       const z = event.payload["z"];

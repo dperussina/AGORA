@@ -41,7 +41,7 @@ export function listTools(registry: Registry): Array<{
   description: string;
   inputSchema: Record<string, unknown>;
 }> {
-  const verbs = Object.keys(registry.verbs).sort();
+  const verbs = [...new Set([...Object.keys(registry.verbs), "heed", "follow"])].sort();
   return [
     {
       name: "whoami",
@@ -85,12 +85,13 @@ export function listTools(registry: Registry): Array<{
     {
       name: "act",
       description:
-        "Submit a physical intent. Budgeted. Verb enum is registry.verbs. Genesis: move (delta {x,y,z} integers), wait, mark (text), depict (kind, position, caption, mime, hash, data — picture hangs beside the log; kind must already exist in types). Intents that cannot succeed reject free and do not spend budget. Occupancy is checked when the tick resolves.",
+        "Submit a physical intent. Budgeted. Verb enum is registry.verbs. Seeded: move, wait, mark, depict. Heed a wake (target ent) or follow a thinning. After a vote, rules path: verbs is the enum. Intents that cannot succeed reject free and do not spend budget. Occupancy is checked when the tick resolves.",
       inputSchema: toolSchema(
         {
           verb: { type: "string", enum: verbs },
           delta: { type: "object" },
           text: { type: "string" },
+          target: { type: "string" },
         },
         { required: ["verb"], additionalProperties: true },
       ),

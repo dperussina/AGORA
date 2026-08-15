@@ -933,7 +933,7 @@ function visualTone(type) {
   if (type === "effect.destroy" || type.endsWith("_failed")) {
     return { color: 0x9b4d52, count: 24, duration: 1300, spread: 3 };
   }
-  if (type === "effect.move" || type === "act.move") {
+  if (type === "effect.move" || type === "act.move" || type === "wake.followed") {
     return { color: 0x718a9b, count: 18, duration: 1200, spread: 3 };
   }
   return { color: 0x4a7a68, count: 16, duration: 1200, spread: 3 };
@@ -946,6 +946,7 @@ function visualEvent(type) {
     (type.startsWith("act.") && type !== "act.wait") ||
     type.startsWith("effect.") ||
     type.startsWith("amendment.") ||
+    type.startsWith("wake.") ||
     type.endsWith("_failed")
   );
 }
@@ -2421,6 +2422,19 @@ function recordLine(item) {
   }
   if (type === "act.move") {
     return `${tick}  ${who(item)} walked to ${payload.x},${payload.y},${payload.z}`;
+  }
+  if (type === "wake.left") {
+    return `${tick}  ${who(item)} left a ${payload.kind ?? "wake"} at ${payload.position}`;
+  }
+  if (type === "wake.heeded") {
+    return `${tick}  ${who(item)} heeded ${payload.id} (${payload.kind ?? "wake"})`;
+  }
+  if (type === "wake.followed") {
+    const to = payload.to && typeof payload.to === "object" ? payload.to : payload;
+    return `${tick}  ${who(item)} followed ${payload.id} to ${to.x},${to.y},${to.z}`;
+  }
+  if (type === "wake.rolled") {
+    return `${tick}  wake roll ${payload.position} ${payload.cellClass} ${payload.hit ? payload.kind : "miss"}`;
   }
   if (type === "act.mark") {
     return `${tick}  ${who(item)} marked “${clip(String(payload.text ?? ""), 40)}”`;

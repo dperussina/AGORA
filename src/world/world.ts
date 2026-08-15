@@ -28,7 +28,17 @@ import {
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
 import { runEffects, type Entity } from "../engine/effects.ts";
 import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName } from "../engine/registry.ts";
-import { formatCell, wakeKind, wakeRate, type CellClass } from "../engine/wake.ts";
+import {
+  FOLLOW_FLOOR_IDS,
+  formatCell,
+  normalizeStep,
+  parseCellString,
+  pickFollowFloor,
+  signStep,
+  wakeKind,
+  wakeRate,
+  type CellClass,
+} from "../engine/wake.ts";
 import { BLOB_MAX, checkBlob, decodeDepictData, putBlob, sha256Hex } from "../persist/blob.ts";
 import {
   assessStanding,
@@ -125,6 +135,8 @@ export class World {
   private readonly presenceLeaseMs: number;
   private readonly presenceNow: () => number;
   private readonly intents: Intent[] = [];
+  private readonly lastStep = new Map<string, Position>();
+  private readonly lastFrom = new Map<string, Position>();
   private intentSeq = 0;
   private dormant = true;
   lastTickHadPresence = false;
@@ -768,6 +780,12 @@ export class World {
     if (verb === "depict") {
       return this.depictWouldFail(identityId, args);
     }
+    if (verb === "heed") {
+      return this.heedWouldFail(args);
+    }
+    if (verb === "follow") {
+      return this.followWouldFail(identityId, args);
+    }
     return null;
   }
 
@@ -800,6 +818,7 @@ export class World {
         return;
       }
       this.bodies.set(intent.identityId, moved.position);
+      this.rememberStep(intent.identityId, from, moved.position);
       this.append("act.move", intent.identityId, { ...moved.position, identityId: intent.identityId });
       this.fireTriggers("move.end", { selfId: intent.identityId, from });
       return;
@@ -825,6 +844,14 @@ export class World {
     }
     if (intent.verb === "depict") {
       this.resolveDepict(intent);
+      return;
+    }
+    if (intent.verb === "heed") {
+      this.resolveHeed(intent);
+      return;
+    }
+    if (intent.verb === "follow") {
+      this.resolveFollow(intent);
       return;
     }
     const defined = this.clerk.registry.verbs[intent.verb];
@@ -1499,12 +1526,16 @@ export class World {
   }
 
   private keptEntityAt(position: Position): boolean {
-    return [...this.entities.values()].some(
-      (entity) =>
-        entity.position !== undefined &&
-        cellKey(entity.position) === cellKey(position) &&
-        (entity.type === "block" || entity.type === "home"),
-    );
+    const key = cellKey(position);
+    return [...this.entities.values()].some((entity) => {
+      if (entity.type !== "block" && entity.type !== "home") {
+        return false;
+      }
+      if (entity.position !== undefined && cellKey(entity.position) === key) {
+        return true;
+      }
+      return typeof entity.fields["position"] === "string" && entity.fields["position"] === key;
+    });
   }
 
   private leaveWake(traveler: string): void {
@@ -1512,16 +1543,29 @@ export class World {
     if (at === undefined) {
       return;
     }
-    if (this.wakeFor(traveler, at) !== undefined) {
-      return;
-    }
     const classified = this.classifyCell(at);
+    const stacked = this.wakeFor(traveler, at) !== undefined;
     const tip = this.log.tip()?.hash ?? GENESIS_SEED;
     const oracle = new Oracle(`${tip}:wake:${traveler}:${formatCell(at)}:${this.clerk.tick}`);
-    if (oracle.int(100) >= wakeRate(classified.cellClass)) {
+    const roll = stacked ? null : oracle.int(100);
+    const rate = wakeRate(classified.cellClass);
+    const hit = roll !== null && roll < rate;
+    const kind = wakeKind(classified.cellClass, classified.anchorClass);
+    const anchor = this.anchorAt(at);
+    this.append("wake.rolled", traveler, {
+      position: formatCell(at),
+      cellClass: classified.cellClass,
+      anchorClass: classified.anchorClass,
+      designation: anchor?.designation ?? null,
+      roll,
+      rate,
+      stacked,
+      hit,
+      kind: hit ? kind : null,
+    });
+    if (!hit) {
       return;
     }
-    const kind = wakeKind(classified.cellClass, classified.anchorClass);
     this.entitySeq += 1;
     const id = `ent:${this.entitySeq}`;
     const position = formatCell(at);
@@ -1556,6 +1600,191 @@ export class World {
         entity.fields["traveler"] === traveler &&
         (entity.fields["position"] === written || (entity.position !== undefined && cellKey(entity.position) === key)),
     );
+  }
+
+  private liveWake(target: string | undefined): Entity | undefined {
+    if (target === undefined) {
+      return undefined;
+    }
+    const entity = this.entities.get(target);
+    if (entity === undefined || entity.type !== "wake") {
+      return undefined;
+    }
+    return entity;
+  }
+
+  private heedWouldFail(args: Record<string, unknown>): string | null {
+    const wake = this.liveWake(typeof args["target"] === "string" ? args["target"] : undefined);
+    if (wake === undefined) {
+      return "not a live wake";
+    }
+    const kind = wake.fields["kind"];
+    if (kind !== "guestmark" && kind !== "thinning" && kind !== "stirring") {
+      return "unknown wake kind";
+    }
+    return null;
+  }
+
+  private resolveHeed(intent: Intent): void {
+    const blocked = this.heedWouldFail({ target: intent.target });
+    if (blocked !== null) {
+      this.append("act.heed_failed", intent.identityId, { reason: blocked });
+      return;
+    }
+    const wake = this.liveWake(intent.target);
+    if (wake === undefined) {
+      this.append("act.heed_failed", intent.identityId, { reason: "not a live wake" });
+      return;
+    }
+    const kind = String(wake.fields["kind"] ?? "");
+    this.entities.delete(wake.id);
+    this.append("effect.destroy", intent.identityId, { id: wake.id });
+    if (kind === "guestmark") {
+      this.entitySeq += 1;
+      const id = `ent:${this.entitySeq}`;
+      this.entities.set(id, {
+        id,
+        type: "resource",
+        fields: { holder: intent.identityId, kind: "seed", qty: 1 },
+        createdBy: (this.log.tip()?.seq ?? -1) + 1,
+      });
+      this.append("effect.create", intent.identityId, { id, type: "resource" });
+    }
+    this.append("wake.heeded", intent.identityId, {
+      id: wake.id,
+      kind,
+      traveler: wake.fields["traveler"] ?? intent.identityId,
+      tick: this.clerk.tick,
+    });
+    this.append("act.heed", intent.identityId, {
+      identityId: intent.identityId,
+      verb: "heed",
+      target: wake.id,
+    });
+    this.witness(intent.identityId, "fame");
+    this.fireTriggers("act.end", { selfId: intent.identityId });
+  }
+
+  private followWouldFail(identityId: string, args: Record<string, unknown>): string | null {
+    const dest = this.followDestination(identityId, typeof args["target"] === "string" ? args["target"] : undefined);
+    if (!dest.ok) {
+      return dest.reason;
+    }
+    if (this.occupied(dest.position, identityId)) {
+      return "destination occupied";
+    }
+    return null;
+  }
+
+  private resolveFollow(intent: Intent): void {
+    const dest = this.followDestination(intent.identityId, intent.target);
+    if (!dest.ok) {
+      this.append("act.follow_failed", intent.identityId, { reason: dest.reason });
+      return;
+    }
+    if (this.occupied(dest.position, intent.identityId)) {
+      this.append("act.follow_failed", intent.identityId, { reason: "destination occupied" });
+      return;
+    }
+    const wake = this.liveWake(intent.target);
+    if (wake === undefined) {
+      this.append("act.follow_failed", intent.identityId, { reason: "not a live thinning" });
+      return;
+    }
+    const from = this.bodyOf(intent.identityId);
+    this.bodies.set(intent.identityId, dest.position);
+    this.entities.delete(wake.id);
+    this.append("effect.destroy", intent.identityId, { id: wake.id });
+    this.append("wake.followed", intent.identityId, {
+      id: wake.id,
+      from,
+      to: dest.position,
+      traveler: wake.fields["traveler"] ?? intent.identityId,
+      tick: this.clerk.tick,
+    });
+    this.append("act.follow", intent.identityId, {
+      identityId: intent.identityId,
+      verb: "follow",
+      target: wake.id,
+      ...dest.position,
+    });
+    this.witness(intent.identityId, "fame");
+    this.fireTriggers("act.end", { selfId: intent.identityId });
+  }
+
+  private followDestination(
+    identityId: string,
+    target: string | undefined,
+  ): { ok: true; position: Position } | { ok: false; reason: string } {
+    const wake = this.liveWake(target);
+    if (wake === undefined || wake.fields["kind"] !== "thinning") {
+      return { ok: false, reason: "not a live thinning" };
+    }
+    const from = this.bodyOf(identityId);
+    const wakePos = wake.position ?? (typeof wake.fields["position"] === "string" ? parseCellString(wake.fields["position"]) : null);
+    if (wakePos === null) {
+      return { ok: false, reason: "not a live thinning" };
+    }
+    const here = this.anchorAt(wakePos);
+    let delta: Position | null = null;
+    if (here !== undefined) {
+      const floors = FOLLOW_FLOOR_IDS.map((id) => this.anchors.find((item) => item.designation === id)).filter(
+        (item): item is NonNullable<typeof item> => item !== undefined,
+      );
+      const picked = pickFollowFloor(wakePos, here.designation, floors);
+      if (picked !== null) {
+        delta = signStep(from, picked.centre);
+      }
+    }
+    if (delta === null) {
+      const last = this.lastStep.get(identityId);
+      if (last !== undefined && (last.x !== 0 || last.y !== 0 || last.z !== 0)) {
+        delta = normalizeStep(last);
+      }
+    }
+    if (delta === null) {
+      const prior = this.lastFrom.get(identityId);
+      if (prior !== undefined) {
+        delta = signStep(prior, from);
+        if (delta.x === 0 && delta.y === 0 && delta.z === 0) {
+          delta = null;
+        }
+      }
+    }
+    if (delta === null) {
+      delta = this.firstOpenStep(from, identityId);
+    }
+    if (delta === null) {
+      return { ok: false, reason: "no follow step" };
+    }
+    const moved = applyMove(from, delta, this.clerk.registry);
+    if (!moved.ok) {
+      return { ok: false, reason: moved.reason };
+    }
+    return { ok: true, position: moved.position };
+  }
+
+  private firstOpenStep(from: Position, identityId: string): Position | null {
+    const tries: Position[] = [
+      { x: 1, y: 0, z: 0 },
+      { x: -1, y: 0, z: 0 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0, y: -1, z: 0 },
+      { x: 0, y: 0, z: 1 },
+      { x: 0, y: 0, z: -1 },
+    ];
+    for (const delta of tries) {
+      const moved = applyMove(from, delta, this.clerk.registry);
+      if (moved.ok && !this.occupied(moved.position, identityId)) {
+        return delta;
+      }
+    }
+    return null;
+  }
+
+  private rememberStep(identityId: string, from: Position, to: Position): void {
+    this.lastFrom.set(identityId, { ...from });
+    this.lastStep.set(identityId, { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z });
   }
 
   private wakeAt(position: Position, observationalT: number): { kind: string; position: string; traveler: string; tick: number } | null {
@@ -2032,6 +2261,7 @@ export class World {
       }
       this.entitySeq = view.entitySeq;
       this.rebuildListenLog();
+      this.rebuildLastSteps();
       return;
     }
     this.clerk.restore({
@@ -2084,6 +2314,34 @@ export class World {
       if (identity.name !== null) {
         this.clerk.registry.text[`epithets.${identity.id}`] ??= null;
       }
+    }
+    this.rebuildLastSteps();
+  }
+
+  private rebuildLastSteps(): void {
+    this.lastStep.clear();
+    this.lastFrom.clear();
+    const prev = new Map<string, Position>();
+    for (const event of this.log.events()) {
+      const actor = event.actor.startsWith("identity:") ? event.actor.slice("identity:".length) : undefined;
+      if (actor === undefined) {
+        continue;
+      }
+      if (event.type !== "identity.spawn" && event.type !== "act.move") {
+        continue;
+      }
+      const x = event.payload["x"];
+      const y = event.payload["y"];
+      const z = event.payload["z"];
+      if (typeof x !== "number" || typeof y !== "number" || typeof z !== "number") {
+        continue;
+      }
+      const at = { x, y, z };
+      const from = prev.get(actor);
+      if (from !== undefined && event.type === "act.move") {
+        this.rememberStep(actor, from, at);
+      }
+      prev.set(actor, at);
     }
   }
 

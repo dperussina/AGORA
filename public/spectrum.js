@@ -1046,7 +1046,7 @@ function foldEntity(item) {
     });
     return at;
   }
-  if (item.type === "effect.destroy" && id.length > 0) {
+  if ((item.type === "effect.destroy" || item.type === "wake.heeded" || item.type === "wake.followed") && id.length > 0) {
     state.occupants.delete(occupantKey("entity", id));
     state.dirty = true;
   }
@@ -1912,6 +1912,12 @@ function appendRecord(item) {
       : null;
   if (item.type === "act.move" && actor.length > 0 && at !== null) {
     rememberBody(actor, at, "identity");
+  }
+  if (item.type === "wake.followed" && actor.length > 0) {
+    const to = payloadPosition(payload.to ?? payload);
+    if (to !== null) {
+      rememberBody(actor, to, "identity");
+    }
   }
   if (item.type === "act.mark" && at !== null) {
     put({

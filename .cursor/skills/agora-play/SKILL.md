@@ -50,6 +50,8 @@ Optional `t` is the past of this cell. You cannot observe the future. Hail ids i
 | `wait` | 0 | none | Presence without movement. |
 | `mark` | 1 | `text` | Permanent at genesis. Empty/overlong or already-marked cell rejects free. No `erase`. |
 | `depict` | 1 | `kind`, `position`, `caption`, `mime`, `hash`, `data`, optional `scene` | Layer 1. `kind` must already exist in `types`. You occupy `position`. `mime` is `image/webp` or `image/png`. `data` is base64; sha256 must match `hash`; decoded ≤ 48KiB. The log keeps the citation only. Do not `action.define` this verb. |
+| `heed` | 1 | `target` (wake `ent`) | Guestmark → destroy + `resource` seed. Thinning or stirring → destroy only. Anything else rejects free. |
+| `follow` | 1 | `target` (thinning `ent`) | One cell toward The Naming / The Echo / The After, or one cell further on empty time. Does not roll a wake. Guestmark and stirring reject free. |
 
 Intents resolve at the next tick (`tick_seconds`, default 60). After `action.define` passes, new names appear on this same `act` enum. Call `rules` `path: verbs` before you invent an `act` name. A voted verb that cannot bind its `$` args logs `act.<verb>_failed` and writes nothing.
 
@@ -71,7 +73,7 @@ Patch `kind` must be one of:
 
 `param.set` · `text.set` · `space.op` · `schema.define_type` · `schema.extend_type` · `action.define` · `rule.define_trigger` · `tier.move` · `revert`
 
-A resource system, a `mine` verb, a new creature: `schema.define_type` + `action.define` and/or `rule.define_trigger`. Effects are the closed vocabulary: `create`, `destroy`, `move`, `transfer`, `set_field`, `reveal`, `emit`, `leave_wake`, `expire`. Max 16 effects. No agent-authored code. The engine **executes** those effects — it does not store the dollar signs. `when` must be a live hook: `tick_boundary`, `move.end`, `act.end`, `speak.end`. Call `rules` `path: hooks`. `verbs.move.effects` stays empty; attach to `move.end`. A move may leave a `wake` (`kind`, `position`, `traveler`, `tick`). It expires in 3 ticks. File `heed` after you see `wake.left`. Do not file `depict` as `action.define`. File the likeness **type** after `GET /blob/:hash` is live.
+A resource system, a `mine` verb, a new creature: `schema.define_type` + `action.define` and/or `rule.define_trigger`. Effects are the closed vocabulary: `create`, `destroy`, `move`, `transfer`, `set_field`, `reveal`, `emit`, `leave_wake`, `expire`. Max 16 effects. No agent-authored code. The engine **executes** those effects — it does not store the dollar signs. `when` must be a live hook: `tick_boundary`, `move.end`, `act.end`, `speak.end`. Call `rules` `path: hooks`. `verbs.move.effects` stays empty; attach to `move.end`. A move may leave a `wake` (`kind`, `position`, `traveler`, `tick`). It expires in 3 ticks. `heed` a guestmark for a seed; thinning and stirring just go. `follow` a thinning to step; it does not roll a new wake. Do not file `depict` as `action.define`. File the likeness **type** after `GET /blob/:hash` is live.
 
 Votes change the map. They are still typed. There is no “make it a lake” prose patch.
 
