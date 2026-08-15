@@ -493,6 +493,7 @@ function visualEvent(type, payload) {
     type === "beast.bit" ||
     type === "body.fell" ||
     type === "body.died" ||
+    type === "wake.heeded" ||
     type.endsWith("_failed")
   );
 }
@@ -1211,7 +1212,19 @@ function setFoldPose(id, mode, now, extra = {}) {
   }
   const duration =
     extra.duration ??
-    (mode === "hurt" ? 3800 : mode === "rise" ? 2200 : mode === "dead" ? 2400 : mode === "fallen" ? 1e9 : 900);
+    (mode === "hurt"
+      ? 3800
+      : mode === "rise"
+        ? 2200
+        : mode === "dead"
+          ? 2400
+          : mode === "fallen"
+            ? 1e9
+            : mode === "build"
+              ? 1600
+              : mode === "loot"
+                ? 1100
+                : 900);
   foldCombat.poses.set(id, { mode, born: now, duration, ...extra });
 }
 
@@ -1235,7 +1248,12 @@ function foldPoseFor(id, now) {
     return null;
   }
   const base = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
-  const toward = typeof pose.toward === "string" ? occupantCell(pose.toward) : null;
+  const toward =
+    pose.at && typeof pose.at.x === "number"
+      ? pose.at
+      : typeof pose.toward === "string"
+        ? occupantCell(pose.toward)
+        : null;
   const here = occupantCell(id);
   if (toward !== null && here !== null) {
     base.yaw = lookYaw(cell(here), cell(toward));
@@ -1281,6 +1299,20 @@ function foldPoseFor(id, now) {
     base.pitch = Math.PI / 2 + u * 1.2;
     base.y = 0.2 + u * 0.4;
     base.roll = u * 2.2;
+    return base;
+  }
+  if (pose.mode === "build") {
+    const swing = Math.sin(u * Math.PI * 3) * gate(u, 0.08, 0.88);
+    base.y = -0.08 * Math.abs(swing);
+    base.pitch = 0.42 * swing;
+    base.z += 0.12 * Math.abs(swing);
+    return base;
+  }
+  if (pose.mode === "loot") {
+    const pop = gate(u, 0.1, 0.58);
+    base.y = pop * 0.48;
+    base.yaw += pop * 0.7;
+    base.roll = Math.sin(u * 12) * pop * 0.18;
     return base;
   }
   return base;
@@ -1719,6 +1751,117 @@ function applyFoldCombat(now) {
     node.rotation.order = "YXZ";
     node.rotation.set(pose.pitch, pose.yaw, pose.roll);
   }
+}
+
+const recentWork = [];
+const pops = [];
+
+function gainSprite(text) {
+  const board = document.createElement("canvas");
+  board.width = 256;
+  board.height = 64;
+  const ctx = board.getContext("2d");
+  if (ctx === null) {
+    return new THREE.Sprite();
+  }
+  ctx.clearRect(0, 0, board.width, board.height);
+  ctx.font = "600 28px 'IBM Plex Mono', ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#0c1014";
+  ctx.fillText(text, 129, 33);
+  ctx.fillStyle = "#ffc44d";
+  ctx.fillText(text, 128, 32);
+  const texture = new THREE.CanvasTexture(board);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(2.4, 0.6, 1);
+  sprite.userData.label = true;
+  return sprite;
+}
+
+function popGain(id, text, now) {
+  const node = combatNode(id);
+  const at = node ? node.position.clone() : occupantCell(id) !== null ? cell(occupantCell(id)) : null;
+  if (at === null) {
+    return;
+  }
+  at.y += 1.55;
+  const sprite = gainSprite(clipLine(text, 18));
+  sprite.position.copy(at);
+  scene.add(sprite);
+  pops.push({ sprite, born: now, duration: 1500, startY: at.y });
+  while (pops.length > 12) {
+    const oldest = pops.shift();
+    if (oldest !== undefined) {
+      scene.remove(oldest.sprite);
+      oldest.sprite.material.map?.dispose();
+      oldest.sprite.material.dispose();
+    }
+  }
+}
+
+function tickPops(now) {
+  for (let i = pops.length - 1; i >= 0; i -= 1) {
+    const pop = pops[i];
+    const u = (now - pop.born) / pop.duration;
+    if (u >= 1) {
+      scene.remove(pop.sprite);
+      pop.sprite.material.map?.dispose();
+      pop.sprite.material.dispose();
+      pops.splice(i, 1);
+      continue;
+    }
+    pop.sprite.position.y = pop.startY + u * 1.15;
+    pop.sprite.material.opacity = u < 0.15 ? u / 0.15 : Math.max(0, 1 - (u - 0.15) / 0.85);
+  }
+}
+
+function noteFoldWork(item, now) {
+  const type = typeof item.type === "string" ? item.type : "";
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const actor = actorId(item);
+  if (actor.length === 0 || actor === "ARBITER" || actor === "STEWARD") {
+    return;
+  }
+  if (type === "wake.heeded" || type === "act.heed") {
+    if (recentWork.some((row) => row.id === actor && row.kind === "loot" && now - row.born < 400)) {
+      return;
+    }
+    recentWork.push({ id: actor, kind: "loot", born: now });
+    while (recentWork.length > 32) {
+      recentWork.shift();
+    }
+    const loot =
+      typeof payload.loot === "string" && payload.loot.length > 0
+        ? payload.loot
+        : typeof payload.kind === "string" && payload.kind.length > 0
+          ? payload.kind
+          : "loot";
+    setFoldPose(actor, "loot", now, { duration: 1100 });
+    popGain(actor, `+1 ${loot}`, now);
+    return;
+  }
+  const made = typeof payload.type === "string" ? payload.type : typeof payload.kind === "string" ? payload.kind : "";
+  const building =
+    type === "act.depict" ||
+    type === "act.mark" ||
+    (type === "effect.create" && made.length > 0 && !PAPER_TYPES.has(made) && made !== "wake" && made !== "drift" && made !== "beast");
+  if (!building) {
+    return;
+  }
+  if (recentWork.some((row) => row.id === actor && row.kind === "build" && now - row.born < 520)) {
+    return;
+  }
+  const at = payloadPosition(payload);
+  if (type === "act.depict" && at === null) {
+    return;
+  }
+  recentWork.push({ id: actor, kind: "build", born: now });
+  while (recentWork.length > 32) {
+    recentWork.shift();
+  }
+  setFoldPose(actor, "build", now, { at, duration: 1600 });
 }
 
 function noteFoldCombat(item, now) {
@@ -3164,6 +3307,12 @@ function tickerLine(item) {
   if (type === "act.mark") {
     return `${tick}  ${who} marked “${clipLine(String(payload.text ?? ""), 36)}”`;
   }
+  if (type === "act.depict") {
+    return `${tick}  ${who} built ${clipLine(String(payload.kind ?? "a form"), 20)}`;
+  }
+  if (type === "wake.heeded" || type === "act.heed") {
+    return `${tick}  ${who} took ${clipLine(String(payload.loot ?? payload.kind ?? "loot"), 20)}`;
+  }
   if (type === "identity.spawn") {
     return `${tick}  ${who} arrived ${payload.x},${payload.y},${payload.z}`;
   }
@@ -3349,6 +3498,15 @@ function appendRecord(item) {
   ) {
     noteFoldCombat(item, performance.now());
   }
+  if (
+    item.type === "act.depict" ||
+    item.type === "act.mark" ||
+    item.type === "act.heed" ||
+    item.type === "wake.heeded" ||
+    item.type === "effect.create"
+  ) {
+    noteFoldWork(item, performance.now());
+  }
 }
 
 function listen() {
@@ -3475,6 +3633,7 @@ function tick() {
     tickSparks(now);
     tickShots(now);
     tickBooms(now);
+    tickPops(now);
     controls.update();
     cosmos.rotation.y += 0.00018;
     aimLamps();
@@ -3513,7 +3672,9 @@ function tick() {
   } else {
     const now = performance.now();
     tickFlights(now);
+    applyFoldCombat(now);
     tickSparks(now);
+    tickPops(now);
     aimLamps();
   }
   renderer.render(scene, camera);
