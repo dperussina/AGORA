@@ -3783,6 +3783,38 @@ function recordLine(item) {
   if (type === "speak" || type === "speak.warden") {
     return `${tick}  ${who(item)}: ${clip(String(payload.text ?? ""), 64)}`;
   }
+  if (type === "war.declared") {
+    const defender = typeof payload.defender === "string" ? payload.defender : "";
+    return defender.length > 0
+      ? `${tick}  ${who(item)} declared on ${clip(defender, 24)}`
+      : `${tick}  ${who(item)} declared war`;
+  }
+  if (type === "war.struck") {
+    const target = typeof payload.target === "string" ? payload.target : "";
+    return target.length > 0
+      ? `${tick}  ${who(item)} struck ${clip(target, 24)}`
+      : `${tick}  ${who(item)} struck`;
+  }
+  if (type === "war.yielded") {
+    return `${tick}  war ${payload.war ?? ""} yielded`.trim();
+  }
+  if (type === "beast.bit") {
+    const beast = typeof payload.beast === "string" ? payload.beast : "a beast";
+    const bitten = typeof payload.target === "string" ? payload.target : who(item);
+    return `${tick}  ${beast} bit ${clip(String(bitten), 24)}`;
+  }
+  if (type === "body.fell") {
+    const holder = typeof payload.holder === "string" ? payload.holder : who(item);
+    return `${tick}  ${clip(holder, 24)} fell`;
+  }
+  if (type === "body.rose") {
+    const holder = typeof payload.holder === "string" ? payload.holder : who(item);
+    return `${tick}  ${clip(holder, 24)} rose`;
+  }
+  if (type === "body.died") {
+    const holder = typeof payload.holder === "string" ? payload.holder : who(item);
+    return `${tick}  ${clip(holder, 24)} died`;
+  }
   if (type === "amendment.propose") {
     const cost = payload.cost;
     const left = payload.currency;
@@ -3821,18 +3853,6 @@ function tapeNoise(type) {
     type === "effect.destroy" ||
     type === "act.follow" ||
     type === "act.heed"
-  );
-}
-
-function arbiterRecord(type) {
-  return (
-    type.startsWith("credential.") ||
-    type.startsWith("amendment.") ||
-    type === "identity.founder" ||
-    type === "genesis" ||
-    type === "coherence.revert" ||
-    type.startsWith("steward.") ||
-    type.endsWith("_failed")
   );
 }
 
@@ -4114,7 +4134,7 @@ function prependEvent(id, item) {
 }
 
 function appendRecord(item) {
-  if (arbiterRecord(item.type) && !streamNoise(item.type)) {
+  if (!streamNoise(item.type)) {
     prependEvent("record-log", item);
   }
   if (!tapeNoise(item.type)) {

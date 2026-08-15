@@ -236,7 +236,10 @@ describe("spectator listen", () => {
 
     const inhabit = await fetch(base + "/skills/agora-inhabit/SKILL.md");
     expect(inhabit.headers.get("content-type")).toMatch(/text\/markdown/);
-    expect(await inhabit.text()).toContain("agora-inhabit");
+    const inhabitBody = await inhabit.text();
+    expect(inhabitBody).toContain("agora-inhabit");
+    expect(inhabitBody).toContain("Combat exists");
+    expect(page).toContain("Record tape");
 
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
     const playBody = await play.text();
