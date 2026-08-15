@@ -192,8 +192,12 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       if (!fields.ok) {
         return fail(item.effect, fields.reason);
       }
-      if (type.value === "wound" && fields.value["target"] === undefined && ctx.targetId !== undefined) {
-        fields.value["target"] = ctx.targetId;
+      if (type.value === "wound" && fields.value["target"] === undefined) {
+        if (fields.value["beast"] === ctx.selfId) {
+          fields.value["target"] = ctx.selfId;
+        } else if (ctx.targetId !== undefined) {
+          fields.value["target"] = ctx.targetId;
+        }
       }
       const id = ctx.nextId();
       ctx.entities.set(id, {

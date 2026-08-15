@@ -1391,6 +1391,9 @@ function visualTone(type) {
   if (type === "war.struck") {
     return { color: 0xe8c36a, count: 20, duration: 900, spread: 2 };
   }
+  if (type === "beast.bit") {
+    return { color: 0x8a3a6a, count: 22, duration: 1000, spread: 2 };
+  }
   if (type === "body.fell") {
     return { color: 0x5c6166, count: 40, duration: 2800, spread: 4 };
   }
@@ -1424,6 +1427,7 @@ function visualDeed(type) {
     type.startsWith("amendment.") ||
     type.startsWith("war.") ||
     type.startsWith("body.") ||
+    type.startsWith("beast.") ||
     type === "wake.left" ||
     type === "wake.heeded" ||
     type === "wake.followed" ||
@@ -2049,6 +2053,19 @@ function noteCombat(item, now) {
     const striker = resolveCombatId(typeof payload.striker === "string" ? payload.striker : actorId(item), payload);
     const target = resolveCombatId(typeof payload.target === "string" ? payload.target : "", payload);
     fireShot(striker, target, now, item);
+    return;
+  }
+  if (type === "beast.bit") {
+    const beast = resolveCombatId(typeof payload.striker === "string" ? payload.striker : "", payload);
+    const victim = resolveCombatId(
+      typeof payload.target === "string"
+        ? payload.target
+        : typeof payload.beast === "string"
+          ? payload.beast
+          : actorId(item),
+      payload,
+    );
+    fireShot(beast, victim, now, item);
     return;
   }
   if (type === "war.yielded") {

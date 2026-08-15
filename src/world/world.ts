@@ -31,6 +31,8 @@ import {
   FIRST_PORT,
   WAR_WOUND_MAX,
   fallenFor,
+  fillBiteParams,
+  isHollowClass,
   openWarBetween,
   parseCombatCell,
   scalarArg,
@@ -812,6 +814,10 @@ export class World {
       if (holder !== undefined && fallenFor(this.entities.values(), holder) !== undefined) {
         return "holder is fallen";
       }
+      const biteBlocked = this.biteWouldFail(identityId, args);
+      if (biteBlocked !== null) {
+        return biteBlocked;
+      }
     }
     const defined = this.clerk.registry.verbs[verb];
     if (defined !== undefined && defined.effects.length > 0) {
@@ -829,7 +835,7 @@ export class World {
   private resolveIntent(intent: Intent): void {
     if (intent.verb === "wait") {
       this.append("act.wait", intent.identityId, { identityId: intent.identityId });
-      this.fireTriggers("act.end", { selfId: intent.identityId });
+      this.fireTriggers("act.end", { selfId: intent.identityId, verb: intent.verb, params: effectParams(intent) });
       return;
     }
     if (intent.verb === "move") {
@@ -870,7 +876,7 @@ export class World {
       this.marks.set(key, { text, authorId: intent.identityId, tick: this.clerk.tick, position: at });
       this.append("act.mark", intent.identityId, { text, ...at, identityId: intent.identityId });
       this.witness(intent.identityId, "fame");
-      this.fireTriggers("act.end", { selfId: intent.identityId });
+      this.fireTriggers("act.end", { selfId: intent.identityId, verb: intent.verb, params: effectParams(intent) });
       return;
     }
     if (intent.verb === "depict") {
@@ -934,8 +940,14 @@ export class World {
       });
       if (intent.verb === "strike") {
         this.maybeAutoFall(intent);
+        this.maybeBeastBite(intent);
       }
-      this.fireTriggers("act.end", { selfId: intent.identityId });
+      this.fireTriggers("act.end", {
+        selfId: intent.identityId,
+        verb: intent.verb,
+        targetId: intent.target,
+        params: effectParams(intent),
+      });
     }
   }
 
@@ -1491,7 +1503,16 @@ export class World {
     }
   }
 
-  private fireTriggers(when: HookName = "tick_boundary", ctx?: { selfId?: string; from?: Position }): void {
+  private fireTriggers(
+    when: HookName = "tick_boundary",
+    ctx?: {
+      selfId?: string;
+      from?: Position;
+      verb?: string;
+      targetId?: string;
+      params?: Record<string, string | number | boolean | null>;
+    },
+  ): void {
     const tick = when === "tick_boundary" ? this.clerk.tick + 1 : this.clerk.tick;
     const selfId = ctx?.selfId ?? "ARBITER";
     const at = selfId === "ARBITER" ? undefined : this.bodies.get(selfId);
@@ -1502,7 +1523,23 @@ export class World {
       if (trigger === undefined || trigger.when !== when) {
         continue;
       }
-      if (!triggerMatches(trigger.condition, tick, this.clerk.registry)) {
+      if (id === "beast_bite") {
+        continue;
+      }
+      const forwarded = {
+        self: selfId,
+        ...(ctx?.verb === undefined ? {} : { verb: ctx.verb }),
+        ...(at === undefined ? {} : { position: formatCell(at) }),
+        ...(ctx?.from === undefined ? {} : { from: formatCell(ctx.from) }),
+        ...(classified === undefined
+          ? {}
+          : {
+              cell_class: classified.cellClass,
+              ...(classified.anchorClass === null ? {} : { anchor_class: classified.anchorClass }),
+            }),
+        ...(ctx?.params ?? {}),
+      };
+      if (!triggerMatches(trigger.condition, tick, this.clerk.registry, forwarded)) {
         continue;
       }
       for (const effect of trigger.effects as Array<{ effect: string; args: unknown[] }>) {
@@ -1515,17 +1552,8 @@ export class World {
           continue;
         }
         const runtime = this.bindEffects(selfId, {
-          params: {
-            self: selfId,
-            ...(at === undefined ? {} : { position: formatCell(at) }),
-            ...(ctx?.from === undefined ? {} : { from: formatCell(ctx.from) }),
-            ...(classified === undefined
-              ? {}
-              : {
-                  cell_class: classified.cellClass,
-                  ...(classified.anchorClass === null ? {} : { anchor_class: classified.anchorClass }),
-                }),
-          },
+          targetId: ctx?.targetId,
+          params: forwarded,
           emit: (name, payload) => {
             this.append(name, selfId === "ARBITER" ? "ARBITER" : selfId, { ...payload, triggerId: id });
           },
@@ -1712,7 +1740,12 @@ export class World {
       target: wake.id,
     });
     this.witness(intent.identityId, "fame");
-    this.fireTriggers("act.end", { selfId: intent.identityId });
+    this.fireTriggers("act.end", {
+      selfId: intent.identityId,
+      verb: intent.verb,
+      targetId: intent.target,
+      params: effectParams(intent),
+    });
   }
 
   private heedLootFor(kind: string, wakeId: string): string | null {
@@ -1774,7 +1807,12 @@ export class World {
       ...dest.position,
     });
     this.witness(intent.identityId, "fame");
-    this.fireTriggers("act.end", { selfId: intent.identityId });
+    this.fireTriggers("act.end", {
+      selfId: intent.identityId,
+      verb: intent.verb,
+      targetId: intent.target,
+      params: effectParams(intent),
+    });
   }
 
   private followDestination(
@@ -2009,7 +2047,12 @@ export class World {
     });
     this.append("effect.create", intent.identityId, { id, type: kind, ...at });
     this.witness(intent.identityId, "fame");
-    this.fireTriggers("act.end", { selfId: intent.identityId });
+    this.fireTriggers("act.end", {
+      selfId: intent.identityId,
+      verb: intent.verb,
+      targetId: intent.target,
+      params: effectParams(intent),
+    });
   }
 
   private resolveNamedCell(name: string): Position | null {
@@ -2462,6 +2505,18 @@ export class World {
     if (name === "war.yielded") {
       return { war: intent.target };
     }
+    if (name === "beast.bit") {
+      const wound = created.find((item) => item.type === "wound" && item.fields["beast"] === intent.identityId);
+      return {
+        striker: intent.target ?? params["target"],
+        target: intent.identityId,
+        beast: intent.identityId,
+        name: params["name"],
+        position: params["position"],
+        tick: params["tick"] ?? this.clerk.tick,
+        wound: wound?.id,
+      };
+    }
     if (name === "body.fell") {
       const fallen = created.find((item) => item.type === "fallen");
       return {
@@ -2483,22 +2538,174 @@ export class World {
     if (target === undefined) {
       return;
     }
-    if (fallenFor(this.entities.values(), target) !== undefined) {
+    const name = typeof intent.params?.["name"] === "string" ? intent.params["name"] : undefined;
+    this.maybeAutoFallHolder(intent.identityId, target, name, intent.params?.["position"]);
+  }
+
+  private maybeAutoFallHolder(actor: string, holder: string, name?: string, position?: unknown, counterpart?: string): void {
+    if (fallenFor(this.entities.values(), holder) !== undefined) {
       return;
     }
-    const name = typeof intent.params?.["name"] === "string" ? intent.params["name"] : undefined;
-    const war = openWarBetween(this.entities.values(), intent.identityId, target);
+    const war = openWarBetween(this.entities.values(), actor, counterpart ?? holder);
     const sinceTick = this.entityBornTick(war);
-    const wounds = thisWarWounds(this.entities.values(), { target, name, sinceTick });
+    const wounds = thisWarWounds(this.entities.values(), { target: holder, name, sinceTick });
     if (wounds.length < WAR_WOUND_MAX) {
       return;
     }
     const at =
-      parseCombatCell(intent.params?.["position"]) ??
-      this.bodies.get(target) ??
-      this.entities.get(target)?.position ??
-      this.bodyOf(intent.identityId);
-    this.writeFallen(target, at, this.clerk.tick, intent.identityId);
+      parseCombatCell(position) ??
+      this.bodies.get(holder) ??
+      this.entities.get(holder)?.position ??
+      this.bodyOf(actor);
+    this.writeFallen(holder, at, this.clerk.tick, actor);
+  }
+
+  private strikeAtLife(args: Record<string, unknown>, strikerId: string): boolean {
+    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const name = typeof args["name"] === "string" ? args["name"] : undefined;
+    if (target !== undefined && this.identities.identities.has(target)) {
+      return false;
+    }
+    if (name !== undefined && this.identityNamed(name) !== undefined) {
+      return false;
+    }
+    if (this.liveStirring(target) !== undefined) {
+      return true;
+    }
+    if (this.hollowRef(target) !== undefined || this.hollowRef(name) !== undefined) {
+      return true;
+    }
+    const at = parseCombatCell(args["position"]) ?? this.bodies.get(strikerId);
+    return at !== undefined && at !== null && isHollowClass(this.anchorAt(at)?.class);
+  }
+
+  private identityNamed(name: string): string | undefined {
+    const folded = name.toLowerCase();
+    for (const identity of this.identities.identities.values()) {
+      if (identity.name !== null && identity.name.toLowerCase() === folded) {
+        return identity.id;
+      }
+    }
+    return undefined;
+  }
+
+  private liveStirring(target: string | undefined): Entity | undefined {
+    const wake = this.liveWake(target);
+    return wake?.fields["kind"] === "stirring" ? wake : undefined;
+  }
+
+  private hollowRef(value: string | undefined): Anchor | undefined {
+    if (value === undefined || value.length === 0) {
+      return undefined;
+    }
+    const raw = value.startsWith("ANCHOR:") ? value.slice("ANCHOR:".length) : value;
+    return this.anchors.find((anchor) => {
+      if (!isHollowClass(anchor.class)) {
+        return false;
+      }
+      if (anchor.designation === raw || anchor.designation === value) {
+        return true;
+      }
+      const named = this.clerk.registry.text[`anchors.${anchor.designation}.name`];
+      return named === value || named === raw;
+    });
+  }
+
+  private biteParams(identityId: string, args: Record<string, unknown>): Record<string, string | number | boolean | null> {
+    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const params = collectVerbParams(this.clerk.registry.verbs["strike"]?.params ?? {}, args);
+    return fillBiteParams({
+      selfId: identityId,
+      target,
+      params: effectParams({ params, target }),
+      position: typeof args["position"] === "string" ? args["position"] : formatCell(this.bodyOf(identityId)),
+      tick: typeof args["tick"] === "number" ? args["tick"] : this.clerk.tick,
+    });
+  }
+
+  private biteWouldFail(identityId: string, args: Record<string, unknown>): string | null {
+    const trigger = this.clerk.registry.triggers["beast_bite"];
+    if (trigger === undefined || !this.strikeAtLife(args, identityId)) {
+      return null;
+    }
+    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const params = this.biteParams(identityId, args);
+    const entities = new Map(this.entities);
+    const fields = new Map(this.fields);
+    const reports = runEffects(trigger.effects as Array<{ effect: string; args: unknown[] }>, {
+      selfId: identityId,
+      targetId: target,
+      params,
+      fields,
+      entities,
+      emit: () => undefined,
+      nextId: () => "ent:dry",
+      peekCurrency: (id) => this.clerk.identities.get(id)?.currency,
+      moveCurrency: () => false,
+      creditCurrency: () => false,
+    });
+    const failed = reports.find((item) => !item.ok);
+    if (failed === undefined) {
+      return null;
+    }
+    const reason = failed.reason ?? "effect failed";
+    if (reason.startsWith("unbound") || reason.includes("position must") || reason === "create requires a type") {
+      return reason;
+    }
+    return null;
+  }
+
+  private maybeBeastBite(intent: Intent): void {
+    const trigger = this.clerk.registry.triggers["beast_bite"];
+    if (trigger === undefined) {
+      return;
+    }
+    const args: Record<string, unknown> = { ...(intent.params ?? {}), ...(intent.target === undefined ? {} : { target: intent.target }) };
+    if (!this.strikeAtLife(args, intent.identityId)) {
+      return;
+    }
+    const beforeIds = new Set(this.entities.keys());
+    const params = fillBiteParams({
+      selfId: intent.identityId,
+      target: intent.target,
+      params: effectParams(intent),
+      position: typeof intent.params?.["position"] === "string" ? intent.params["position"] : formatCell(this.bodyOf(intent.identityId)),
+      tick: typeof intent.params?.["tick"] === "number" ? intent.params["tick"] : this.clerk.tick,
+    });
+    const runtime = this.bindEffects(intent.identityId, {
+      targetId: intent.target,
+      params,
+      emit: (name, payload) => {
+        const emitParams: Record<string, string | number | boolean> = { ...(intent.params ?? {}) };
+        if (typeof params["position"] === "string") {
+          emitParams["position"] = params["position"];
+        }
+        if (typeof params["tick"] === "number") {
+          emitParams["tick"] = params["tick"];
+        }
+        const extra = this.combatEmitFields(name, { ...intent, params: emitParams }, beforeIds);
+        this.append(name, intent.identityId, { ...payload, ...extra, triggerId: "beast_bite", identityId: intent.identityId });
+      },
+    });
+    const reports = runEffects(trigger.effects as Array<{ effect: string; args: unknown[] }>, runtime.ctx);
+    const failed = reports.find((item) => !item.ok);
+    if (failed !== undefined) {
+      this.append("act.strike_failed", intent.identityId, {
+        reason: failed.reason ?? "effect failed",
+        effect: failed.effect,
+        triggerId: "beast_bite",
+        identityId: intent.identityId,
+      });
+      return;
+    }
+    runtime.commitSeq();
+    this.maybeAutoFallHolder(
+      intent.identityId,
+      intent.identityId,
+      undefined,
+      intent.params?.["position"],
+      intent.target,
+    );
   }
 
   private entityBornTick(entity: Entity | undefined): number {
@@ -2730,7 +2937,12 @@ function parseInspectCell(target: string): Position | null {
   return { x, y, z };
 }
 
-function triggerMatches(condition: unknown, tick: number, registry: { params: Record<string, { value: number } | undefined> }): boolean {
+function triggerMatches(
+  condition: unknown,
+  tick: number,
+  registry: { params: Record<string, { value: number } | undefined> },
+  params?: Record<string, string | number | boolean | null>,
+): boolean {
   if (condition === undefined || condition === null) {
     return true;
   }
@@ -2746,5 +2958,18 @@ function triggerMatches(condition: unknown, tick: number, registry: { params: Re
     const remainder = Number(row.args[2]);
     return Number.isInteger(divisor) && divisor > 0 && tick % divisor === remainder;
   }
+  if (row.pred === "eq" && Array.isArray(row.args)) {
+    return conditionArg(row.args[0], params) === conditionArg(row.args[1], params);
+  }
   return true;
+}
+
+function conditionArg(value: unknown, params?: Record<string, string | number | boolean | null>): string | number | boolean | null | undefined {
+  if (typeof value !== "string" || !value.startsWith("$")) {
+    return typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null
+      ? value
+      : undefined;
+  }
+  const name = value.slice(1);
+  return params?.[name];
 }

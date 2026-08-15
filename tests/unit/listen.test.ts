@@ -22,6 +22,7 @@ describe("spectator listen", () => {
     expect(streamKind("body.fell")).toBe("spatial");
     expect(streamKind("body.rose")).toBe("spatial");
     expect(streamKind("body.died")).toBe("spatial");
+    expect(streamKind("beast.bit")).toBe("spatial");
     expect(streamKind("amendment.propose")).toBe("governance");
     expect(streamKind("tick.boundary")).toBe("governance");
   });

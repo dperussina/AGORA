@@ -59,6 +59,32 @@ function registerNamed(world: World, name: string) {
   return creds;
 }
 
+function plantWake(
+  world: World,
+  id: string,
+  kind: string,
+  position: { x: number; y: number; z: number },
+  traveler: string,
+) {
+  world.entities.set(id, {
+    id,
+    type: "wake",
+    fields: { kind, position: `${position.x},${position.y},${position.z}`, traveler, tick: world.clerk.tick },
+    position: { ...position },
+  });
+}
+
+function installBeastBite(world: World) {
+  world.clerk.registry.triggers["beast_bite"] = {
+    when: "act.end",
+    condition: { pred: "eq", args: ["$verb", "strike"] },
+    effects: [
+      { effect: "create", args: ["wound", null, { beast: "$self", position: "$position", striker: "$target", tick: "$tick" }] },
+      { effect: "emit", args: ["beast.bit"] },
+    ],
+  };
+}
+
 function installCombat(world: World) {
   world.clerk.registry.verbs["declare"] = {
     cost: 1,
@@ -120,6 +146,10 @@ describe("combat law", () => {
       properties: { verb: { enum: string[] }; position: { type: string }; tick: { type: string }; until: { type: string }; name: { type: string }; target: { type: string } };
     };
     expect(act.properties.verb.enum).toEqual(expect.arrayContaining(["declare", "strike", "yield", "fall", "rise"]));
+    const seeded = listTools(seedRegistry()).find((tool) => tool.name === "act")?.inputSchema as {
+      properties: { verb: { enum: string[] } };
+    };
+    expect(seeded.properties.verb.enum).toEqual(expect.arrayContaining(["fall", "rise", "declare", "strike", "yield"]));
     expect(act.properties.position.type).toBe("string");
     expect(act.properties.tick.type).toBe("integer");
     expect(act.properties.until.type).toBe("integer");
@@ -321,5 +351,145 @@ describe("combat law", () => {
     const died = world.log.events().find((event) => event.type === "body.died");
     expect(died?.payload["holder"]).toBe(bob.identityId);
     expect(died?.payload["dest"]).toBe("8,9,10");
+  });
+
+  it("does not write a bonus wound when a PvP strike lands", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const bob = registerNamed(world, "Bob");
+    installCombat(world);
+    installBeastBite(world);
+    const at = world.bodies.get(bob.identityId)!;
+    const cell = `${at.x},${at.y},${at.z}`;
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "declare", target: bob.identityId } }, 10),
+      ada.sessionToken,
+    );
+    world.advanceTick();
+    keepPresent(world, ada.sessionToken);
+    expect(
+      call(
+        world,
+        req(
+          "tools/call",
+          {
+            name: "act",
+            arguments: { verb: "strike", name: "Bob", position: cell, target: bob.identityId, tick: world.clerk.tick },
+          },
+          11,
+        ),
+        ada.sessionToken,
+      ).result,
+    ).toMatchObject({ accepted: true });
+    world.advanceTick();
+    const wounds = [...world.entities.values()].filter((item) => item.type === "wound");
+    expect(wounds).toHaveLength(1);
+    expect(wounds[0]?.fields["beast"]).toBe("Bob");
+    expect(wounds[0]?.fields["striker"]).toBe(ada.identityId);
+    expect(wounds[0]?.fields["target"]).toBe(bob.identityId);
+    expect(world.log.events().some((event) => event.type === "beast.bit")).toBe(false);
+    expect(thisWarWounds(world.entities.values(), { target: ada.identityId, sinceTick: 0 })).toHaveLength(0);
+  });
+
+  it("bites the striker when a strike lands on a stirring, even if the client omits binds", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installCombat(world);
+    installBeastBite(world);
+    const at = world.bodies.get(ada.identityId)!;
+    const cell = `${at.x},${at.y},${at.z}`;
+    plantWake(world, "ent:stir", "stirring", at, ada.identityId);
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "declare", target: "ent:stir" } }, 10),
+      ada.sessionToken,
+    );
+    world.advanceTick();
+    keepPresent(world, ada.sessionToken);
+    expect(
+      call(
+        world,
+        req(
+          "tools/call",
+          {
+            name: "act",
+            arguments: { verb: "strike", name: "The Coil", position: cell, target: "ent:stir", tick: world.clerk.tick },
+          },
+          11,
+        ),
+        ada.sessionToken,
+      ).result,
+    ).toMatchObject({ accepted: true });
+    world.advanceTick();
+    const wounds = [...world.entities.values()].filter((item) => item.type === "wound");
+    expect(wounds).toHaveLength(2);
+    const onBeast = wounds.find((item) => item.fields["beast"] === "The Coil" || item.fields["target"] === "ent:stir");
+    const onPlayer = wounds.find((item) => item.fields["beast"] === ada.identityId);
+    expect(onBeast?.fields["striker"]).toBe(ada.identityId);
+    expect(onPlayer?.fields["striker"]).toBe("ent:stir");
+    expect(onPlayer?.fields["target"]).toBe(ada.identityId);
+    expect(onPlayer?.fields["position"]).toBe(cell);
+    const bit = world.log.events().find((event) => event.type === "beast.bit");
+    expect(bit?.payload["striker"]).toBe("ent:stir");
+    expect(bit?.payload["target"]).toBe(ada.identityId);
+    expect(bit?.payload["wound"]).toBe(onPlayer?.id);
+    expect(thisWarWounds(world.entities.values(), { target: ada.identityId, sinceTick: 0 })).toHaveLength(1);
+    expect(thisWarWounds(world.entities.values(), { target: "ent:stir", sinceTick: 0 })).toHaveLength(1);
+  });
+
+  it("bites on a hollow-class name and falls each side at three this-war wounds", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    installCombat(world);
+    installBeastBite(world);
+    const hollow = world.anchors.find((item) => item.class === "hollow");
+    expect(hollow).toBeDefined();
+    world.clerk.registry.text[`anchors.${hollow!.designation}.name`] = "The Maw";
+    world.bodies.set(ada.identityId, { ...hollow!.centre });
+    const cell = `${hollow!.centre.x},${hollow!.centre.y},${hollow!.centre.z}`;
+    plantWake(world, "ent:maw", "stirring", hollow!.centre, ada.identityId);
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "declare", target: "ent:maw" } }, 10),
+      ada.sessionToken,
+    );
+    world.advanceTick();
+    for (let i = 0; i < WAR_WOUND_MAX; i += 1) {
+      keepPresent(world, ada.sessionToken);
+      expect(
+        call(
+          world,
+          req(
+            "tools/call",
+            {
+              name: "act",
+              arguments: {
+                verb: "strike",
+                name: "The Maw",
+                position: cell,
+                target: "ent:maw",
+                tick: world.clerk.tick,
+              },
+            },
+            20 + i,
+          ),
+          ada.sessionToken,
+        ).result,
+      ).toMatchObject({ accepted: true });
+      world.advanceTick();
+    }
+    expect(thisWarWounds(world.entities.values(), { target: "ent:maw", name: "The Maw", sinceTick: 0 })).toHaveLength(
+      WAR_WOUND_MAX,
+    );
+    expect(thisWarWounds(world.entities.values(), { target: ada.identityId, sinceTick: 0 })).toHaveLength(WAR_WOUND_MAX);
+    expect([...world.entities.values()].some((item) => item.type === "fallen" && item.fields["holder"] === "ent:maw")).toBe(
+      true,
+    );
+    expect(
+      [...world.entities.values()].some((item) => item.type === "fallen" && item.fields["holder"] === ada.identityId),
+    ).toBe(true);
+    expect(world.log.events().filter((event) => event.type === "beast.bit")).toHaveLength(WAR_WOUND_MAX);
+    expect(world.log.events().filter((event) => event.type === "body.fell")).toHaveLength(2);
   });
 });

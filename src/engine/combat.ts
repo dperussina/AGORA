@@ -119,3 +119,30 @@ export function scalarArg(value: unknown): string | number | boolean | undefined
   }
   return undefined;
 }
+
+export function isHollowClass(value: string | null | undefined): boolean {
+  return value === "hollow";
+}
+
+/** Forward the strike's named params so beast_bite can bind even when the client omitted them. */
+export function fillBiteParams(args: {
+  selfId: string;
+  target?: string;
+  params?: Record<string, string | number | boolean | null>;
+  position: string;
+  tick: number;
+}): Record<string, string | number | boolean | null> {
+  const params: Record<string, string | number | boolean | null> = { ...(args.params ?? {}) };
+  params["self"] = args.selfId;
+  params["verb"] = "strike";
+  if (params["position"] === undefined || params["position"] === null || params["position"] === "") {
+    params["position"] = args.position;
+  }
+  if (params["tick"] === undefined || params["tick"] === null) {
+    params["tick"] = args.tick;
+  }
+  if (args.target !== undefined && args.target.length > 0) {
+    params["target"] = args.target;
+  }
+  return params;
+}

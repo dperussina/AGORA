@@ -46,6 +46,9 @@ const ACT_PARAM_TYPES: Record<string, Record<string, unknown>> = {
 /** Params clients strip unless they are named on the act schema. Combat + depict always listed. */
 const ACT_PARAM_ALWAYS = ["target", "name", "position", "tick", "until", "kind", "channel", "caption", "mime", "hash", "data", "scene"] as const;
 
+/** Voted combat + wake verbs stay on the enum so clients do not cache mark/move/wait only. */
+const ACT_VERB_ALWAYS = ["declare", "strike", "yield", "fall", "rise", "heed", "follow"] as const;
+
 function actParamProperties(registry: Registry): Record<string, unknown> {
   const declared = new Map<string, string>();
   for (const verb of Object.values(registry.verbs)) {
@@ -73,7 +76,7 @@ export function listTools(registry: Registry): Array<{
   description: string;
   inputSchema: Record<string, unknown>;
 }> {
-  const verbs = [...new Set([...Object.keys(registry.verbs), "heed", "follow"])].sort();
+  const verbs = [...new Set([...Object.keys(registry.verbs), ...ACT_VERB_ALWAYS])].sort();
   return [
     {
       name: "whoami",

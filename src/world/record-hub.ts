@@ -14,7 +14,8 @@ export function streamKind(type: string): "governance" | "spatial" {
     type === "speak.warden" ||
     type.startsWith("effect.") ||
     type.startsWith("war.") ||
-    type.startsWith("body.")
+    type.startsWith("body.") ||
+    type.startsWith("beast.")
   ) {
     return "spatial";
   }
