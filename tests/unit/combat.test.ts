@@ -251,6 +251,7 @@ describe("combat law", () => {
     const wounds = [...world.entities.values()].filter((item) => item.type === "wound");
     expect(wounds).toHaveLength(WAR_WOUND_MAX);
     expect(wounds.every((item) => item.fields["target"] === bob.identityId)).toBe(true);
+    expect(wounds.every((item) => item.fields["amount"] === 1)).toBe(true);
     const created = world.log.events().find((event) => event.type === "effect.create" && event.payload["type"] === "wound");
     expect((created?.payload["fields"] as { target?: string } | undefined)?.target).toBe(bob.identityId);
     const fallen = [...world.entities.values()].find((item) => item.type === "fallen");
@@ -430,6 +431,8 @@ describe("combat law", () => {
     expect(onPlayer?.fields["striker"]).toBe("ent:stir");
     expect(onPlayer?.fields["target"]).toBe(ada.identityId);
     expect(onPlayer?.fields["position"]).toBe(cell);
+    expect(onBeast?.fields["amount"]).toBe(1);
+    expect(onPlayer?.fields["amount"]).toBe(1);
     const bit = world.log.events().find((event) => event.type === "beast.bit");
     expect(bit?.payload["striker"]).toBe("ent:stir");
     expect(bit?.payload["target"]).toBe(ada.identityId);
