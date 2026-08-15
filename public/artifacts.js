@@ -434,15 +434,44 @@ export function driftArtifact() {
 
 export function entityArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.72, 0.48, 0.48), MAT.entity));
-  g.add(mesh(new THREE.BoxGeometry(0.78, 0.06, 0.54), MAT.hull, 0, 0.28, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.78, 0.06, 0.54), MAT.hull, 0, -0.28, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), MAT.rim, 0.42, 0, 0.28));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), MAT.rim, -0.42, 0, -0.28));
-  const lamp = mesh(new THREE.SphereGeometry(0.08, 8, 6), MAT.navWarm, 0, 0.38, 0);
+  g.add(
+    mesh(
+      lathe(
+        [
+          [0.05, -0.16],
+          [0.2, -0.14],
+          [0.28, -0.02],
+          [0.26, 0.12],
+          [0.16, 0.22],
+          [0.07, 0.28],
+        ],
+        16,
+      ),
+      MAT.entity,
+    ),
+  );
+  g.add(mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.06, 12), MAT.hull, 0, 0.24, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.08, 8), MAT.iron, 0, 0.3, 0));
+  const gyro = mesh(new THREE.TorusGeometry(0.32, 0.022, 6, 20), MAT.rim, 0, 0.04, 0);
+  gyro.userData.motion = "orbit";
+  g.add(gyro);
+  const yoke = mesh(new THREE.TorusGeometry(0.3, 0.016, 6, 16), MAT.iron, 0, 0.04, 0);
+  yoke.rotation.y = Math.PI / 2;
+  yoke.userData.motion = "gimbal";
+  g.add(yoke);
+  g.add(mesh(new THREE.BoxGeometry(0.2, 0.05, 0.03), MAT.navWarm, 0, 0.08, 0.25));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 0.06), MAT.hull, 0, 0.08, 0.22));
+  for (let i = 0; i < 3; i += 1) {
+    const a = (i / 3) * Math.PI * 2 + 0.52;
+    const x = Math.cos(a) * 0.2;
+    const z = Math.sin(a) * 0.2;
+    g.add(mesh(new THREE.CylinderGeometry(0.028, 0.042, 0.26, 6), MAT.hull, x, -0.28, z));
+    g.add(mesh(new THREE.BoxGeometry(0.1, 0.035, 0.1), MAT.iron, x * 1.08, -0.42, z * 1.08));
+  }
+  const lamp = mesh(new THREE.SphereGeometry(0.065, 8, 6), MAT.navWarm, 0, 0.4, 0);
   lamp.userData.motion = "pulse";
   g.add(lamp);
-  const belly = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.navWarm, 0, -0.36, 0);
+  const belly = mesh(new THREE.SphereGeometry(0.055, 8, 6), MAT.navWarm, 0, -0.06, 0);
   belly.userData.motion = "pulse";
   g.add(belly);
   return g;
