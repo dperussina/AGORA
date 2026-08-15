@@ -468,23 +468,32 @@ function hearthBlock() {
 
 function chairBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.46, 0.07, 0.44), MAT.timber, 0, 0.32, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.46, 0.52, 0.07), MAT.timber, 0, 0.6, -0.2));
-  g.add(mesh(new THREE.BoxGeometry(0.4, 0.08, 0.04), MAT.timberDark, 0, 0.78, -0.2));
-  for (const [x, z] of [[-0.18, -0.16], [0.18, -0.16], [-0.18, 0.16], [0.18, 0.16]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), MAT.timberDark, x, 0.16, z));
+  g.add(mesh(new THREE.BoxGeometry(0.52, 0.06, 0.5), MAT.timber, 0, 0.34, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.44), MAT.linen, 0, 0.39, 0.01));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.62, 0.07), MAT.timber, 0, 0.68, -0.22));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.05, 0.05), MAT.timberDark, 0, 0.92, -0.22));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.04, 0.04), MAT.timberDark, 0, 0.72, -0.22));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.04, 0.04), MAT.timberDark, 0, 0.54, -0.22));
+  for (const [x, z] of [[-0.2, -0.18], [0.2, -0.18], [-0.2, 0.18], [0.2, 0.18]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.07, 0.34, 0.07), MAT.timberDark, x, 0.17, z));
   }
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), MAT.timberDark, 0, 0.12, 0.18));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), MAT.timberDark, 0, 0.12, -0.18));
   return g;
 }
 
 function tableBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.86, 0.08, 0.56), MAT.timber, 0, 0.46, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.8, 0.03, 0.5), MAT.timberDark, 0, 0.41, 0));
-  for (const [x, z] of [[-0.34, -0.2], [0.34, -0.2], [-0.34, 0.2], [0.34, 0.2]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.08, 0.42, 0.08), MAT.timberDark, x, 0.21, z));
+  g.add(mesh(new THREE.BoxGeometry(0.94, 0.07, 0.62), MAT.timber, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.9, 0.04, 0.58), MAT.timberDark, 0, 0.45, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.86, 0.08, 0.54), MAT.timberDark, 0, 0.4, 0));
+  for (const [x, z] of [[-0.38, -0.22], [0.38, -0.22], [-0.38, 0.22], [0.38, 0.22]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.09, 0.4, 0.09), MAT.timberDark, x, 0.2, z));
   }
-  g.add(mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.06, 8), MAT.iron, 0.16, 0.54, 0.08));
+  g.add(mesh(new THREE.BoxGeometry(0.76, 0.04, 0.04), MAT.iron, 0, 0.16, -0.22));
+  g.add(mesh(new THREE.BoxGeometry(0.76, 0.04, 0.04), MAT.iron, 0, 0.16, 0.22));
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.05, 10), MAT.brass, 0.2, 0.56, 0.1));
+  g.add(mesh(new THREE.BoxGeometry(0.16, 0.04, 0.12), MAT.archive, -0.22, 0.56, -0.08));
   return g;
 }
 
@@ -503,11 +512,18 @@ function lampBlock() {
 
 function bedBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.62, 0.12, 0.92), MAT.timberDark, 0, 0.16, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.56, 0.1, 0.84), MAT.linen, 0, 0.26, 0.02));
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.12, 0.18), MAT.linen, 0, 0.36, -0.3));
-  g.add(mesh(new THREE.BoxGeometry(0.64, 0.48, 0.08), MAT.timber, 0, 0.4, -0.46));
-  g.add(mesh(new THREE.BoxGeometry(0.64, 0.16, 0.08), MAT.timber, 0, 0.2, 0.46));
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.1, 1.02), MAT.timberDark, 0, 0.18, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.68, 0.08, 0.08), MAT.timber, 0, 0.14, -0.47));
+  g.add(mesh(new THREE.BoxGeometry(0.68, 0.08, 0.08), MAT.timber, 0, 0.14, 0.47));
+  g.add(mesh(new THREE.BoxGeometry(0.64, 0.14, 0.92), MAT.linen, 0, 0.28, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.08, 0.86), MAT.linen, 0, 0.36, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.52, 0.14, 0.2), MAT.linen, 0, 0.44, -0.32));
+  g.add(mesh(new THREE.BoxGeometry(0.74, 0.58, 0.08), MAT.timber, 0, 0.46, -0.5));
+  g.add(mesh(new THREE.BoxGeometry(0.62, 0.06, 0.04), MAT.timberDark, 0, 0.62, -0.5));
+  g.add(mesh(new THREE.BoxGeometry(0.74, 0.22, 0.08), MAT.timber, 0, 0.24, 0.5));
+  for (const [x, z] of [[-0.3, -0.48], [0.3, -0.48], [-0.3, 0.48], [0.3, 0.48]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.08, 0.2, 0.08), MAT.timberDark, x, 0.1, z));
+  }
   return g;
 }
 
@@ -585,13 +601,16 @@ function wallLBlock() {
 
 function crateBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(1, 1, 1), MAT.timber, 0, 0.5, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.02, 0.08, 1.02), MAT.timberDark, 0, 0.96, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.02, 0.08, 1.02), MAT.timberDark, 0, 0.04, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.01, 0.1, 1.01), MAT.iron, 0, 0.5, 0));
-  for (const [x, z] of [[0.46, 0.46], [-0.46, 0.46], [0.46, -0.46], [-0.46, -0.46]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.08, 1, 0.08), MAT.iron, x, 0.5, z));
+  g.add(mesh(new THREE.BoxGeometry(0.62, 0.5, 0.62), MAT.timber, 0, 0.27, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.66, 0.06, 0.66), MAT.timberDark, 0, 0.54, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.66, 0.06, 0.66), MAT.timberDark, 0, 0.04, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.64, 0.06, 0.64), MAT.iron, 0, 0.27, 0));
+  for (const [x, z] of [[0.28, 0.28], [-0.28, 0.28], [0.28, -0.28], [-0.28, -0.28]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), MAT.iron, x, 0.27, z));
   }
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.04, 0.04), MAT.timberDark, 0, 0.4, 0.32));
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.04, 0.04), MAT.timberDark, 0, 0.4, -0.32));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.05, 0.16), MAT.iron, 0, 0.58, 0));
   return g;
 }
 
