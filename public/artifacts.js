@@ -601,22 +601,27 @@ function wallPlate(axis, sign) {
   const inset = 0.5 - SLAB / 2;
   if (axis === "z") {
     const z = sign * inset;
-    g.add(mesh(new THREE.BoxGeometry(1, 1, SLAB), MAT.deck, 0, 0.5, z));
-    g.add(mesh(new THREE.BoxGeometry(1.02, 0.1, SLAB + 0.02), MAT.ion, 0, 0.5, z));
-    g.add(mesh(new THREE.BoxGeometry(1.01, 0.05, SLAB + 0.01), MAT.nav, 0, 0.975, z));
+    g.add(mesh(new THREE.BoxGeometry(1, 1, SLAB), MAT.stone, 0, 0.5, z));
+    g.add(mesh(new THREE.BoxGeometry(1.02, 0.1, SLAB + 0.04), MAT.stoneDark, 0, 0.5, z));
+    g.add(mesh(new THREE.BoxGeometry(1.04, 0.08, SLAB + 0.02), MAT.stoneDark, 0, 0.97, z));
+    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, SLAB + 0.03), MAT.iron, -0.46, 0.51, z));
+    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, SLAB + 0.03), MAT.iron, 0.46, 0.51, z));
     return g;
   }
   if (axis === "x") {
     const x = sign * inset;
-    g.add(mesh(new THREE.BoxGeometry(SLAB, 1, 1), MAT.deck, x, 0.5, 0));
-    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.02, 0.1, 1.02), MAT.ion, x, 0.5, 0));
-    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.01, 0.05, 1.01), MAT.nav, x, 0.975, 0));
+    g.add(mesh(new THREE.BoxGeometry(SLAB, 1, 1), MAT.stone, x, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.04, 0.1, 1.02), MAT.stoneDark, x, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.02, 0.08, 1.04), MAT.stoneDark, x, 0.97, 0));
+    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.03, 1.02, 0.08), MAT.iron, x, 0.51, -0.46));
+    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.03, 1.02, 0.08), MAT.iron, x, 0.51, 0.46));
     return g;
   }
   const y = sign > 0 ? 1 - SLAB / 2 : SLAB / 2;
-  g.add(mesh(new THREE.BoxGeometry(1, SLAB, 1), MAT.deck, 0, y, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.02, SLAB + 0.02, 0.1), MAT.ion, 0, y, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.1, SLAB + 0.02, 1.02), MAT.nav, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(1, SLAB, 1), MAT.stone, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.04, SLAB + 0.02, 1.04), MAT.stoneDark, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, SLAB + 0.03, 1.02), MAT.iron, -0.46, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, SLAB + 0.03, 1.02), MAT.iron, 0.46, y, 0));
   return g;
 }
 
