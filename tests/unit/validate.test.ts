@@ -144,6 +144,30 @@ describe("validatePatch", () => {
     ).toEqual({ ok: true, tier: 2 });
   });
 
+  it("rejects schema.extend_type without field {name, type}", () => {
+    const bag = validatePatch(registry, {
+      kind: "schema.extend_type",
+      type: "agent",
+      fields: { currency: { type: "int", default: 1000 } },
+    });
+    expect(bag.ok).toBe(false);
+    if (!bag.ok) {
+      expect(bag.code).toBe("schema");
+    }
+    const missing = validatePatch(registry, { kind: "schema.extend_type", type: "agent" });
+    expect(missing.ok).toBe(false);
+  });
+
+  it("accepts schema.extend_type with a single field", () => {
+    expect(
+      validatePatch(registry, {
+        kind: "schema.extend_type",
+        type: "agent",
+        field: { name: "note", type: "string" },
+      }),
+    ).toEqual({ ok: true, tier: 2 });
+  });
+
   it("does not mutate the registry", () => {
     const version = registry.version;
     validatePatch(registry, { kind: "param.set", path: "params.action_budget", value: 5 });

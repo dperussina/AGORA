@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Clerk } from "../../src/engine/clerk.ts";
 import { applyPatch } from "../../src/engine/apply.ts";
 import { seedRegistry } from "../../src/engine/registry.ts";
+import type { Patch } from "../../src/engine/validate.ts";
 import { layer1Passes, layer2Passes, weightMilli } from "../../src/engine/weight.ts";
 
 function populatedClerk(): Clerk {
@@ -161,6 +162,32 @@ describe("clerk", () => {
 });
 
 describe("applyPatch", () => {
+  it("fails a passed extend_type that has fields instead of field, without throwing", () => {
+    const clerk = populatedClerk();
+    clerk.registry.types["gold"] = { fields: { holder: { type: "id" } } };
+    clerk.proposals.push({
+      id: 98,
+      authorId: "a",
+      patch: {
+        kind: "schema.extend_type",
+        type: "gold",
+        fields: { currency: { type: "int", default: 1000 } },
+      } as unknown as Patch,
+      tier: 2,
+      resolutionTick: 0,
+      status: "docketed",
+      ballots: new Map([
+        ["a", { identityId: "a", position: "for", weightMilli: 100_000n }],
+        ["b", { identityId: "b", position: "for", weightMilli: 100_000n }],
+      ]),
+    });
+    const [done] = clerk.resolveTick();
+    expect(done?.status).toBe("failed");
+    expect(done?.failReason).toBe("schema.extend_type requires field.name");
+    expect(clerk.registry.types["gold"]?.fields["currency"]).toBeUndefined();
+    expect(clerk.applied).toHaveLength(0);
+  });
+
   it("does not mutate the source registry", () => {
     const registry = seedRegistry();
     const next = applyPatch(

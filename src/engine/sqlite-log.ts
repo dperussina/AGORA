@@ -131,7 +131,9 @@ export class SqliteLog implements EventLog {
   }
 
   close(): void {
-    this.db.close();
+    if (this.db.open) {
+      this.db.close();
+    }
   }
 }
 

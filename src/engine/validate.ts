@@ -72,8 +72,18 @@ export function validatePatch(registry: Registry, patch: unknown): Validation {
       }
       return { ok: true, tier: 2 };
     case "schema.extend_type":
-      if (registry.types[body.type] === undefined) {
-        return fail("missing_path", `unknown type ${body.type}`);
+      if (typeof body.type !== "string" || registry.types[body.type] === undefined) {
+        return fail("missing_path", `unknown type ${String(body.type)}`);
+      }
+      if (
+        body.field === null ||
+        typeof body.field !== "object" ||
+        typeof body.field.name !== "string" ||
+        body.field.name.length === 0 ||
+        typeof body.field.type !== "string" ||
+        body.field.type.length === 0
+      ) {
+        return fail("schema", "schema.extend_type requires field {name, type}");
       }
       return { ok: true, tier: 2 };
     case "action.define":

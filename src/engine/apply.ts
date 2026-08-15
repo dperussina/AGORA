@@ -66,7 +66,11 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
       next.types[patch.name] = { fields: patch.fields };
       break;
     case "schema.extend_type": {
+      if (patch.field === undefined || typeof patch.field.name !== "string" || patch.field.name.length === 0) {
+        throw new Error("schema.extend_type requires field.name");
+      }
       const existing = next.types[patch.type] ?? { fields: {} };
+      existing.fields ??= {};
       next.types[patch.type] = existing;
       existing.fields[patch.field.name] = {
         type: patch.field.type,

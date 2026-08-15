@@ -13,12 +13,26 @@ const timer = setInterval(() => {
   world.advanceTick();
 }, tickMs);
 
+let shuttingDown = false;
+
 function shutdown(signal: string): void {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
   process.stdout.write(`agora shutting down (${signal})\n`);
   clearInterval(timer);
   world.recordHub.close();
-  world.persist();
-  opened?.store.close();
+  try {
+    world.persist();
+  } catch (error) {
+    process.stderr.write(`agora persist on shutdown failed: ${error instanceof Error ? error.message : "unknown"}\n`);
+  }
+  try {
+    opened?.store.close();
+  } catch (error) {
+    process.stderr.write(`agora store close failed: ${error instanceof Error ? error.message : "unknown"}\n`);
+  }
   server.close(() => {
     process.exit(0);
   });

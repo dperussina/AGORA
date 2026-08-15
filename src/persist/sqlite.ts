@@ -71,6 +71,9 @@ export class AgoraStore implements SegmentStore {
   }
 
   saveIdentities(records: readonly StoredIdentity[]): void {
+    if (!this.db.open) {
+      return;
+    }
     const tx = this.db.transaction(() => {
       this.deleteIdentities.run();
       for (const record of records) {
@@ -89,6 +92,9 @@ export class AgoraStore implements SegmentStore {
   }
 
   saveSnapshot(snapshot: WorldSnapshot): void {
+    if (!this.db.open) {
+      return;
+    }
     this.setMeta.run({ key: "world_snapshot", value: JSON.stringify(snapshot) });
   }
 

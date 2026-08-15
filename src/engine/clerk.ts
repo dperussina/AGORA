@@ -231,16 +231,23 @@ export class Clerk {
       this.resolved.push(proposal);
       return;
     }
-    if (proposal.patch.kind === "revert") {
-      const targetId = proposal.patch.proposalId;
-      const keep = this.applied.filter((item) => item.id !== targetId);
-      this.applied.length = 0;
-      this.applied.push(...keep);
-      this.registry = rebuildRegistry(this.applied);
-      this.registry.version += 1;
-    } else {
-      this.registry = applyPatch(this.registry, proposal.patch, proposal.id);
-      this.applied.push({ id: proposal.id, patch: proposal.patch });
+    try {
+      if (proposal.patch.kind === "revert") {
+        const targetId = proposal.patch.proposalId;
+        const keep = this.applied.filter((item) => item.id !== targetId);
+        this.applied.length = 0;
+        this.applied.push(...keep);
+        this.registry = rebuildRegistry(this.applied);
+        this.registry.version += 1;
+      } else {
+        this.registry = applyPatch(this.registry, proposal.patch, proposal.id);
+        this.applied.push({ id: proposal.id, patch: proposal.patch });
+      }
+    } catch (error) {
+      proposal.status = "failed";
+      proposal.failReason = error instanceof Error ? error.message : "apply failed";
+      this.resolved.push(proposal);
+      return;
     }
     proposal.status = "applied";
     this.resolved.push(proposal);
