@@ -17,7 +17,8 @@ const HALF = (SIZE - 1) / 2;
 const MAX_BODIES = 256;
 const MAX_MARKS = 512;
 const MAX_WARDENS = 256;
-const AGENT_HEIGHT = 2.75;
+const AGENT_HEIGHT = 1.72;
+const probes = new Map();
 
 function tagPick(node, kind, id) {
   node.traverse((child) => {
@@ -684,11 +685,262 @@ function writeBodyPart(item, index, position, y, rotation, scale, color) {
   dummy.position.copy(position);
   dummy.position.y += y;
   dummy.rotation.set(rotation.x, rotation.y, rotation.z);
-  dummy.scale.setScalar(scale);
+  if (typeof scale === "number") {
+    dummy.scale.setScalar(scale);
+  } else {
+    dummy.scale.set(scale.x, scale.y, scale.z);
+  }
   dummy.updateMatrix();
   item.setMatrixAt(index, dummy.matrix);
   if (color !== null) {
     item.setColorAt(index, color);
+  }
+}
+
+function probeSeed(id) {
+  let hash = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function easeInOut(t) {
+  const clamped = Math.min(1, Math.max(0, t));
+  return clamped < 0.5 ? 2 * clamped * clamped : 1 - (2 - 2 * clamped) ** 2 / 2;
+}
+
+function pickProbeAct(seed, roll) {
+  const pick = (seed + Math.floor(roll * 997)) % 100;
+  if (pick < 38) {
+    return "still";
+  }
+  if (pick < 58) {
+    return "circle";
+  }
+  if (pick < 72) {
+    return "gather";
+  }
+  if (pick < 84) {
+    return "scan";
+  }
+  if (pick < 93) {
+    return "drift";
+  }
+  return "work";
+}
+
+function ensureProbe(id, home, now) {
+  let probe = probes.get(id);
+  if (probe === undefined) {
+    probe = {
+      id,
+      home: home.clone(),
+      act: "still",
+      born: now,
+      duration: 2200,
+      next: now + 900 + (probeSeed(id) % 1800),
+      seed: probeSeed(id),
+      drift: new THREE.Vector3(),
+      sparked: false,
+    };
+    probes.set(id, probe);
+    return probe;
+  }
+  if (probe.home.distanceToSquared(home) > 0.0004) {
+    probe.home.copy(home);
+    probe.act = "settle";
+    probe.born = now;
+    probe.duration = 1100;
+    probe.next = now + 1400 + (probe.seed % 900);
+    probe.sparked = false;
+  }
+  return probe;
+}
+
+function probePose(probe, now) {
+  const phase = (probe.seed % 1000) / 1000;
+  const hover = Math.sin(now * 0.0017 + phase * 6.2) * 0.08;
+  const pose = {
+    x: 0,
+    y: hover,
+    z: 0,
+    yaw: now * 0.00018 + phase * 4,
+    pitch: Math.sin(now * 0.0011 + phase) * 0.04,
+    roll: Math.cos(now * 0.0009 + phase * 2) * 0.03,
+    lamp: 1,
+    halo: now * 0.0007 + phase * 3,
+  };
+  const age = (now - probe.born) / Math.max(1, probe.duration);
+  const u = Math.min(1, Math.max(0, age));
+  if (probe.act === "circle") {
+    const turns = 1 + (probe.seed % 2);
+    const ang = u * Math.PI * 2 * turns + phase * 5;
+    const radius = 0.26 + (probe.seed % 12) * 0.008;
+    pose.x = Math.cos(ang) * radius;
+    pose.z = Math.sin(ang) * radius;
+    pose.yaw = -ang + Math.PI / 2;
+    pose.roll = Math.sin(ang) * 0.12;
+  } else if (probe.act === "gather") {
+    const dip = Math.sin(u * Math.PI);
+    pose.y -= dip * 0.22;
+    pose.pitch += dip * 0.18;
+    pose.lamp = 1 + dip * 1.4;
+    pose.halo += dip * 0.8;
+  } else if (probe.act === "scan") {
+    pose.yaw += u * Math.PI * 1.35;
+    pose.pitch += Math.sin(u * Math.PI) * 0.28;
+    pose.roll += Math.sin(u * Math.PI * 2) * 0.08;
+  } else if (probe.act === "drift") {
+    const travel = u < 0.32 ? easeInOut(u / 0.32) : u > 0.68 ? 1 - easeInOut((u - 0.68) / 0.32) : 1;
+    pose.x = probe.drift.x * travel;
+    pose.z = probe.drift.z * travel;
+    pose.yaw += travel * 0.4;
+  } else if (probe.act === "work") {
+    const pulse = Math.sin(u * Math.PI);
+    pose.y += pulse * 0.05;
+    pose.lamp = 1 + pulse * 1.8;
+    pose.halo += now * 0.004;
+    pose.pitch += Math.sin(now * 0.02) * 0.06 * pulse;
+  }
+  return pose;
+}
+
+function burstAt(worldPos, color, count = 10, duration = 900) {
+  const group = new THREE.Group();
+  group.position.copy(worldPos);
+  const positions = new Float32Array(count * 3);
+  const velocities = new Float32Array(count * 3);
+  const seed = Math.floor(worldPos.x * 17 + worldPos.z * 31 + performance.now()) >>> 0;
+  for (let i = 0; i < count; i += 1) {
+    const theta = sequence(i + seed, 0.61803398875) * Math.PI * 2;
+    const lift = 0.35 + sequence(i + seed, 0.75487766625, 0.2) * 1.1;
+    const radial = 0.35 + sequence(i + seed, 0.56984029099, 0.3) * 0.7;
+    const offset = i * 3;
+    velocities[offset] = Math.cos(theta) * radial;
+    velocities[offset + 1] = lift;
+    velocities[offset + 2] = Math.sin(theta) * radial;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const particles = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color,
+      size: 0.55,
+      map: quantum.dust.material.map,
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.28, 0.018, 5, 32),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.4,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = Math.PI / 2;
+  group.add(ring, particles);
+  scene.add(group);
+  sparks.push({
+    group,
+    particles,
+    positions,
+    velocities,
+    ring,
+    paths: [],
+    born: performance.now(),
+    duration,
+    type: "probe.work",
+  });
+  while (sparks.length > 36) {
+    const oldest = sparks.shift();
+    if (oldest !== undefined) {
+      disposeSpark(oldest);
+    }
+  }
+}
+
+function placeProbe(index, home, pose, color) {
+  const at = home.clone();
+  at.x += pose.x;
+  at.y += pose.y;
+  at.z += pose.z;
+  const spin = { x: pose.pitch, y: pose.yaw, z: pose.roll };
+  writeBodyPart(bodyMesh, index, at, 0.62, spin, { x: 2.05, y: 0.2, z: 2.05 }, color);
+  writeBodyPart(shoulderMesh, index, at, 0.74, spin, { x: 1.2, y: 0.22, z: 1.2 }, color);
+  writeBodyPart(headMesh, index, at, 0.98, spin, 0.82, color);
+  writeBodyPart(collarMesh, index, at, 0.64, { x: Math.PI / 2, y: pose.yaw, z: 0 }, 1.28, color);
+  writeBodyPart(haloMesh, index, at, 0.64, { x: Math.PI / 2, y: pose.halo, z: 0 }, 1.42 + pose.lamp * 0.04, null);
+  writeBodyPart(lampMesh, index, at, 0.42, spin, 0.7 + pose.lamp * 0.35, null);
+  return at;
+}
+
+function tickProbes(now) {
+  const used = Math.min(world.bodyOrder.length, MAX_BODIES);
+  const live = new Set(world.bodyOrder);
+  for (const id of [...probes.keys()]) {
+    if (!live.has(id)) {
+      probes.delete(id);
+    }
+  }
+  for (let i = 0; i < used; i += 1) {
+    const id = world.bodyOrder[i];
+    const row = world.liveBodies.get(id) ?? world.bodies.find((item) => item.id === id);
+    if (id === undefined || row?.position === undefined) {
+      continue;
+    }
+    const home = cell(row.position);
+    const probe = ensureProbe(id, home, now);
+    if (now >= probe.next) {
+      probe.act = pickProbeAct(probe.seed, now);
+      probe.born = now;
+      probe.duration =
+        probe.act === "still" ? 2400 + (probe.seed % 1800) : probe.act === "circle" ? 3200 + (probe.seed % 800) : 1800 + (probe.seed % 700);
+      probe.next = now + probe.duration + 700 + (probe.seed % 1600);
+      probe.sparked = false;
+      const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
+      probe.drift.set(Math.cos(heading) * 0.3, 0, Math.sin(heading) * 0.3);
+    }
+    const pose = probePose(probe, now);
+    const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
+    const at = placeProbe(i, home, pose, color);
+    if (!probe.sparked && (probe.act === "gather" || probe.act === "work")) {
+      const u = (now - probe.born) / probe.duration;
+      if (u > 0.32 && u < 0.85) {
+        burstAt(at.clone().setY(at.y + 0.2), color, probe.act === "work" ? 12 : 8, 800);
+        probe.sparked = true;
+      }
+    }
+  }
+  for (const item of [bodyMesh, shoulderMesh, headMesh, collarMesh, haloMesh, lampMesh]) {
+    item.count = used;
+    item.instanceMatrix.needsUpdate = true;
+    if (item.instanceColor) {
+      item.instanceColor.needsUpdate = true;
+    }
+  }
+  for (const sprite of labelsGroup.children) {
+    const id = sprite.userData.pickId;
+    if (typeof id !== "string") {
+      continue;
+    }
+    const probe = probes.get(id);
+    const row = world.liveBodies.get(id);
+    if (row?.position === undefined) {
+      continue;
+    }
+    const home = cell(row.position);
+    const pose = probe === undefined ? { x: 0, y: 0, z: 0 } : probePose(probe, now);
+    sprite.position.set(home.x + pose.x, home.y + pose.y + AGENT_HEIGHT, home.z + pose.z);
   }
 }
 
@@ -699,13 +951,8 @@ function writeBodies(rows) {
     const row = rows[i];
     world.bodyOrder.push(row.id);
     const color = world.founders.has(row.id) ? new THREE.Color(0xc4a574) : idColor(row.id);
-    const position = cell(row.position);
-    writeBodyPart(bodyMesh, i, position, 0.8, { x: 0, y: 0, z: 0 }, 1, color);
-    writeBodyPart(shoulderMesh, i, position, 1.54, { x: 0, y: 0, z: 0 }, 1, color);
-    writeBodyPart(headMesh, i, position, 1.93, { x: 0, y: 0, z: 0 }, 1, color);
-    writeBodyPart(collarMesh, i, position, 1.66, { x: Math.PI / 2, y: 0, z: 0 }, 1, color);
-    writeBodyPart(haloMesh, i, position, 2.18, { x: Math.PI / 2, y: 0, z: 0 }, 1, color);
-    writeBodyPart(lampMesh, i, position, 1.93, { x: 0, y: 0, z: 0 }, 1, color);
+    const home = cell(row.position);
+    placeProbe(i, home, { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, lamp: 1, halo: 0 }, color);
   }
   for (const item of [bodyMesh, shoulderMesh, headMesh, collarMesh, haloMesh, lampMesh]) {
     item.count = used;
@@ -2134,34 +2381,7 @@ function frame(now) {
     tickSparkQueue(now);
     tickSparks(now);
     tickQuantum(now);
-    const used = bodyMesh.count;
-    for (let i = 0; i < used; i += 1) {
-      bodyMesh.getMatrixAt(i, dummy.matrix);
-      dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-      const id = world.bodyOrder[i];
-      const flash = id === undefined ? 0 : world.flashes.get(id) ?? 0;
-      const flare = flash > 0 ? Math.max(0, 1 - (now - flash) / 900) : 0;
-      const pulse = 1 + Math.sin(now / 520 + i) * 0.035 + flare * 0.35;
-      dummy.scale.setScalar(pulse);
-      dummy.updateMatrix();
-      bodyMesh.setMatrixAt(i, dummy.matrix);
-      dummy.position.y += 1.05;
-      dummy.scale.setScalar(1 + flare * 0.8);
-      dummy.updateMatrix();
-      lampMesh.setMatrixAt(i, dummy.matrix);
-
-      haloMesh.getMatrixAt(i, dummy.matrix);
-      dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-      dummy.rotation.set(Math.PI / 2, now * 0.0006 + i * 0.37, 0);
-      dummy.scale.setScalar(1 + Math.sin(now * 0.002 + i) * 0.08 + flare * 0.24);
-      dummy.updateMatrix();
-      haloMesh.setMatrixAt(i, dummy.matrix);
-    }
-    if (used > 0) {
-      bodyMesh.instanceMatrix.needsUpdate = true;
-      lampMesh.instanceMatrix.needsUpdate = true;
-      haloMesh.instanceMatrix.needsUpdate = true;
-    }
+    tickProbes(now);
     for (const drift of driftsGroup.children) {
       drift.rotation.y += 0.012;
       drift.rotation.x += 0.006;
