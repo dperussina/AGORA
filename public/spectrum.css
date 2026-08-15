@@ -6,6 +6,7 @@
   --mark: #c4a574;
   position: relative;
   min-height: 100vh;
+  overflow: hidden;
   background: var(--well);
   color: var(--ink);
 }
@@ -82,15 +83,16 @@
 }
 
 .spectrum-chat {
-  position: fixed;
+  position: absolute;
   top: auto;
   right: auto;
   left: 1rem;
   bottom: 1rem;
   z-index: 20;
   box-sizing: border-box;
-  width: min(26rem, calc(100vw - 2rem));
-  height: min(32rem, calc(100vh - 7rem));
+  width: min(24rem, calc(100% - 2rem));
+  max-width: calc(100% - 2rem);
+  height: min(32rem, calc(100% - 7rem));
   display: flex;
   flex-direction: column;
   padding: 0.55rem 0.7rem 0.65rem;
@@ -446,7 +448,7 @@
 .spectrum-dock {
   right: 1rem;
   bottom: 1rem;
-  left: min(28rem, calc(26rem + 2.5rem));
+  left: min(26rem, calc(24rem + 2.5rem));
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem 1.1rem;

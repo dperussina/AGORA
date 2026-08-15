@@ -591,15 +591,6 @@ function wallBlock() {
   for (const [x, z] of [[-0.48, -0.48], [0.48, -0.48], [-0.48, 0.48], [0.48, 0.48]]) {
     g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, 0.08), MAT.iron, x, 0.51, z));
   }
-  for (const z of [-0.51, 0.51]) {
-    g.add(mesh(new THREE.BoxGeometry(0.7, 0.26, 0.05), MAT.stoneDark, 0, 0.72, z));
-    g.add(mesh(new THREE.BoxGeometry(0.7, 0.26, 0.05), MAT.stoneDark, 0, 0.28, z));
-    g.add(mesh(new THREE.BoxGeometry(0.62, 0.03, 0.03), MAT.iron, 0, 0.5, z));
-  }
-  for (const x of [-0.51, 0.51]) {
-    g.add(mesh(new THREE.BoxGeometry(0.05, 0.26, 0.7), MAT.stoneDark, x, 0.72, 0));
-    g.add(mesh(new THREE.BoxGeometry(0.05, 0.26, 0.7), MAT.stoneDark, x, 0.28, 0));
-  }
   return g;
 }
 

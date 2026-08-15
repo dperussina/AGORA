@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
-import { KNOWN, blockArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
+import { KNOWN, blockArtifact, blockForm, wakeArtifact, wakeHasLoot } from "/artifacts.js";
 
 const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
@@ -476,7 +476,13 @@ function visualTone(type) {
   return { color: 0x9ec4d4, count: 12, duration: 1100, spread: 3 };
 }
 
-function visualEvent(type) {
+function visualEvent(type, payload) {
+  if (type === "act.fall" || type === "act.wait" || type === "wake.rolled") {
+    return false;
+  }
+  if (type === "effect.create" && payload && PAPER_TYPES.has(payload.type)) {
+    return false;
+  }
   return (
     type === "speak" ||
     type === "speak.warden" ||
@@ -532,7 +538,8 @@ function disposeSpark(spark) {
 
 function sparkAt(item, context = {}) {
   const type = typeof item.type === "string" ? item.type : "event";
-  if (!visualEvent(type)) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  if (!visualEvent(type, payload)) {
     return;
   }
   const tone = visualTone(type);
@@ -2135,7 +2142,7 @@ function foldEntity(item) {
   const id = typeof payload.id === "string" ? payload.id : "";
   const at = payloadPosition(payload);
   if ((item.type === "effect.create" || item.type === "wake.left" || item.type === "act.depict") && id.length > 0) {
-    const prior = [...state.occupants.values()].find((row) => row.kind === "entity" && row.id === id);
+    const prior = state.occupants.get(occupantKey("entity", id));
     const fromString = typeof payload.position === "string" ? payload.position.split(",") : [];
     const parsed =
       at ??
@@ -2143,15 +2150,19 @@ function foldEntity(item) {
         ? { x: Number(fromString[0]), y: Number(fromString[1]), z: Number(fromString[2]) }
         : null);
     const fields = payload.fields !== null && typeof payload.fields === "object" ? payload.fields : {};
+    const createdType =
+      typeof payload.type === "string"
+        ? payload.type
+        : typeof payload.kind === "string"
+          ? payload.kind
+          : prior?.type ?? "entity";
+    if (PAPER_TYPES.has(createdType)) {
+      return parsed;
+    }
     put({
       kind: "entity",
       id,
-      type:
-        typeof payload.type === "string"
-          ? payload.type
-          : typeof payload.kind === "string"
-            ? payload.kind
-            : prior?.type ?? "entity",
+      type: createdType,
       position: parsed,
       kindName:
         typeof fields.kind === "string"
@@ -2172,7 +2183,7 @@ function foldEntity(item) {
     return parsed;
   }
   if (item.type === "effect.move" && id.length > 0 && at !== null) {
-    const prior = [...state.occupants.values()].find((row) => row.kind === "entity" && row.id === id);
+    const prior = state.occupants.get(occupantKey("entity", id));
     put({
       kind: "entity",
       id,
@@ -2489,6 +2500,42 @@ function buildVolumes() {
   }
 }
 
+const blockProtos = new Map();
+const BLOCK_LIGHT_CAP = 4;
+const lightWorld = new THREE.Vector3();
+
+function cachedBlock(kind) {
+  const form = blockForm(kind);
+  let proto = blockProtos.get(form);
+  if (proto === undefined) {
+    proto = blockArtifact(kind);
+    blockProtos.set(form, proto);
+  }
+  return proto.clone();
+}
+
+function muteBlockLights() {
+  const lights = [];
+  relics.updateMatrixWorld(true);
+  relics.traverse((node) => {
+    if (node.isPointLight) {
+      lights.push(node);
+    }
+  });
+  if (lights.length <= BLOCK_LIGHT_CAP) {
+    return;
+  }
+  const ranked = lights
+    .map((light) => {
+      light.getWorldPosition(lightWorld);
+      return { light, d: lightWorld.distanceToSquared(camera.position) };
+    })
+    .sort((a, b) => a.d - b.d);
+  ranked.forEach((row, i) => {
+    row.light.visible = i < BLOCK_LIGHT_CAP;
+  });
+}
+
 function buildRelics() {
   clearGroup(relics);
   for (const row of listOf("mark")) {
@@ -2518,7 +2565,7 @@ function buildRelics() {
       continue;
     }
     if (row.type === "block") {
-      const node = blockArtifact(row.kindName);
+      const node = cachedBlock(row.kindName);
       node.position.copy(cell(row.position));
       tag(node, row);
       relics.add(node);
@@ -2537,6 +2584,7 @@ function buildRelics() {
       relics.add(node);
     }
   }
+  muteBlockLights();
 }
 
 function buildGods() {
@@ -2608,6 +2656,7 @@ function paint() {
     .sort()
     .join("|");
   const relicsPrint = [...listOf("mark"), ...listOf("drift"), ...listOf("entity")]
+    .filter((row) => !PAPER_TYPES.has(row.type))
     .map((row) => `${row.kind}:${row.id}:${row.position.x},${row.position.y},${row.position.z}`)
     .sort()
     .join("|");
@@ -2641,8 +2690,10 @@ function paint() {
   }
   if (rebuilt) {
     collectMovers();
+    collectPicks();
+  } else if (state.picks.length === 0) {
+    collectPicks();
   }
-  collectPicks();
   const census = { identity: 0, echo: 0, mark: 0, anchor: 0, warden: 0, drift: 0, entity: 0 };
   for (const row of state.occupants.values()) {
     census[row.kind] = (census[row.kind] ?? 0) + 1;
