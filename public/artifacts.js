@@ -583,10 +583,23 @@ function bedBlock() {
 
 function wallBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(1, 1, 1), MAT.deck, 0, 0.5, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.02, 0.08, 1.02), MAT.slate, 0, 0.5, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.01, 0.05, 1.01), MAT.rim, 0, 0.975, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.01, 0.05, 1.01), MAT.slate, 0, 0.025, 0));
+  g.add(mesh(new THREE.BoxGeometry(1, 1, 1), MAT.stone, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.04, 0.1, 1.04), MAT.stoneDark, 0, 0.05, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.03, 0.08, 1.03), MAT.stoneDark, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.06, 0.1, 1.06), MAT.stoneDark, 0, 0.97, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.92, 0.04, 0.92), MAT.slate, 0, 1.03, 0));
+  for (const [x, z] of [[-0.48, -0.48], [0.48, -0.48], [-0.48, 0.48], [0.48, 0.48]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, 0.08), MAT.iron, x, 0.51, z));
+  }
+  for (const z of [-0.51, 0.51]) {
+    g.add(mesh(new THREE.BoxGeometry(0.7, 0.26, 0.05), MAT.stoneDark, 0, 0.72, z));
+    g.add(mesh(new THREE.BoxGeometry(0.7, 0.26, 0.05), MAT.stoneDark, 0, 0.28, z));
+    g.add(mesh(new THREE.BoxGeometry(0.62, 0.03, 0.03), MAT.iron, 0, 0.5, z));
+  }
+  for (const x of [-0.51, 0.51]) {
+    g.add(mesh(new THREE.BoxGeometry(0.05, 0.26, 0.7), MAT.stoneDark, x, 0.72, 0));
+    g.add(mesh(new THREE.BoxGeometry(0.05, 0.26, 0.7), MAT.stoneDark, x, 0.28, 0));
+  }
   return g;
 }
 
