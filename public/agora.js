@@ -869,72 +869,61 @@ function ensureProbe(id, home, now) {
 
 function probePose(probe, now) {
   const phase = (probe.seed % 1000) / 1000;
-  const hover = 0.16 + Math.sin(now * 0.0024 + phase * 6.2) * 0.2;
   const pose = {
     x: 0,
-    y: hover,
+    y: 0.16,
     z: 0,
-    yaw: now * 0.00035 + phase * 4,
-    pitch: Math.sin(now * 0.0014 + phase) * 0.08,
-    roll: Math.cos(now * 0.0012 + phase * 2) * 0.07,
+    yaw: Math.atan2(probe.drift.z, probe.drift.x) || 0,
+    pitch: 0,
+    roll: 0,
     lamp: 1.15,
-    halo: now * 0.0014 + phase * 3,
+    halo: phase * 3,
     beam: 0,
     arm: 0,
     scoop: 0,
     ring: 0,
+    armYaw: 0,
+    armDip: -0.35,
   };
   const age = (now - probe.born) / Math.max(1, probe.duration);
   const u = Math.min(1, Math.max(0, age));
-  const deploy = u < 0.18 ? easeInOut(u / 0.18) : u > 0.82 ? 1 - easeInOut((u - 0.82) / 0.18) : 1;
+  const deploy = u < 0.14 ? easeInOut(u / 0.14) : u > 0.86 ? 1 - easeInOut((u - 0.86) / 0.14) : 1;
   if (probe.act === "circle") {
-    const turns = 2 + (probe.seed % 2);
-    const ang = u * Math.PI * 2 * turns + phase * 5;
-    const radius = 1.15 + (probe.seed % 10) * 0.02;
+    const ang = u * Math.PI * 2 + phase * 5;
+    const radius = 1.1;
     pose.x = Math.cos(ang) * radius;
     pose.z = Math.sin(ang) * radius;
-    pose.y += 0.12 + Math.sin(ang * 2) * 0.16;
     pose.yaw = -ang + Math.PI / 2;
-    pose.roll = Math.sin(ang) * 0.38;
-    pose.pitch = Math.cos(ang) * 0.16;
-    pose.lamp = 1.6;
+    pose.lamp = 1.4;
     pose.ring = 1;
   } else if (probe.act === "gather") {
-    const dip = Math.sin(u * Math.PI);
-    pose.y = hover * 0.35 - dip * 0.18;
-    pose.pitch += dip * 0.32;
-    pose.lamp = 1.4 + dip * 2.2;
-    pose.halo += now * 0.006;
+    pose.y = 0.08;
+    pose.lamp = 1.8;
     pose.beam = deploy;
     pose.scoop = deploy;
-    pose.ring = deploy * 0.55;
   } else if (probe.act === "scan") {
-    pose.yaw += u * Math.PI * 2.1;
-    pose.pitch += Math.sin(u * Math.PI) * 0.42;
-    pose.roll += Math.sin(u * Math.PI * 2) * 0.18;
+    const sweep = easeInOut(u);
+    pose.yaw = pose.yaw + sweep * Math.PI * 0.7;
     pose.arm = deploy;
-    pose.lamp = 1.5 + Math.sin(now * 0.02) * 0.6;
-    pose.ring = deploy;
+    pose.armYaw = -0.55 + sweep * 1.1;
+    pose.armDip = -0.85;
+    pose.lamp = 1.4;
   } else if (probe.act === "drift") {
-    const travel = u < 0.28 ? easeInOut(u / 0.28) : u > 0.72 ? 1 - easeInOut((u - 0.72) / 0.28) : 1;
+    const travel = u < 0.3 ? easeInOut(u / 0.3) : u > 0.7 ? 1 - easeInOut((u - 0.7) / 0.3) : 1;
     pose.x = probe.drift.x * travel;
     pose.z = probe.drift.z * travel;
-    pose.y += travel * 0.22;
-    pose.yaw += travel * 0.9;
-    pose.roll += travel * 0.2;
+    pose.y = 0.16 + travel * 0.12;
   } else if (probe.act === "work") {
-    const pulse = Math.sin(u * Math.PI);
-    pose.y += pulse * 0.1;
-    pose.lamp = 1.8 + pulse * 2.4;
-    pose.halo += now * 0.01;
-    pose.pitch += Math.sin(now * 0.028) * 0.14 * pulse;
+    const pecks = 3;
+    const cycle = (u * pecks) % 1;
+    const peck = cycle < 0.4 ? easeInOut(cycle / 0.4) : 1 - easeInOut((cycle - 0.4) / 0.6);
     pose.arm = deploy;
-    pose.beam = deploy * 0.65;
-    pose.scoop = deploy;
-    pose.ring = deploy;
+    pose.armDip = -0.35 - peck * 0.85;
+    pose.armYaw = 0.15;
+    pose.lamp = 1.6;
   } else if (probe.act === "settle") {
-    pose.y += (1 - u) * 0.35;
-    pose.lamp = 1.8;
+    pose.y = 0.16 + (1 - u) * 0.2;
+    pose.lamp = 1.5;
   }
   return pose;
 }
@@ -950,27 +939,27 @@ function poseProbeRig(probe, at, pose, now, dt) {
   fx.beam.position.y = 0.35 - pose.beam * 0.55;
   fx.beam.material.opacity = 0.25 + pose.beam * 0.55;
   fx.arm.visible = pose.arm > 0.04;
-  fx.arm.rotation.z = -0.15 - pose.arm * 1.15;
-  fx.arm.rotation.y = Math.sin(now * 0.008) * pose.arm * 0.7;
+  fx.arm.rotation.z = pose.armDip;
+  fx.arm.rotation.y = pose.armYaw;
   fx.arm.position.set(0.22, 0.58, 0.04);
   fx.scoop.visible = pose.scoop > 0.04;
-  fx.scoop.scale.setScalar(0.4 + pose.scoop * 0.9);
-  fx.scoop.position.set(-0.18, 0.42 - pose.scoop * 0.12, 0.1);
-  fx.scoop.rotation.z = pose.scoop * 0.5;
+  fx.scoop.scale.setScalar(0.55 + pose.scoop * 0.45);
+  fx.scoop.position.set(-0.18, 0.36, 0.1);
+  fx.scoop.rotation.z = 0;
   fx.ring.visible = pose.ring > 0.04;
-  fx.ring.scale.setScalar(0.75 + pose.ring * 0.4);
-  fx.ring.rotation.z = now * 0.0022;
-  fx.ring.material.opacity = 0.2 + pose.ring * 0.45;
-  const emit = now - fx.last > 32;
+  fx.ring.scale.setScalar(0.86);
+  fx.ring.rotation.z = 0;
+  fx.ring.material.opacity = 0.22 + pose.ring * 0.2;
+  const emit = now - fx.last > 70;
   if (emit) {
     fx.last = now;
     if (probe.act === "circle") {
       emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.45, at.z), new THREE.Vector3(-pose.x * 1.4, 0.15, -pose.z * 1.4), 3);
     } else if (probe.act === "gather") {
       emitProbeDust(fx, new THREE.Vector3(at.x, at.y - 0.15, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.2, 1.6, (Math.random() - 0.5) * 0.2), 5);
-    } else if (probe.act === "work") {
+    } else if (probe.act === "work" && pose.armDip < -0.7) {
       const tip = new THREE.Vector3(0, -0.48, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), fx.arm.rotation.z);
-      emitProbeDust(fx, new THREE.Vector3(at.x + tip.x + 0.22, at.y + 0.55 + tip.y, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.4, (Math.random() - 0.5) * 0.8), 6);
+      emitProbeDust(fx, new THREE.Vector3(at.x + tip.x + 0.22, at.y + 0.55 + tip.y, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.25, 0.15, (Math.random() - 0.5) * 0.25), 2);
     } else if (probe.act === "scan") {
       emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.7, at.z), new THREE.Vector3(Math.cos(pose.yaw) * 0.9, 0.05, Math.sin(pose.yaw) * 0.9), 2);
     }
@@ -1017,7 +1006,7 @@ function tickProbes(now) {
     if (now >= probe.next) {
       probe.act = pickProbeAct(probe.seed, now);
       probe.born = now;
-      probe.duration = probe.act === "circle" ? 3800 + (probe.seed % 900) : 2200 + (probe.seed % 700);
+      probe.duration = probe.act === "circle" ? 4800 : probe.act === "scan" || probe.act === "drift" ? 3400 : 2800;
       probe.next = now + probe.duration;
       const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
       probe.drift.set(Math.cos(heading) * 0.62, 0, Math.sin(heading) * 0.62);

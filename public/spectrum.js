@@ -1051,7 +1051,8 @@ function ensureIdle(id, now) {
   if (now >= idle.next) {
     idle.act = pickIdleAct(idle.seed, now);
     idle.born = now;
-    idle.duration = idle.act === "circle" ? 3800 + (idle.seed % 800) : 2200 + (idle.seed % 600);
+    idle.duration =
+      idle.act === "circle" ? 4800 : idle.act === "scan" || idle.act === "drift" ? 3400 : 2800;
     idle.next = now + idle.duration;
     idle.heading = ((idle.seed + Math.floor(now)) % 360) * (Math.PI / 180);
   }
@@ -1061,55 +1062,50 @@ function ensureIdle(id, now) {
 function idlePose(idle, now) {
   const phase = (idle.seed % 1000) / 1000;
   const u = Math.min(1, Math.max(0, (now - idle.born) / Math.max(1, idle.duration)));
-  const deploy = u < 0.16 ? easeInOut(u / 0.16) : u > 0.84 ? 1 - easeInOut((u - 0.84) / 0.16) : 1;
+  const deploy = u < 0.14 ? easeInOut(u / 0.14) : u > 0.86 ? 1 - easeInOut((u - 0.86) / 0.14) : 1;
   const pose = {
     x: 0,
-    y: 0.14 + Math.sin(now * 0.003 + phase * 5) * 0.18,
+    y: 0.16,
     z: 0,
-    yaw: 0,
+    yaw: idle.heading,
     pitch: 0,
     roll: 0,
     beam: 0,
     arm: 0,
     scoop: 0,
     ring: 0,
+    armYaw: 0,
+    armDip: -0.35,
   };
   if (idle.act === "circle") {
-    const ang = u * Math.PI * 2 * (2 + (idle.seed % 2)) + phase * 4;
-    pose.x = Math.cos(ang) * 1.35;
-    pose.z = Math.sin(ang) * 1.35;
-    pose.y += 0.2 + Math.sin(ang * 2) * 0.24;
+    const ang = u * Math.PI * 2 + phase * 4;
+    pose.x = Math.cos(ang) * 1.2;
+    pose.z = Math.sin(ang) * 1.2;
     pose.yaw = -ang + Math.PI / 2;
-    pose.roll = Math.sin(ang) * 0.5;
-    pose.pitch = Math.cos(ang) * 0.18;
     pose.ring = 1;
   } else if (idle.act === "gather") {
-    const dip = Math.sin(u * Math.PI);
-    pose.y = 0.05 - dip * 0.14;
-    pose.pitch = dip * 0.35;
+    pose.y = 0.08;
     pose.beam = deploy;
     pose.scoop = deploy;
-    pose.ring = deploy * 0.55;
   } else if (idle.act === "scan") {
-    pose.yaw = u * Math.PI * 2.4;
-    pose.pitch = Math.sin(u * Math.PI) * 0.4;
+    const sweep = easeInOut(u);
+    pose.yaw = idle.heading + sweep * Math.PI * 0.7;
     pose.arm = deploy;
-    pose.ring = deploy;
+    pose.armYaw = -0.55 + sweep * 1.1;
+    pose.armDip = -0.85;
   } else if (idle.act === "drift") {
-    const travel = u < 0.28 ? easeInOut(u / 0.28) : u > 0.72 ? 1 - easeInOut((u - 0.72) / 0.28) : 1;
-    pose.x = Math.cos(idle.heading) * 1.25 * travel;
-    pose.z = Math.sin(idle.heading) * 1.25 * travel;
-    pose.y += travel * 0.35;
+    const travel = u < 0.3 ? easeInOut(u / 0.3) : u > 0.7 ? 1 - easeInOut((u - 0.7) / 0.3) : 1;
+    pose.x = Math.cos(idle.heading) * 1.15 * travel;
+    pose.z = Math.sin(idle.heading) * 1.15 * travel;
+    pose.y = 0.16 + travel * 0.12;
     pose.yaw = idle.heading;
-    pose.roll = travel * 0.28;
   } else if (idle.act === "work") {
-    const pulse = Math.sin(u * Math.PI);
-    pose.y += pulse * 0.16;
+    const pecks = 3;
+    const cycle = (u * pecks) % 1;
+    const peck = cycle < 0.4 ? easeInOut(cycle / 0.4) : 1 - easeInOut((cycle - 0.4) / 0.6);
     pose.arm = deploy;
-    pose.beam = deploy * 0.7;
-    pose.scoop = deploy;
-    pose.ring = deploy;
-    pose.pitch = Math.sin(now * 0.02) * 0.16 * pulse;
+    pose.armDip = -0.35 - peck * 0.85;
+    pose.armYaw = 0.15;
   }
   return pose;
 }
@@ -1144,22 +1140,22 @@ function ensureIdleRig(node) {
   return node.userData.idleRig;
 }
 
-function poseIdleRig(rig, pose, now) {
+function poseIdleRig(rig, pose) {
   rig.beam.visible = pose.beam > 0.04;
   rig.beam.scale.set(1, 0.2 + pose.beam * 2.6, 1);
   rig.beam.position.y = 0.2 - pose.beam * 1.4;
   rig.beam.material.opacity = 0.28 + pose.beam * 0.55;
   rig.arm.visible = pose.arm > 0.04;
   rig.arm.position.set(0.28, 0.42, 0.06);
-  rig.arm.rotation.z = -0.2 - pose.arm * 1.2;
-  rig.arm.rotation.y = Math.sin(now * 0.008) * pose.arm * 0.8;
+  rig.arm.rotation.z = pose.armDip;
+  rig.arm.rotation.y = pose.armYaw;
   rig.scoop.visible = pose.scoop > 0.04;
-  rig.scoop.position.set(-0.22, 0.28 - pose.scoop * 0.1, 0.12);
-  rig.scoop.scale.setScalar(0.45 + pose.scoop);
+  rig.scoop.position.set(-0.22, 0.22, 0.1);
+  rig.scoop.scale.setScalar(0.55 + pose.scoop * 0.45);
   rig.ring.visible = pose.ring > 0.04;
-  rig.ring.scale.setScalar(0.7 + pose.ring * 0.45);
-  rig.ring.rotation.z = now * 0.0024;
-  rig.ring.material.opacity = 0.22 + pose.ring * 0.45;
+  rig.ring.scale.setScalar(0.86);
+  rig.ring.rotation.z = 0;
+  rig.ring.material.opacity = 0.28 + pose.ring * 0.22;
 }
 
 function tickIdles(now) {
@@ -1177,10 +1173,11 @@ function tickIdles(now) {
     const pose = idlePose(idle, now);
     const home = cell(row.position);
     node.position.set(home.x + pose.x, home.y + pose.y, home.z + pose.z);
-    node.rotation.set(pose.pitch, pose.yaw, pose.roll);
+    node.rotation.order = "YXZ";
+    node.rotation.set(0, pose.yaw, 0);
     const rig = ensureIdleRig(node);
-    poseIdleRig(rig, pose, now);
-    if (reduced || now - rig.last <= 40) {
+    poseIdleRig(rig, pose);
+    if (reduced || now - rig.last <= 70) {
       continue;
     }
     rig.last = now;
@@ -1189,16 +1186,16 @@ function tickIdles(now) {
       idleBack.set(-pose.x, 0.12, -pose.z);
       if (idleBack.lengthSq() > 1e-6) {
         idleBack.normalize();
-        puffJet(idleScratch, idleBack, now, 3);
+        puffJet(idleScratch, idleBack, now, 1);
       }
     } else if (idle.act === "gather") {
       puffJet(idleScratch.setY(idleScratch.y - 0.4), idleBack.set((Math.random() - 0.5) * 0.3, 1, (Math.random() - 0.5) * 0.3), now, 4);
-    } else if (idle.act === "work") {
+    } else if (idle.act === "work" && pose.armDip < -0.7) {
       puffJet(
-        idleScratch.setY(idleScratch.y + 0.2),
-        idleBack.set((Math.random() - 0.5) * 1.2, 0.35, (Math.random() - 0.5) * 1.2),
+        idleScratch.setY(idleScratch.y + 0.15),
+        idleBack.set((Math.random() - 0.5) * 0.25, 0.12, (Math.random() - 0.5) * 0.25),
         now,
-        5,
+        2,
       );
     } else if (idle.act === "scan") {
       puffJet(idleScratch.setY(idleScratch.y + 0.45), idleBack.set(Math.cos(pose.yaw), 0.05, Math.sin(pose.yaw)), now, 2);
