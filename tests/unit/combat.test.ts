@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FALL_LINGER, WAR_WOUND_MAX, thisWarWoundSum, thisWarWounds } from "../../src/engine/combat.ts";
 import { listTools } from "../../src/mcp/catalog.ts";
+import { publicRead } from "../../src/public/read.ts";
 import { seedRegistry } from "../../src/engine/registry.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
@@ -155,6 +156,22 @@ describe("combat law", () => {
     expect(act.properties.until.type).toBe("integer");
     expect(act.properties.name.type).toBe("string");
     expect(act.properties.target.type).toBe("string");
+  });
+
+  it("publishes a beast name on /map so the spectator can aim a shot", () => {
+    const world = new World();
+    world.entities.set("ent:maw", {
+      id: "ent:maw",
+      type: "beast",
+      fields: { name: "Maw", position: "20,55,38", hide: 80, gate: 1, bite: 3 },
+      position: { x: 20, y: 55, z: 38 },
+    });
+    const map = publicRead(world, "/map") as { entities: Array<{ id: string; type: string; name?: string }> };
+    expect(map.entities.find((row) => row.id === "ent:maw")).toMatchObject({
+      id: "ent:maw",
+      type: "beast",
+      name: "Maw",
+    });
   });
 
   it("rejects fall when create cannot bind, then writes fallen when params arrive", () => {

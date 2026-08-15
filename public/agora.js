@@ -696,6 +696,9 @@ function rebuildEntities(rows) {
     }
     const mesh = PROTO.entity.clone();
     restNpc(mesh, cell(entity.position));
+    if (entity.type === "beast") {
+      mesh.scale.setScalar(2.6);
+    }
     tagPick(mesh, "entity", typeof entity.id === "string" ? entity.id : "");
     entitiesGroup.add(mesh);
   }
@@ -1298,11 +1301,7 @@ function paintMarks() {
 }
 
 function paintEntities() {
-  if (world.follow && world.liveEntities.size > 0) {
-    rebuildEntities([...world.liveEntities.values()]);
-    return;
-  }
-  rebuildEntities(world.follow ? world.entities : []);
+  rebuildEntities(visibleEntities());
 }
 
 function writeMarks(rows) {
@@ -1706,17 +1705,24 @@ function npcPosition(id) {
   return null;
 }
 
-function combatHome(id) {
+function combatCell(id) {
+  if (typeof id !== "string" || id.length === 0) {
+    return null;
+  }
   const row = world.liveBodies.get(id);
   if (row?.position !== undefined) {
-    return cell(row.position);
+    return row.position;
   }
   const body = world.bodies.find((item) => item.id === id);
   if (body?.position !== undefined) {
-    return cell(body.position);
+    return body.position;
   }
-  const npc = npcPosition(id);
-  return npc === null ? null : cell(npc);
+  return npcPosition(id);
+}
+
+function combatHome(id) {
+  const at = combatCell(id);
+  return at === null ? null : cell(at);
 }
 
 function occupantAt(at) {
@@ -1762,8 +1768,14 @@ function namedBody(name) {
     }
     const beast = typeof row.fields?.beast === "string" ? row.fields.beast : "";
     const kind = typeof row.fields?.kind === "string" ? row.fields.kind : "";
+    const named = typeof row.fields?.name === "string" ? row.fields.name : typeof row.name === "string" ? row.name : "";
     const type = typeof row.type === "string" ? row.type : "";
-    if (beast.toLowerCase() === folded || kind.toLowerCase() === folded || type.toLowerCase() === folded) {
+    if (
+      beast.toLowerCase() === folded ||
+      kind.toLowerCase() === folded ||
+      named.toLowerCase() === folded ||
+      type.toLowerCase() === folded
+    ) {
       return id;
     }
   }
@@ -1912,21 +1924,41 @@ function combatCloud(at, now, opts) {
   capFx(combat.clouds, 14);
 }
 
+function lookAtFight(fromAt, toAt) {
+  const mid = {
+    x: Math.round((fromAt.x + toAt.x) / 2),
+    y: Math.round((fromAt.y + toAt.y) / 2),
+    z: Math.round((fromAt.z + toAt.z) / 2),
+  };
+  if (controls.target.distanceTo(cell(mid)) > 10) {
+    flyToCell(mid, 12);
+  }
+}
+
 function fireShot(fromId, toId, now, item) {
   const striker = resolveCombatId(fromId, item.payload);
   const target = resolveCombatId(toId, item.payload);
-  const fromAt = combatHome(striker);
-  const toAt = combatHome(target) ?? (payloadPosition(item.payload) === null ? null : cell(payloadPosition(item.payload)));
-  if (fromAt === null || toAt === null) {
+  let fromCell = combatCell(striker);
+  let toCell = combatCell(target);
+  const hinted = payloadPosition(item.payload);
+  if (toCell === null && hinted !== null) {
+    toCell = hinted;
+  }
+  if (fromCell === null) {
+    fromCell = combatCell(actorId(item));
+  }
+  if (fromCell === null || toCell === null) {
     return;
   }
+  const fromAt = cell(fromCell);
+  const toAt = cell(toCell);
   const beast = isBeastShot(striker, item);
   const style = beast ? "breath" : fireStyle(striker);
   const color = beast ? new THREE.Color(0xff3a6a) : combatColor(striker);
   const hot = beast ? new THREE.Color(0xffc078) : new THREE.Color(0xf4fff8);
   const from = liftCell(fromAt, 0.78);
   const to = liftCell(toAt, 0.7);
-  const fat = style === "breath" ? 0.16 : style === "ember" ? 0.12 : style === "needle" ? 0.035 : 0.07;
+  const fat = style === "breath" ? 0.28 : style === "ember" ? 0.18 : style === "needle" ? 0.06 : 0.12;
   const beam = spanBeam(from, to, color, hot, fat);
   if (style === "fork") {
     for (const side of [-1, 1]) {
@@ -1975,6 +2007,7 @@ function fireShot(fromId, toId, now, item) {
   const wounds = (combat.wounds.get(target) ?? 0) + 1;
   combat.wounds.set(target, Math.min(3, wounds));
   setCombatPose(target, "hit", now, { from: striker, wounds, duration: 620 });
+  lookAtFight(fromCell, toCell);
 }
 
 function impactBurst(at, now, color) {
@@ -2306,6 +2339,11 @@ function noteCombat(item, now) {
     setCombatPose(attacker, "lock", now, { toward: defender, duration: 1600 });
     setCombatPose(defender, "lock", now, { toward: attacker, duration: 1600 });
     lockBeam(attacker, defender, now);
+    const fromCell = combatCell(attacker);
+    const toCell = combatCell(defender);
+    if (fromCell !== null && toCell !== null) {
+      lookAtFight(fromCell, toCell);
+    }
     return;
   }
   if (type === "war.struck") {
@@ -3977,6 +4015,22 @@ function applyMap(map) {
   world.wardens = Array.isArray(map.wardens) ? map.wardens : [];
   world.drifts = Array.isArray(map.drifts) ? map.drifts : [];
   world.entities = Array.isArray(map.entities) ? map.entities : [];
+  for (const entity of world.entities) {
+    if (typeof entity.id !== "string") {
+      continue;
+    }
+    const prior = world.liveEntities.get(entity.id);
+    const fields = { ...(prior?.fields ?? {}) };
+    if (typeof entity.name === "string") {
+      fields.name = entity.name;
+    }
+    world.liveEntities.set(entity.id, {
+      id: entity.id,
+      type: typeof entity.type === "string" ? entity.type : prior?.type ?? "entity",
+      position: entity.position ?? prior?.position ?? null,
+      fields,
+    });
+  }
   rebuildAnchors(world.anchors);
   rebuildWardens(world.wardens);
   rebuildDrifts(world.drifts);
@@ -4108,10 +4162,16 @@ function fillInhabitants(rows, standing) {
 }
 
 function visibleEntities() {
-  if (world.follow && world.liveEntities.size > 0) {
-    return [...world.liveEntities.values()];
+  const byId = new Map();
+  for (const row of world.entities) {
+    if (typeof row.id === "string") {
+      byId.set(row.id, row);
+    }
   }
-  return world.entities;
+  for (const row of world.liveEntities.values()) {
+    byId.set(row.id, row);
+  }
+  return [...byId.values()];
 }
 
 function prependEvent(id, item) {
@@ -4196,9 +4256,7 @@ function appendRecord(item) {
       at: item.type === "effect.destroy" ? previousEntity : undefined,
     });
   }
-  if (!reduced) {
-    noteCombat(item, performance.now());
-  }
+  noteCombat(item, performance.now());
 }
 
 function listen() {
