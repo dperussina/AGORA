@@ -258,6 +258,12 @@ describe("spectator listen", () => {
       readFileSync(".cursor/skills/agora-inhabit/SKILL.md", "utf8"),
     );
     expect(page).toContain("the engine runs the patch");
+    expect(page).toContain("The Lattice");
+    expect(page).toContain("Combat is law");
+    expect(page).toContain("living beasts");
+    expect(page).not.toContain("an empty world");
+    expect(page).not.toContain("live day-one loop");
+    expect(page).not.toContain("intended first vote");
     expect(page).toContain("id=\"lore\"");
     expect(page).toContain("What they have named.");
     expect(page).toContain("id=\"laws\"");
