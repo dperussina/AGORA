@@ -136,7 +136,11 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x16101f);
 scene.fog = new THREE.FogExp2(0x16101f, 0.0022);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 520);
-camera.position.set(48, 36, 54);
+const HOME = {
+  pos: new THREE.Vector3(48, 36, 54),
+  target: new THREE.Vector3(0, 0, 0),
+};
+camera.position.copy(HOME.pos);
 
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = !reduced;
@@ -144,7 +148,7 @@ controls.dampingFactor = 0.07;
 controls.enableZoom = false;
 controls.minDistance = 8;
 controls.maxDistance = 180;
-controls.target.set(0, 0, 0);
+controls.target.copy(HOME.target);
 
 let fly = null;
 
@@ -152,14 +156,45 @@ function worldOf(row) {
   if (row.type === "vantage") {
     return orbitSeat(row.position);
   }
-  const at = cell(row.position);
+  const at = row.kind === "identity" ? livingWorld(row) : cell(row.position);
   if (row.kind === "echo") {
     at.addScaledVector(T_AXIS, 5.2);
   }
   return at;
 }
 
-function flyToRow(row, distance = 14) {
+function lookDistance(row) {
+  if (row.type === "nexus") {
+    return 28;
+  }
+  if (row.type === "hollow") {
+    return 20;
+  }
+  if (row.type === "cairn") {
+    return 16;
+  }
+  if (row.type === "vantage") {
+    return 11;
+  }
+  return 14;
+}
+
+function flyTo(toPos, toTarget, duration = 900) {
+  fly = {
+    fromPos: camera.position.clone(),
+    toPos,
+    fromTarget: controls.target.clone(),
+    toTarget,
+    born: performance.now(),
+    duration,
+  };
+}
+
+function flyHome() {
+  flyTo(HOME.pos.clone(), HOME.target.clone());
+}
+
+function flyToRow(row, distance = lookDistance(row)) {
   if (row?.position === undefined) {
     return;
   }
@@ -169,14 +204,34 @@ function flyToRow(row, distance = 14) {
     away.set(18, 12, 18);
   }
   away.setLength(distance);
-  fly = {
-    fromPos: camera.position.clone(),
-    toPos: target.clone().add(away),
-    fromTarget: controls.target.clone(),
-    toTarget: target,
-    born: performance.now(),
-    duration: 900,
-  };
+  flyTo(target.clone().add(away), target);
+}
+
+function lookingAt(row) {
+  if (state.look === null || row === null) {
+    return false;
+  }
+  if (row.kind === "anchor") {
+    return state.look.kind === "anchor" && state.look.id === row.id;
+  }
+  return (row.kind === "identity" || row.kind === "echo") && state.look.id === row.id;
+}
+
+function toggleLook(row) {
+  if (row?.position === undefined) {
+    return;
+  }
+  const again = lookingAt(row);
+  state.selected = row;
+  if (again) {
+    state.look = null;
+    writeSelected(row);
+    flyHome();
+    return;
+  }
+  state.look = { kind: row.kind, id: row.id };
+  writeSelected(row);
+  flyToRow(row);
 }
 
 function tickFly(now) {
@@ -533,6 +588,126 @@ function tickSparks(now) {
   }
 }
 
+const JET_CAP = 220;
+const JET_LIFE = 480;
+const jetPos = new Float32Array(JET_CAP * 3);
+const jetVel = new Float32Array(JET_CAP * 3);
+const jetBorn = new Float32Array(JET_CAP);
+const jetAt = new THREE.Vector3();
+const jetDir = new THREE.Vector3();
+const jetBack = new THREE.Vector3();
+const jetExhaust = new THREE.Vector3();
+const jetGeo = new THREE.BufferGeometry();
+jetGeo.setAttribute("position", new THREE.BufferAttribute(jetPos, 3));
+const jetPoints = new THREE.Points(
+  jetGeo,
+  new THREE.PointsMaterial({
+    color: 0x00ffd4,
+    size: 0.5,
+    map: SPARK_MAP,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  }),
+);
+jetPoints.frustumCulled = false;
+scene.add(jetPoints);
+let jetWrite = 0;
+
+function hideJet(slot) {
+  const j = slot * 3;
+  jetPos[j] = 0;
+  jetPos[j + 1] = -9999;
+  jetPos[j + 2] = 0;
+  jetBorn[slot] = 0;
+}
+
+for (let i = 0; i < JET_CAP; i += 1) {
+  hideJet(i);
+}
+
+function puffJet(at, back, now, count = 4) {
+  for (let i = 0; i < count; i += 1) {
+    const slot = jetWrite % JET_CAP;
+    jetWrite += 1;
+    const j = slot * 3;
+    jetPos[j] = at.x + (Math.random() - 0.5) * 0.16;
+    jetPos[j + 1] = at.y + (Math.random() - 0.5) * 0.16;
+    jetPos[j + 2] = at.z + (Math.random() - 0.5) * 0.16;
+    const speed = 2.2 + Math.random() * 3.1;
+    jetVel[j] = back.x * speed + (Math.random() - 0.5) * 0.75;
+    jetVel[j + 1] = back.y * speed + (Math.random() - 0.5) * 0.75;
+    jetVel[j + 2] = back.z * speed + (Math.random() - 0.5) * 0.75;
+    jetBorn[slot] = now;
+  }
+}
+
+function tickJet(now) {
+  const dt = 0.016;
+  let alive = 0;
+  for (let i = 0; i < JET_CAP; i += 1) {
+    if (jetBorn[i] === 0 || now - jetBorn[i] > JET_LIFE) {
+      if (jetBorn[i] !== 0) {
+        hideJet(i);
+      }
+      continue;
+    }
+    const j = i * 3;
+    jetPos[j] += jetVel[j] * dt;
+    jetPos[j + 1] += jetVel[j + 1] * dt;
+    jetPos[j + 2] += jetVel[j + 2] * dt;
+    alive += 1;
+  }
+  jetGeo.attributes.position.needsUpdate = true;
+  jetPoints.material.opacity = alive > 0 ? 0.9 : 0;
+}
+
+function godNode(id) {
+  for (const child of gods.children) {
+    if (child.userData.row?.kind === "identity" && child.userData.row.id === id) {
+      return child;
+    }
+  }
+  return null;
+}
+
+function tickFlights(now) {
+  let landed = false;
+  for (const [id, flight] of state.flights) {
+    const t = Math.min(1, (now - flight.born) / flight.duration);
+    const ease = t * t * (3 - 2 * t);
+    jetAt.copy(flight.from).lerp(flight.to, ease);
+    jetDir.copy(flight.to).sub(flight.from);
+    const node = godNode(id);
+    if (jetDir.lengthSq() > 1e-6) {
+      jetDir.normalize();
+      jetBack.copy(jetDir).negate();
+      if (node) {
+        node.position.copy(jetAt);
+        node.quaternion.setFromUnitVectors(Y_UP, jetDir);
+      }
+      if (!reduced) {
+        puffJet(jetExhaust.copy(jetAt).addScaledVector(jetBack, 0.22), jetBack, now);
+      }
+    } else if (node) {
+      node.position.copy(jetAt);
+    }
+    if (t >= 1) {
+      if (node) {
+        node.quaternion.identity();
+        node.position.copy(flight.to);
+      }
+      state.flights.delete(id);
+      landed = true;
+    }
+  }
+  if (landed || state.flights.size > 0) {
+    buildWakes(godCenters());
+  }
+}
+
 const LIT_KINDS = ["identity", "echo", "entity", "mark", "anchor", "drift"];
 const LAMP_TINT = {
   identity: 0x00ffd4,
@@ -729,18 +904,23 @@ const state = {
   z: 32,
   tick: 0,
   types: {},
+  text: {},
   names: new Map(),
+  profiles: new Map(),
   standing: new Map(),
+  ledgers: new Map(),
   founders: new Set(),
   occupants: new Map(),
   residue: [],
   selected: null,
+  look: null,
   onScreen: true,
   streamLive: false,
   dirty: true,
   picks: [],
   movers: [],
   prints: { volumes: "", relics: "", gods: "", wardens: "" },
+  flights: new Map(),
 };
 
 function occupantKey(kind, id, extra = "") {
@@ -765,11 +945,57 @@ function dropKind(kind) {
   state.dirty = true;
 }
 
+function sameCell(a, b) {
+  return a !== null && b !== null && a.x === b.x && a.y === b.y && a.z === b.z;
+}
+
+function beginFlight(id, fromLattice, toLattice) {
+  if (sameCell(fromLattice, toLattice)) {
+    return;
+  }
+  const to = cell(toLattice);
+  const prior = state.flights.get(id);
+  const from = prior
+    ? prior.from.clone().lerp(prior.to, Math.min(1, (performance.now() - prior.born) / prior.duration))
+    : cell(fromLattice);
+  const dist = from.distanceTo(to);
+  if (dist < 0.05) {
+    return;
+  }
+  const born = performance.now();
+  state.flights.set(id, {
+    from,
+    to,
+    born,
+    duration: Math.min(2400, 420 + dist * 260),
+  });
+  if (!reduced) {
+    jetDir.copy(to).sub(from);
+    if (jetDir.lengthSq() > 1e-6) {
+      jetDir.normalize();
+      puffJet(from, jetBack.copy(jetDir).negate(), born, 10);
+    }
+  }
+}
+
+function livingWorld(row, now = performance.now()) {
+  const flight = state.flights.get(row.id);
+  if (flight === undefined) {
+    return cell(row.position);
+  }
+  const t = Math.min(1, (now - flight.born) / flight.duration);
+  const ease = t * t * (3 - 2 * t);
+  return flight.from.clone().lerp(flight.to, ease);
+}
+
 function rememberBody(id, position, kind) {
   if (position === null) {
     return;
   }
   const prior = [...state.occupants.values()].find((row) => row.kind === kind && row.id === id);
+  if (kind === "identity" && prior?.position && !sameCell(prior.position, position)) {
+    beginFlight(id, prior.position, position);
+  }
   state.occupants.set(occupantKey(kind, id), {
     kind,
     id,
@@ -824,7 +1050,7 @@ function listOf(kind) {
 function godCenters() {
   return listOf("identity").map((row) => ({
     id: row.id,
-    world: cell(row.position),
+    world: livingWorld(row),
     fame: state.standing.get(row.id)?.fame ?? 0,
   }));
 }
@@ -846,7 +1072,7 @@ function buildWakes(godsAt) {
   for (const echo of listOf("echo")) {
     const live = listOf("identity").find((row) => row.id === echo.id);
     const from = cell(echo.position).addScaledVector(T_AXIS, 5.2);
-    const to = live ? cell(live.position) : from.clone();
+    const to = live ? livingWorld(live) : from.clone();
     points.push(from, to);
   }
   for (const god of godsAt) {
@@ -1133,6 +1359,7 @@ function buildGods() {
   for (const row of listOf("identity")) {
     const fame = state.standing.get(row.id)?.fame ?? 0;
     const node = placeForm("identity", row, (clone) => {
+      clone.position.copy(livingWorld(row));
       clone.scale.setScalar(1 + Math.min(0.45, fame / 20) + (state.founders.has(row.id) ? 0.12 : 0));
     });
     if (node !== null) {
@@ -1181,7 +1408,10 @@ function syncLiving() {
   for (const row of listOf("identity")) {
     const node = at.get(`identity:${row.id}`);
     if (node) {
-      node.position.copy(cell(row.position));
+      if (!state.flights.has(row.id)) {
+        node.position.copy(cell(row.position));
+        node.quaternion.identity();
+      }
       node.userData.row = row;
     }
   }
@@ -1262,6 +1492,9 @@ function writeHere() {
     button.dataset.id = row.id;
     const named = state.names.get(row.id);
     button.textContent = typeof named === "string" && named.length > 0 ? named : "agent";
+    if (state.selected?.kind === "identity" && state.selected.id === row.id) {
+      button.setAttribute("aria-current", "true");
+    }
     item.append(button);
     root.append(item);
   }
@@ -1349,6 +1582,121 @@ function writeCensus(census) {
   }
 }
 
+function inhabitantName(id) {
+  const named = state.names.get(id);
+  return typeof named === "string" && named.length > 0 ? named : "agent";
+}
+
+function epithetOf(id) {
+  const raw = state.text[`epithets.${id}`];
+  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : "";
+}
+
+function loadLedger(id) {
+  if (state.ledgers.has(id)) {
+    return;
+  }
+  state.ledgers.set(id, []);
+  readJson(`/identities/${encodeURIComponent(id)}`)
+    .then((data) => {
+      state.ledgers.set(id, Array.isArray(data.ledger) ? data.ledger : []);
+      if (state.selected && (state.selected.kind === "identity" || state.selected.kind === "echo") && state.selected.id === id) {
+        writeSelected(state.selected);
+      }
+    })
+    .catch(() => {
+      state.ledgers.delete(id);
+    });
+}
+
+function statRow(name, value) {
+  const row = document.createElement("div");
+  const dt = document.createElement("dt");
+  const dd = document.createElement("dd");
+  dt.textContent = name;
+  dd.textContent = value;
+  row.append(dt, dd);
+  return row;
+}
+
+function writeInhabitant(hit) {
+  const box = $("spectrum-selected");
+  const axes = $("spectrum-axes");
+  const caption = $("spectrum-caption");
+  const profile = state.profiles.get(hit.id);
+  const score = state.standing.get(hit.id) ?? { fame: 0, notoriety: 0 };
+  const named = inhabitantName(hit.id);
+  const title = document.createElement("strong");
+  title.textContent = hit.kind === "echo" ? `echo of ${named}` : named;
+  const at = hit.position ? `${hit.position.x}, ${hit.position.y}, ${hit.position.z}` : "";
+  const meta = document.createElement("small");
+  const bits = [hit.kind === "echo" ? "echo" : "inhabitant"];
+  if (profile?.founder || state.founders.has(hit.id)) {
+    bits.push("founder");
+  }
+  if (profile?.online === true) {
+    bits.push("here");
+  }
+  if (typeof profile?.sessions === "number" && profile.sessions > 0) {
+    bits.push(profile.sessions === 1 ? "1 session" : `${profile.sessions} sessions`);
+  }
+  if (at.length > 0) {
+    bits.push(at);
+  }
+  meta.textContent = bits.join(" · ");
+  const kids = [title, meta];
+  const epithet = epithetOf(hit.id);
+  if (epithet.length > 0) {
+    const lore = document.createElement("p");
+    lore.className = "spectrum-epithet";
+    lore.textContent = epithet;
+    kids.push(lore);
+  }
+  const stats = document.createElement("dl");
+  stats.className = "spectrum-stats";
+  stats.append(statRow("fame", String(score.fame)), statRow("notoriety", String(score.notoriety)));
+  const meters = document.createElement("div");
+  meters.className = "spectrum-standing";
+  for (const [kind, value] of [
+    ["fame", score.fame],
+    ["notoriety", score.notoriety],
+  ]) {
+    const row = document.createElement("div");
+    row.dataset.kind = kind;
+    const fill = document.createElement("i");
+    fill.style.width = `${Math.max(4, Math.min(100, Math.round(Number(value) * 4)))}%`;
+    row.append(fill);
+    meters.append(row);
+  }
+  kids.push(stats, meters);
+  if (axes) {
+    axes.replaceChildren();
+    axes.dataset.empty = "true";
+  }
+  const cited = state.ledgers.get(hit.id);
+  if (cited === undefined) {
+    loadLedger(hit.id);
+  } else if (cited.length > 0) {
+    const kicker = document.createElement("p");
+    kicker.className = "spectrum-kicker";
+    kicker.textContent = "Cited";
+    const list = document.createElement("ul");
+    list.className = "spectrum-ledger";
+    for (const row of cited.slice(-6).reverse()) {
+      const item = document.createElement("li");
+      const kind = row.kind === "notoriety" ? "notoriety" : "fame";
+      const amount = Number(row.amount) || 0;
+      item.textContent = `t${Number(row.tick) || 0} · ${kind} +${amount}`;
+      list.append(item);
+    }
+    kids.push(kicker, list);
+  }
+  box.replaceChildren(...kids);
+  if (caption) {
+    caption.textContent = epithet.length > 0 ? epithet : "Fame and notoriety are the public standing.";
+  }
+}
+
 function writeSelected(hit) {
   const box = $("spectrum-selected");
   const axes = $("spectrum-axes");
@@ -1356,6 +1704,7 @@ function writeSelected(hit) {
   if (box === null || axes === null) {
     return;
   }
+  axes.classList.remove("spectrum-standing");
   if (hit === null) {
     box.replaceChildren();
     box.textContent = "Click the lattice.";
@@ -1365,6 +1714,12 @@ function writeSelected(hit) {
       caption.textContent =
         "The fold is not the world. It is what the log looks like when you stand outside time.";
     }
+    writeHere();
+    return;
+  }
+  if (hit.kind === "identity" || hit.kind === "echo") {
+    writeInhabitant(hit);
+    writeHere();
     return;
   }
   const spec = spectrumOf(hit, state.types, state.standing);
@@ -1384,6 +1739,7 @@ function writeSelected(hit) {
   if (caption) {
     caption.textContent = placeTitle(hit) || hit.type || "A place in the fold.";
   }
+  writeHere();
 }
 
 function pickFromEvent(event) {
@@ -1460,11 +1816,15 @@ async function refresh() {
       tickLabel.textContent = String(state.tick);
     }
     state.types = rules?.registry?.types ?? {};
-    state.names = new Map((identities.identities ?? []).map((row) => [row.id, row.name]));
-    state.founders = new Set((identities.identities ?? []).filter((row) => row.founder).map((row) => row.id));
+    state.text = rules?.registry?.text && typeof rules.registry.text === "object" ? rules.registry.text : {};
+    const identityRows = Array.isArray(identities.identities) ? identities.identities : [];
+    state.names = new Map(identityRows.map((row) => [row.id, row.name]));
+    state.profiles = new Map(identityRows.map((row) => [row.id, row]));
+    state.founders = new Set(identityRows.filter((row) => row.founder).map((row) => row.id));
     state.standing = new Map(
       (standing.standing ?? []).map((row) => [row.id, { fame: Number(row.fame) || 0, notoriety: Number(row.notoriety) || 0 }]),
     );
+    state.ledgers.clear();
     applyMap(map);
     state.dirty = true;
     if (status) {
@@ -1526,10 +1886,18 @@ function listen() {
   source.addEventListener("presence", (event) => {
     try {
       const data = JSON.parse(event.data);
-      dropKind("identity");
+      const seen = new Set();
       for (const row of Array.isArray(data.bodies) ? data.bodies : []) {
         if (typeof row.id === "string") {
+          seen.add(row.id);
           rememberBody(row.id, payloadPosition(row.position ?? row), "identity");
+        }
+      }
+      for (const row of listOf("identity")) {
+        if (!seen.has(row.id)) {
+          state.occupants.delete(occupantKey("identity", row.id));
+          state.flights.delete(row.id);
+          state.dirty = true;
         }
       }
       state.streamLive = true;
@@ -1555,7 +1923,12 @@ function flicker(now, phase) {
 function aimLamps() {
   const ranked = LIT_KINDS.flatMap((kind) => listOf(kind))
     .map((row) => {
-      const world = row.type === "vantage" ? orbitSeat(row.position, performance.now()) : cell(row.position);
+      const world =
+        row.kind === "identity"
+          ? livingWorld(row)
+          : row.type === "vantage"
+            ? orbitSeat(row.position, performance.now())
+            : cell(row.position);
       if (row.kind === "echo") {
         world.addScaledVector(T_AXIS, 5.2);
       }
@@ -1605,6 +1978,8 @@ function tick() {
   if (!reduced) {
     const now = performance.now();
     tickFly(now);
+    tickFlights(now);
+    tickJet(now);
     tickSparks(now);
     controls.update();
     cosmos.rotation.y += 0.00018;
@@ -1639,7 +2014,9 @@ function tick() {
         }
     }
   } else {
-    tickSparks(performance.now());
+    const now = performance.now();
+    tickFlights(now);
+    tickSparks(now);
     aimLamps();
   }
   renderer.render(scene, camera);
@@ -1661,6 +2038,11 @@ function bind() {
   }
   canvas.addEventListener("click", (event) => {
     const hit = pickFromEvent(event);
+    if (hit && (hit.kind === "identity" || hit.kind === "echo" || hit.kind === "anchor")) {
+      toggleLook(hit);
+      return;
+    }
+    state.look = null;
     state.selected = hit;
     writeSelected(hit);
   });
@@ -1675,9 +2057,7 @@ function bind() {
     if (row === undefined) {
       return;
     }
-    state.selected = row;
-    writeSelected(row);
-    flyToRow(row);
+    toggleLook(row);
   });
 }
 

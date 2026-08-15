@@ -134,7 +134,9 @@
 .spectrum-readout {
   top: 3.6rem;
   right: 1rem;
-  width: min(15.5rem, 34vw);
+  width: min(17.5rem, 36vw);
+  max-height: calc(100vh - 8.5rem);
+  overflow: auto;
   padding: 0.75rem 0.85rem 0.9rem;
   border: 1px solid var(--line);
   background: rgba(11, 14, 17, 0.82);
@@ -172,8 +174,14 @@
 }
 
 .spectrum-here button:hover,
-.spectrum-here button:focus-visible {
+.spectrum-here button:focus-visible,
+.spectrum-here button[aria-current="true"] {
   color: var(--ink);
+}
+
+.spectrum-here button[aria-current="true"] {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .spectrum-here .empty {
@@ -228,6 +236,80 @@
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 0.66rem;
   color: var(--mute);
+}
+
+.spectrum-epithet {
+  margin: 0.45rem 0 0;
+  color: #00ffd4;
+  font-family: "Fraunces", "Source Serif 4", Georgia, serif;
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.spectrum-stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.18rem 0.7rem;
+  margin: 0.55rem 0 0;
+}
+
+.spectrum-stats div {
+  display: contents;
+}
+
+.spectrum-stats dt,
+.spectrum-stats dd {
+  margin: 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+.spectrum-stats dt {
+  color: var(--mute);
+}
+
+.spectrum-stats dd {
+  text-align: right;
+  color: var(--ink);
+}
+
+.spectrum-standing {
+  display: grid;
+  gap: 0.28rem;
+  margin-top: 0.4rem;
+}
+
+.spectrum-standing div {
+  height: 0.28rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.spectrum-standing i {
+  display: block;
+  height: 100%;
+  min-width: 0.2rem;
+}
+
+.spectrum-standing [data-kind="fame"] i {
+  background: #00ffd4;
+}
+
+.spectrum-standing [data-kind="notoriety"] i {
+  background: #ff6a28;
+}
+
+.spectrum-ledger {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+}
+
+.spectrum-ledger li {
+  margin: 0.12rem 0 0;
+  color: var(--mute);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.64rem;
 }
 
 .spectrum-axes {
