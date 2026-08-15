@@ -259,14 +259,37 @@ function hashPoint(seq) {
   return new THREE.Vector3(x, y, z);
 }
 
+function parseCellText(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const parts = value.split(",");
+  if (parts.length !== 3) {
+    return null;
+  }
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  const z = Number(parts[2]);
+  if (![x, y, z].every((n) => Number.isInteger(n))) {
+    return null;
+  }
+  return { x, y, z };
+}
+
 function payloadPosition(payload) {
   if (payload === null || typeof payload !== "object") {
     return null;
   }
   const nested = payload.position;
+  if (typeof nested === "string") {
+    const fromText = parseCellText(nested);
+    if (fromText !== null) {
+      return fromText;
+    }
+  }
   const source = nested !== null && typeof nested === "object" ? nested : payload;
   if (typeof source.x !== "number" || typeof source.y !== "number" || typeof source.z !== "number") {
-    return null;
+    return parseCellText(payload.dest) ?? parseCellText(payload.from) ?? null;
   }
   return { x: source.x, y: source.y, z: source.z };
 }
@@ -590,45 +613,74 @@ function rebuildAnchors(anchors) {
   }
 }
 
-function rebuildWardens(rows) {
+function wardenAt(row, pose, lift) {
+  const at = pose?.walkHome === undefined ? cell(row.position) : pose.walkHome.clone();
+  at.x += pose?.x ?? 0;
+  at.y += lift + (pose?.y ?? 0);
+  at.z += pose?.z ?? 0;
+  dummy.position.copy(at);
+  if (pose !== null && pose !== undefined && (pose.pitch !== 0 || pose.roll !== 0 || pose.mode !== undefined)) {
+    dummy.rotation.set(pose.pitch ?? 0, pose.yaw ?? 0, pose.roll ?? 0);
+  } else {
+    dummy.lookAt(0, dummy.position.y, 0);
+  }
+  dummy.scale.setScalar(pose?.ash === true ? 0.92 : 1);
+  dummy.updateMatrix();
+}
+
+function rebuildWardens(rows, now = performance.now()) {
   world.wardenOrder = rows.slice(0, MAX_WARDENS).map((row) => row.id);
-  writeInstances(wardenMesh, rows, (object, row) => {
-    const at = cell(row.position);
-    object.position.copy(at);
-    object.position.y += 1.36;
-    object.scale.setScalar(1);
-    object.lookAt(0, object.position.y, 0);
-  });
-  writeInstances(wardenCrown, rows, (object, row) => {
-    const at = cell(row.position);
-    object.position.copy(at);
-    object.position.y += 3.05;
-    object.scale.setScalar(1);
-    object.lookAt(0, object.position.y, 0);
-  });
-  writeInstances(wardenBoss, rows, (object, row) => {
-    const at = cell(row.position);
-    object.position.copy(at);
-    object.position.y += 1.62;
-    object.scale.setScalar(1);
-    object.lookAt(0, object.position.y, 0);
-    object.position.add(new THREE.Vector3(0, 0, 0.42).applyQuaternion(object.quaternion));
-  });
-  writeInstances(wardenEye, rows, (object, row) => {
-    const at = cell(row.position);
-    object.position.copy(at);
-    object.position.y += 1.62;
-    object.scale.setScalar(1);
-    object.lookAt(0, object.position.y, 0);
-    object.position.add(new THREE.Vector3(0, 0, 0.46).applyQuaternion(object.quaternion));
-  });
+  const used = Math.min(rows.length, MAX_WARDENS);
+  for (let i = 0; i < used; i += 1) {
+    const row = rows[i];
+    const pose = combatPoseFor(row.id, now);
+    wardenAt(row, pose, 1.36);
+    wardenMesh.setMatrixAt(i, dummy.matrix);
+    wardenAt(row, pose, 3.05);
+    wardenCrown.setMatrixAt(i, dummy.matrix);
+    wardenAt(row, pose, 1.62);
+    dummy.position.add(new THREE.Vector3(0, 0, 0.42).applyQuaternion(dummy.quaternion));
+    dummy.updateMatrix();
+    wardenBoss.setMatrixAt(i, dummy.matrix);
+    wardenAt(row, pose, 1.62);
+    dummy.position.add(new THREE.Vector3(0, 0, 0.46).applyQuaternion(dummy.quaternion));
+    dummy.updateMatrix();
+    wardenEye.setMatrixAt(i, dummy.matrix);
+  }
+  for (const item of [wardenMesh, wardenCrown, wardenBoss, wardenEye]) {
+    item.count = used;
+    item.instanceMatrix.needsUpdate = true;
+  }
+}
+
+const PAPER_TYPES = new Set([
+  "war",
+  "wound",
+  "fallen",
+  "gold",
+  "resource",
+  "listing",
+  "offer",
+  "message",
+  "channel",
+  "skill",
+  "home",
+  "invite",
+  "membership",
+  "guild",
+]);
+
+function restNpc(mesh, at) {
+  mesh.userData.home = at.clone();
+  mesh.position.copy(at);
+  mesh.rotation.set(0, 0, 0);
 }
 
 function rebuildDrifts(rows) {
   clearGroup(driftsGroup);
   for (const drift of rows) {
     const mesh = PROTO.drift.clone();
-    mesh.position.copy(cell(drift.position));
+    restNpc(mesh, cell(drift.position));
     tagPick(mesh, "drift", typeof drift.id === "string" ? drift.id : "");
     driftsGroup.add(mesh);
   }
@@ -640,8 +692,11 @@ function rebuildEntities(rows) {
     if (entity.position === undefined || entity.position === null) {
       continue;
     }
+    if (PAPER_TYPES.has(entity.type)) {
+      continue;
+    }
     const mesh = PROTO.entity.clone();
-    mesh.position.copy(cell(entity.position));
+    restNpc(mesh, cell(entity.position));
     tagPick(mesh, "entity", typeof entity.id === "string" ? entity.id : "");
     entitiesGroup.add(mesh);
   }
@@ -1038,9 +1093,10 @@ function tickProbes(now) {
     if (id === undefined || row?.position === undefined) {
       continue;
     }
-    const home = cell(row.position);
+    const overlay = combatPoseFor(id, now);
+    const home = overlay?.walkHome ?? cell(row.position);
     const probe = ensureProbe(id, home, now);
-    if (now >= probe.next) {
+    if (overlay === null && now >= probe.next) {
       if (probe.act !== "hold") {
         holdProbe(probe, now, 600);
       } else if (someoneElseProbing(id, now)) {
@@ -1049,8 +1105,8 @@ function tickProbes(now) {
         startProbeAct(probe, now);
       }
     }
-    const pose = probePose(probe, now);
-    const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
+    const pose = overlay ?? probePose(probe, now);
+    const color = pose.ash === true ? ASH : world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
     const at = placeProbe(i, home, pose, color);
     poseProbeRig(probe, at, pose, now, dt);
   }
@@ -1071,8 +1127,8 @@ function tickProbes(now) {
     if (row?.position === undefined) {
       continue;
     }
-    const home = cell(row.position);
-    const pose = probe === undefined ? { x: 0, y: 0, z: 0 } : probePose(probe, now);
+    const pose = combatPoseFor(id, now) ?? (probe === undefined ? { x: 0, y: 0, z: 0 } : probePose(probe, now));
+    const home = pose.walkHome ?? cell(row.position);
     sprite.position.set(home.x + pose.x, home.y + pose.y + AGENT_HEIGHT, home.z + pose.z);
   }
 }
@@ -1203,10 +1259,12 @@ function foldEntity(item) {
   const id = typeof payload.id === "string" ? payload.id : "";
   const at = payloadPosition(payload);
   if (item.type === "effect.create" && id.length > 0) {
+    const fields = payload.fields !== null && typeof payload.fields === "object" ? payload.fields : {};
     world.liveEntities.set(id, {
       id,
       type: typeof payload.type === "string" ? payload.type : "entity",
-      position: at,
+      position: at ?? parseCellText(fields.position),
+      fields,
     });
     return;
   }
@@ -1327,6 +1385,24 @@ function visualTone(type) {
   if (type === "effect.move" || type === "act.move" || type === "wake.followed") {
     return { color: 0x718a9b, count: 18, duration: 1200, spread: 3 };
   }
+  if (type === "war.declared") {
+    return { color: 0xc45a3a, count: 36, duration: 2200, spread: 6 };
+  }
+  if (type === "war.struck") {
+    return { color: 0xe8c36a, count: 20, duration: 900, spread: 2 };
+  }
+  if (type === "body.fell") {
+    return { color: 0x5c6166, count: 40, duration: 2800, spread: 4 };
+  }
+  if (type === "body.rose") {
+    return { color: 0xe8fff8, count: 48, duration: 2600, spread: 5 };
+  }
+  if (type === "body.died") {
+    return { color: 0x3d4248, count: 28, duration: 2400, spread: 3 };
+  }
+  if (type === "war.yielded") {
+    return { color: 0x718a9b, count: 18, duration: 1400, spread: 3 };
+  }
   return { color: 0x4a7a68, count: 16, duration: 1200, spread: 3 };
 }
 
@@ -1346,6 +1422,8 @@ function visualDeed(type) {
     type === "speak.warden" ||
     type.startsWith("act.") ||
     type.startsWith("amendment.") ||
+    type.startsWith("war.") ||
+    type.startsWith("body.") ||
     type === "wake.left" ||
     type === "wake.heeded" ||
     type === "wake.followed" ||
@@ -1566,6 +1644,507 @@ function tickSparks(now) {
     for (const path of spark.paths) {
       path.material.opacity = Math.max(0, (1 - age) * 0.68);
     }
+  }
+}
+
+const combat = {
+  wars: new Map(),
+  fallen: new Map(),
+  wounds: new Map(),
+  poses: new Map(),
+  shots: [],
+  bursts: [],
+};
+
+const ASH = new THREE.Color(0x5c6166);
+const FIRE_STYLES = ["lance", "helix", "pulse", "fork", "ember", "needle"];
+
+function fireStyle(id) {
+  return FIRE_STYLES[probeSeed(id) % FIRE_STYLES.length];
+}
+
+function combatColor(id) {
+  return world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
+}
+
+function setCombatPose(id, mode, now, extra = {}) {
+  if (typeof id !== "string" || id.length === 0) {
+    return;
+  }
+  const duration =
+    extra.duration ??
+    (mode === "hurt" ? 3800 : mode === "rise" ? 2200 : mode === "dead" ? 2400 : mode === "fallen" ? 1e9 : 900);
+  combat.poses.set(id, { mode, born: now, duration, seed: probeSeed(id), ...extra });
+}
+
+function sameCell(left, right) {
+  return left !== null && right !== null && left.x === right.x && left.y === right.y && left.z === right.z;
+}
+
+function npcPosition(id) {
+  const warden = world.wardens.find((row) => row.id === id);
+  if (warden?.position !== undefined) {
+    return warden.position;
+  }
+  const drift = world.drifts.find((row) => row.id === id);
+  if (drift?.position !== undefined) {
+    return drift.position;
+  }
+  const live = world.liveEntities.get(id);
+  if (live?.position !== undefined && live.position !== null && !PAPER_TYPES.has(live.type)) {
+    return live.position;
+  }
+  const mapped = world.entities.find((row) => row.id === id);
+  if (mapped?.position !== undefined && mapped.position !== null && !PAPER_TYPES.has(mapped.type)) {
+    return mapped.position;
+  }
+  return null;
+}
+
+function combatHome(id) {
+  const row = world.liveBodies.get(id);
+  if (row?.position !== undefined) {
+    return cell(row.position);
+  }
+  const body = world.bodies.find((item) => item.id === id);
+  if (body?.position !== undefined) {
+    return cell(body.position);
+  }
+  const npc = npcPosition(id);
+  return npc === null ? null : cell(npc);
+}
+
+function occupantAt(at) {
+  if (at === null) {
+    return "";
+  }
+  for (const [id, row] of world.liveBodies) {
+    if (sameCell(row.position, at)) {
+      return id;
+    }
+  }
+  for (const row of world.wardens) {
+    if (sameCell(row.position, at)) {
+      return row.id;
+    }
+  }
+  for (const row of world.drifts) {
+    if (sameCell(row.position, at)) {
+      return row.id;
+    }
+  }
+  for (const [id, row] of world.liveEntities) {
+    if (!PAPER_TYPES.has(row.type) && sameCell(row.position, at)) {
+      return id;
+    }
+  }
+  return "";
+}
+
+function namedBody(name) {
+  if (typeof name !== "string" || name.length === 0) {
+    return "";
+  }
+  const folded = name.toLowerCase();
+  for (const [id, label] of world.names) {
+    if (typeof label === "string" && label.toLowerCase() === folded) {
+      return id;
+    }
+  }
+  for (const [id, row] of world.liveEntities) {
+    if (PAPER_TYPES.has(row.type)) {
+      continue;
+    }
+    const beast = typeof row.fields?.beast === "string" ? row.fields.beast : "";
+    const kind = typeof row.fields?.kind === "string" ? row.fields.kind : "";
+    const type = typeof row.type === "string" ? row.type : "";
+    if (beast.toLowerCase() === folded || kind.toLowerCase() === folded || type.toLowerCase() === folded) {
+      return id;
+    }
+  }
+  return "";
+}
+
+function resolveCombatId(id, payload) {
+  if (typeof id === "string" && id.length > 0 && combatHome(id) !== null) {
+    return id;
+  }
+  const named = namedBody(typeof payload?.name === "string" ? payload.name : "");
+  if (named.length > 0) {
+    return named;
+  }
+  const occupant = occupantAt(payloadPosition(payload ?? {}));
+  if (occupant.length > 0) {
+    return occupant;
+  }
+  return typeof id === "string" ? id : "";
+}
+
+function lookYaw(from, to) {
+  const delta = to.clone().sub(from);
+  return Math.atan2(delta.x, delta.z);
+}
+
+function disposeCombatGroup(group) {
+  scene.remove(group);
+  group.traverse((node) => {
+    node.geometry?.dispose();
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      material?.dispose();
+    }
+  });
+}
+
+function fireShot(fromId, toId, now, item) {
+  const striker = resolveCombatId(fromId, item.payload);
+  const target = resolveCombatId(toId, item.payload);
+  const fromAt = combatHome(striker);
+  const toAt = combatHome(target) ?? (payloadPosition(item.payload) === null ? null : cell(payloadPosition(item.payload)));
+  if (fromAt === null || toAt === null) {
+    return;
+  }
+  const style = fireStyle(striker);
+  const color = combatColor(striker);
+  const group = new THREE.Group();
+  const delta = toAt.clone().sub(fromAt);
+  const length = Math.max(0.4, delta.length());
+  const mid = fromAt.clone().lerp(toAt, 0.5);
+  mid.y += 0.55;
+  group.position.copy(mid);
+  group.lookAt(toAt.x, toAt.y + 0.55, toAt.z);
+
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(style === "ember" ? 0.08 : 0.028, style === "needle" ? 0.012 : 0.045, length, 8, 1, true),
+    glowMat(color, 0.85),
+  );
+  core.rotation.x = Math.PI / 2;
+  group.add(core);
+  if (style === "helix" || style === "pulse") {
+    const wrap = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.03, 6, 24), glowMat(0xe8fff8, 0.7));
+    wrap.rotation.y = Math.PI / 2;
+    group.add(wrap);
+    group.userData.wrap = wrap;
+  }
+  if (style === "fork") {
+    for (const side of [-1, 1]) {
+      const tine = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.03, length * 0.72, 6, 1, true), glowMat(color, 0.55));
+      tine.rotation.x = Math.PI / 2;
+      tine.position.x = side * 0.18;
+      group.add(tine);
+    }
+  }
+  const count = style === "ember" ? 48 : 28;
+  const positions = new Float32Array(count * 3);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const dust = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color,
+      size: style === "ember" ? 1.15 : 0.7,
+      map: quantum.dust.material.map,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  group.add(dust);
+  scene.add(group);
+  combat.shots.push({
+    group,
+    core,
+    dust,
+    positions,
+    from: fromAt,
+    to: toAt,
+    style,
+    born: now,
+    duration: style === "ember" ? 920 : style === "needle" ? 380 : 640,
+  });
+  setCombatPose(striker, "fire", now, { style, toward: target, duration: 720 });
+  const wounds = (combat.wounds.get(target) ?? 0) + 1;
+  combat.wounds.set(target, Math.min(3, wounds));
+  setCombatPose(target, "hit", now, { from: striker, wounds, duration: 520 });
+}
+
+function impactBurst(at, now, color) {
+  const group = new THREE.Group();
+  group.position.copy(at);
+  group.position.y += 0.7;
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), glowMat(color, 0.8));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.045, 6, 28), glowMat(0xe8fff8, 0.7));
+  ring.rotation.x = Math.PI / 2;
+  group.add(shell, ring);
+  scene.add(group);
+  combat.bursts.push({ group, shell, ring, born: now, duration: 700 });
+}
+
+function tickCombatFx(now, dt) {
+  for (let i = combat.shots.length - 1; i >= 0; i -= 1) {
+    const shot = combat.shots[i];
+    const u = (now - shot.born) / shot.duration;
+    if (u >= 1) {
+      disposeCombatGroup(shot.group);
+      combat.shots.splice(i, 1);
+      continue;
+    }
+    const travel = shot.style === "ember" ? u * u : shot.style === "needle" ? Math.min(1, u * 2.4) : u;
+    const along = shot.from.clone().lerp(shot.to, Math.min(1, travel));
+    along.y += 0.55;
+    shot.group.position.copy(along);
+    shot.core.material.opacity = Math.max(0, 0.9 - u * 0.9);
+    if (shot.group.userData.wrap !== undefined) {
+      shot.group.userData.wrap.rotation.z += dt * 14;
+      shot.group.userData.wrap.scale.setScalar(0.7 + Math.sin(u * Math.PI * 4) * 0.35);
+    }
+    for (let n = 0; n < shot.positions.length; n += 3) {
+      const t = n / shot.positions.length;
+      const wobble = shot.style === "helix" ? Math.sin((t + u) * 18) * 0.22 : (Math.random() - 0.5) * 0.08;
+      shot.positions[n] = wobble;
+      shot.positions[n + 1] = (t - 0.5) * 0.9;
+      shot.positions[n + 2] = shot.style === "helix" ? Math.cos((t + u) * 18) * 0.22 : (Math.random() - 0.5) * 0.08;
+    }
+    shot.dust.geometry.attributes.position.needsUpdate = true;
+    shot.dust.material.opacity = Math.max(0, 1 - u);
+    if (u > 0.72 && shot.burst !== true) {
+      shot.burst = true;
+      impactBurst(shot.to, now, shot.core.material.color);
+    }
+  }
+  for (let i = combat.bursts.length - 1; i >= 0; i -= 1) {
+    const burst = combat.bursts[i];
+    const u = (now - burst.born) / burst.duration;
+    if (u >= 1) {
+      disposeCombatGroup(burst.group);
+      combat.bursts.splice(i, 1);
+      continue;
+    }
+    const grow = 1 + u * 3.4;
+    burst.shell.scale.setScalar(grow);
+    burst.shell.material.opacity = Math.max(0, 0.8 - u);
+    burst.ring.scale.setScalar(1 + u * 5);
+    burst.ring.material.opacity = Math.max(0, 0.7 - u);
+  }
+}
+
+function combatPoseFor(id, now) {
+  const fallen = combat.fallen.get(id);
+  const pose = combat.poses.get(id);
+  if (fallen !== undefined && (pose === undefined || (pose.mode !== "rise" && pose.mode !== "dead"))) {
+    return {
+      x: 0,
+      y: 0.08,
+      z: 0,
+      yaw: 0,
+      pitch: Math.PI / 2,
+      roll: 0.08,
+      lamp: 0.18,
+      halo: 0,
+      beam: 0,
+      ring: 0,
+      release: 0,
+      ash: true,
+    };
+  }
+  if (pose === undefined) {
+    return null;
+  }
+  const u = Math.min(1, Math.max(0, (now - pose.born) / Math.max(1, pose.duration)));
+  if (now - pose.born > pose.duration && pose.mode !== "fallen" && pose.mode !== "dead") {
+    if (pose.mode === "hit") {
+      setCombatPose(id, "hurt", now, { wounds: pose.wounds, duration: 3600 });
+      return combatPoseFor(id, now);
+    }
+    combat.poses.delete(id);
+    return fallen !== undefined ? combatPoseFor(id, now) : null;
+  }
+  const base = { x: 0, y: 0.16, z: 0, yaw: 0, pitch: 0, roll: 0, lamp: 1.15, halo: 0, beam: 0, ring: 0, release: 0, ash: false };
+  const toward = typeof pose.toward === "string" ? combatHome(pose.toward) : null;
+  const here = combatHome(id);
+  if (toward !== null && here !== null) {
+    base.yaw = lookYaw(here, toward);
+  }
+  if (pose.mode === "lock") {
+    base.lamp = 1.45;
+    base.ring = 0.8;
+    base.y = 0.2;
+    return base;
+  }
+  if (pose.mode === "fire") {
+    const kick = gate(u, 0.12, 0.7);
+    base.z -= kick * (pose.style === "ember" ? 0.22 : 0.14);
+    base.pitch = -kick * 0.35;
+    base.lamp = 1.15 + kick * 1.1;
+    base.beam = kick;
+    if (pose.style === "fork") {
+      base.roll = Math.sin(u * 20) * 0.18;
+    }
+    if (pose.style === "helix") {
+      base.yaw += u * 0.8;
+    }
+    return base;
+  }
+  if (pose.mode === "hit") {
+    const rock = gate(u, 0.08, 0.55);
+    const wounds = pose.wounds ?? 1;
+    base.z += rock * (0.16 + wounds * 0.08);
+    base.pitch = rock * 0.55;
+    base.roll = Math.sin(u * 22) * rock * 0.4;
+    base.lamp = 1.15 + rock * 0.8;
+    return base;
+  }
+  if (pose.mode === "hurt") {
+    const wounds = pose.wounds ?? 1;
+    const linger = 1 - u;
+    base.pitch = linger * (0.12 + wounds * 0.08);
+    base.roll = Math.sin(now * 0.012) * linger * 0.1;
+    base.y = 0.14;
+    base.lamp = 0.7 + linger * 0.2;
+    return base;
+  }
+  if (pose.mode === "rise") {
+    const lift = easeInOut(u);
+    base.pitch = (1 - lift) * (Math.PI / 2);
+    base.y = 0.08 + lift * 0.12;
+    base.lamp = 0.2 + lift * 1.1;
+    base.ash = lift < 0.55;
+    return base;
+  }
+  if (pose.mode === "dead") {
+    const from = pose.from !== undefined && pose.from !== null ? cell(pose.from) : here;
+    const dest = pose.dest !== undefined && pose.dest !== null ? cell(pose.dest) : null;
+    if (from !== null && dest !== null) {
+      const walk = easeInOut(u);
+      base.walkHome = from.clone().lerp(dest, walk);
+    }
+    base.pitch = Math.PI / 2;
+    base.lamp = 0.12;
+    base.ash = true;
+    if (u >= 1 && pose.dest !== undefined && pose.dest !== null) {
+      rememberBody(id, pose.dest);
+    }
+    return base;
+  }
+  return base;
+}
+
+function noteCombat(item, now) {
+  const type = typeof item.type === "string" ? item.type : "";
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  if (type === "war.declared") {
+    const attacker = resolveCombatId(typeof payload.attacker === "string" ? payload.attacker : actorId(item), payload);
+    const defender = resolveCombatId(typeof payload.defender === "string" ? payload.defender : payload.target, payload);
+    if (typeof payload.war === "string") {
+      combat.wars.set(payload.war, { attacker, defender });
+    }
+    combat.wounds.set(defender, 0);
+    setCombatPose(attacker, "lock", now, { toward: defender, duration: 1600 });
+    setCombatPose(defender, "lock", now, { toward: attacker, duration: 1600 });
+    return;
+  }
+  if (type === "war.struck") {
+    const striker = resolveCombatId(typeof payload.striker === "string" ? payload.striker : actorId(item), payload);
+    const target = resolveCombatId(typeof payload.target === "string" ? payload.target : "", payload);
+    fireShot(striker, target, now, item);
+    return;
+  }
+  if (type === "war.yielded") {
+    if (typeof payload.war === "string") {
+      combat.wars.delete(payload.war);
+    }
+    return;
+  }
+  if (type === "body.fell") {
+    const holder = resolveCombatId(typeof payload.holder === "string" ? payload.holder : "", payload);
+    combat.fallen.set(holder, { until: payload.until, tick: payload.tick });
+    combat.wounds.set(holder, 3);
+    setCombatPose(holder, "fallen", now, { duration: 1e9 });
+    const at = combatHome(holder);
+    if (at !== null) {
+      impactBurst(at, now, ASH);
+    }
+    return;
+  }
+  if (type === "body.rose") {
+    const holder = resolveCombatId(typeof payload.holder === "string" ? payload.holder : "", payload);
+    combat.fallen.delete(holder);
+    combat.wounds.set(holder, 0);
+    setCombatPose(holder, "rise", now, { duration: 2200 });
+    return;
+  }
+  if (type === "body.died") {
+    const holder = resolveCombatId(typeof payload.holder === "string" ? payload.holder : "", payload);
+    combat.fallen.delete(holder);
+    const dest = parseCellText(payload.dest);
+    const from = parseCellText(payload.from) ?? bodyOf(holder) ?? npcPosition(holder);
+    if (from !== null && world.liveBodies.has(holder)) {
+      rememberBody(holder, from);
+    }
+    setCombatPose(holder, "dead", now, { dest, from, duration: 2400 });
+  }
+}
+
+function ensureNpcMaterials(mesh) {
+  if (mesh.userData.ownMats === true) {
+    return;
+  }
+  mesh.traverse((node) => {
+    if (node.material === undefined || Array.isArray(node.material)) {
+      return;
+    }
+    node.material = node.material.clone();
+    node.userData.restColor = node.material.color.clone();
+    if (node.material.emissive !== undefined) {
+      node.userData.restEmissive = node.material.emissive.clone();
+    }
+  });
+  mesh.userData.ownMats = true;
+}
+
+function tintNpc(mesh, ash) {
+  ensureNpcMaterials(mesh);
+  mesh.traverse((node) => {
+    if (node.material === undefined || Array.isArray(node.material) || node.userData.restColor === undefined) {
+      return;
+    }
+    node.material.color.copy(ash ? ASH : node.userData.restColor);
+    if (node.material.emissive !== undefined && node.userData.restEmissive !== undefined) {
+      node.material.emissive.copy(ash ? ASH : node.userData.restEmissive);
+      node.material.emissiveIntensity = ash ? 0.04 : node.material.emissiveIntensity;
+    }
+  });
+}
+
+function applyNpcPose(mesh, id, now) {
+  const pose = combatPoseFor(id, now);
+  const home = pose?.walkHome ?? mesh.userData.home;
+  if (home === undefined) {
+    return pose !== null;
+  }
+  if (pose === null) {
+    mesh.position.copy(home);
+    mesh.rotation.set(0, 0, 0);
+    tintNpc(mesh, false);
+    return false;
+  }
+  mesh.position.set(home.x + pose.x, home.y + pose.y, home.z + pose.z);
+  mesh.rotation.set(pose.pitch, pose.yaw, pose.roll);
+  tintNpc(mesh, pose.ash === true);
+  return true;
+}
+
+function tickNpcCombat(now) {
+  rebuildWardens(world.wardens, now);
+  for (const mesh of driftsGroup.children) {
+    const id = mesh.userData.pickId;
+    mesh.userData.combat = typeof id === "string" && applyNpcPose(mesh, id, now);
+  }
+  for (const mesh of entitiesGroup.children) {
+    const id = mesh.userData.pickId;
+    mesh.userData.combat = typeof id === "string" && applyNpcPose(mesh, id, now);
   }
 }
 
@@ -2478,7 +3057,11 @@ function tickQuantum(now) {
 
 function tickArtifactMotions(now) {
   for (const root of [anchorsGroup, driftsGroup, entitiesGroup]) {
-    root.traverse((node) => {
+    for (const child of root.children) {
+      if (child.userData.combat === true) {
+        continue;
+      }
+      child.traverse((node) => {
       if (node.userData.motion === "orbit") {
         node.rotation.z += 0.004;
       } else if (node.userData.motion === "gimbal") {
@@ -2488,7 +3071,8 @@ function tickArtifactMotions(now) {
         const scale = 1 + Math.sin(now * 0.0025) * 0.12;
         node.scale.setScalar(scale);
       }
-    });
+      });
+    }
   }
 }
 
@@ -2513,13 +3097,21 @@ function frame(now) {
   if (!reduced) {
     tickSparkQueue(now);
     tickSparks(now);
+    tickCombatFx(now, lastProbeTick === 0 ? 0.016 : Math.min(0.05, (now - lastProbeTick) / 1000));
     tickQuantum(now);
     tickProbes(now);
+    tickNpcCombat(now);
     for (const drift of driftsGroup.children) {
+      if (drift.userData.combat === true) {
+        continue;
+      }
       drift.rotation.y += 0.012;
       drift.rotation.x += 0.006;
     }
     for (const entity of entitiesGroup.children) {
+      if (entity.userData.combat === true) {
+        continue;
+      }
       entity.rotation.y += 0.008;
     }
     tickArtifactMotions(now);
@@ -3291,6 +3883,9 @@ function appendRecord(item) {
       from: item.type === "act.move" ? previousBody : item.type === "effect.move" ? previousEntity : null,
       at: item.type === "effect.destroy" ? previousEntity : undefined,
     });
+  }
+  if (!reduced) {
+    noteCombat(item, performance.now());
   }
 }
 

@@ -53,6 +53,12 @@ export function foldWorld(events: readonly Event[]): WorldView {
         bodies[actor] = { x, y, z };
       }
     }
+    if (event.type === "body.died" && typeof event.payload["holder"] === "string") {
+      const dest = parseCellString(typeof event.payload["dest"] === "string" ? event.payload["dest"] : "");
+      if (dest !== null) {
+        bodies[event.payload["holder"]] = dest;
+      }
+    }
     if ((event.type === "act.move" || event.type === "act.follow") && actor !== undefined) {
       const x = event.payload["x"];
       const y = event.payload["y"];
@@ -62,7 +68,29 @@ export function foldWorld(events: readonly Event[]): WorldView {
       }
     }
     if (event.type === "effect.create" && typeof event.payload["id"] === "string") {
-      entitySeq = Math.max(entitySeq, entityNumber(event.payload["id"]));
+      const id = event.payload["id"];
+      entitySeq = Math.max(entitySeq, entityNumber(id));
+      const rawFields = event.payload["fields"];
+      const incoming =
+        rawFields !== null && typeof rawFields === "object" && !Array.isArray(rawFields)
+          ? { ...(rawFields as Entity["fields"]) }
+          : {};
+      const prior = entities[id];
+      const fields = { ...(prior?.fields ?? {}), ...incoming };
+      const named = typeof fields["position"] === "string" ? parseCellString(fields["position"]) : undefined;
+      const vec =
+        typeof event.payload["x"] === "number" &&
+        typeof event.payload["y"] === "number" &&
+        typeof event.payload["z"] === "number"
+          ? { x: event.payload["x"], y: event.payload["y"], z: event.payload["z"] }
+          : named ?? prior?.position;
+      entities[id] = {
+        id,
+        type: typeof event.payload["type"] === "string" ? event.payload["type"] : prior?.type ?? "entity",
+        fields,
+        ...(vec === null || vec === undefined ? {} : { position: vec }),
+        createdBy: prior?.createdBy ?? event.seq,
+      };
     }
     if (event.type === "wake.left" && typeof event.payload["id"] === "string") {
       const id = event.payload["id"];

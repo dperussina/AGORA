@@ -1,4 +1,5 @@
 import type { Position } from "./tick.ts";
+import { parseCellString } from "./wake.ts";
 
 export interface Effect {
   effect: string;
@@ -191,6 +192,9 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       if (!fields.ok) {
         return fail(item.effect, fields.reason);
       }
+      if (type.value === "wound" && fields.value["target"] === undefined && ctx.targetId !== undefined) {
+        fields.value["target"] = ctx.targetId;
+      }
       const id = ctx.nextId();
       ctx.entities.set(id, {
         id,
@@ -198,7 +202,12 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
         fields: fields.value,
         position: position.value,
       });
-      ctx.emit("effect.create", position.value === undefined ? { id, type: type.value } : { id, type: type.value, ...position.value });
+      ctx.emit("effect.create", {
+        id,
+        type: type.value,
+        fields: fields.value,
+        ...(position.value === undefined ? {} : position.value),
+      });
       return ok(item.effect);
     }
     case "destroy": {
@@ -479,8 +488,16 @@ function resolvePosition(
   }
   if (typeof value === "string") {
     const bound = bindParam(value, ctx);
-    if (bound !== undefined && typeof bound === "object") {
+    if (bound !== undefined) {
+      if (typeof bound === "string") {
+        const cell = parseCellString(bound);
+        return cell === null ? { ok: false, reason: "position must be a vec or null" } : { ok: true, value: cell };
+      }
       return resolvePosition(bound, ctx);
+    }
+    const cell = parseCellString(value);
+    if (cell !== null) {
+      return { ok: true, value: cell };
     }
     if (value.startsWith("$")) {
       return { ok: false, reason: `unbound ${value}` };

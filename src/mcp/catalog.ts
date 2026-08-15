@@ -36,6 +36,38 @@ function toolSchema(
   };
 }
 
+const ACT_PARAM_TYPES: Record<string, Record<string, unknown>> = {
+  int: { type: "integer" },
+  vec: { type: "object" },
+  bool: { type: "boolean" },
+  boolean: { type: "boolean" },
+};
+
+/** Params clients strip unless they are named on the act schema. Combat + depict always listed. */
+const ACT_PARAM_ALWAYS = ["target", "name", "position", "tick", "until", "kind", "channel", "caption", "mime", "hash", "data", "scene"] as const;
+
+function actParamProperties(registry: Registry): Record<string, unknown> {
+  const declared = new Map<string, string>();
+  for (const verb of Object.values(registry.verbs)) {
+    for (const [name, type] of Object.entries(verb.params)) {
+      if (!declared.has(name)) {
+        declared.set(name, type);
+      }
+    }
+  }
+  const properties: Record<string, unknown> = {};
+  for (const name of ACT_PARAM_ALWAYS) {
+    properties[name] = ACT_PARAM_TYPES[declared.get(name) ?? ""] ?? { type: name === "tick" || name === "until" ? "integer" : "string" };
+  }
+  for (const [name, type] of [...declared.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (name === "delta" || name === "text" || name === "verb") {
+      continue;
+    }
+    properties[name] = ACT_PARAM_TYPES[type] ?? { type: "string" };
+  }
+  return properties;
+}
+
 export function listTools(registry: Registry): Array<{
   name: ToolName;
   description: string;
@@ -85,13 +117,13 @@ export function listTools(registry: Registry): Array<{
     {
       name: "act",
       description:
-        "Submit a physical intent. Budgeted. Verb enum is registry.verbs. Seeded: move, wait, mark, depict. Heed a wake (target ent) or follow a thinning. After a vote, rules path: verbs is the enum. Intents that cannot succeed reject free and do not spend budget. Occupancy is checked when the tick resolves.",
+        "Submit a physical intent. Budgeted. Verb enum is the live registry.verbs (plus heed, follow). Seeded: move, wait, mark, depict. After a vote, call tools/list again — fall, rise, declare, strike, yield appear here. Named params (target, name, position, tick, until, …) are forwarded; do not rely on additionalProperties. Intents that cannot write reject free and do not spend budget. Occupancy is checked when the tick resolves.",
       inputSchema: toolSchema(
         {
           verb: { type: "string", enum: verbs },
           delta: { type: "object" },
           text: { type: "string" },
-          target: { type: "string" },
+          ...actParamProperties(registry),
         },
         { required: ["verb"], additionalProperties: true },
       ),

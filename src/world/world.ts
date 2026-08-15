@@ -26,6 +26,16 @@ import {
   type Warden,
 } from "../engine/geography.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
+import {
+  FALL_LINGER,
+  FIRST_PORT,
+  WAR_WOUND_MAX,
+  fallenFor,
+  openWarBetween,
+  parseCombatCell,
+  scalarArg,
+  thisWarWounds,
+} from "../engine/combat.ts";
 import { runEffects, type EffectContext, type Entity } from "../engine/effects.ts";
 import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName } from "../engine/registry.ts";
 import {
@@ -589,6 +599,7 @@ export class World {
     for (const intent of frozen) {
       this.resolveIntent(intent);
     }
+    this.resolveMissedRises();
     this.fireTriggers();
     const resolved = this.clerk.resolveTick();
     for (const proposal of resolved) {
@@ -796,6 +807,16 @@ export class World {
     if (verb === "follow") {
       return this.followWouldFail(identityId, args);
     }
+    if (verb === "strike") {
+      const holder = this.strikeHolder(args);
+      if (holder !== undefined && fallenFor(this.entities.values(), holder) !== undefined) {
+        return "holder is fallen";
+      }
+    }
+    const defined = this.clerk.registry.verbs[verb];
+    if (defined !== undefined && defined.effects.length > 0) {
+      return this.definedVerbWouldFail(identityId, verb, args);
+    }
     return null;
   }
 
@@ -882,11 +903,14 @@ export class World {
         this.append(`act.${intent.verb}_failed`, intent.identityId, { reason: blocked });
         return;
       }
+      const beforeIds = new Set(this.entities.keys());
+      const priorTarget = targetEntity;
       const runtime = this.bindEffects(intent.identityId, {
         targetId: intent.target,
         params: effectParams(intent),
         emit: (name, payload) => {
-          this.append(name, intent.identityId, { ...payload, identityId: intent.identityId });
+          const extra = this.combatEmitFields(name, intent, beforeIds, priorTarget);
+          this.append(name, intent.identityId, { ...payload, ...extra, identityId: intent.identityId });
           this.witness(intent.identityId, name === "effect.destroy" ? "notoriety" : "fame");
         },
       });
@@ -906,7 +930,11 @@ export class World {
         verb: intent.verb,
         target: intent.target,
         text: intent.text,
+        ...(intent.params ?? {}),
       });
+      if (intent.verb === "strike") {
+        this.maybeAutoFall(intent);
+      }
       this.fireTriggers("act.end", { selfId: intent.identityId });
     }
   }
@@ -2357,6 +2385,196 @@ export class World {
     this.ensureGoldBurnCompensation();
   }
 
+  private strikeHolder(args: Record<string, unknown>): string | undefined {
+    if (typeof args["target"] === "string" && args["target"].length > 0) {
+      return args["target"];
+    }
+    if (typeof args["name"] === "string" && args["name"].length > 0) {
+      return args["name"];
+    }
+    return undefined;
+  }
+
+  private definedVerbWouldFail(identityId: string, verb: string, args: Record<string, unknown>): string | null {
+    const defined = this.clerk.registry.verbs[verb];
+    if (defined === undefined || defined.effects.length === 0) {
+      return null;
+    }
+    const params = collectVerbParams(defined.params ?? {}, args);
+    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const entities = new Map(this.entities);
+    const fields = new Map(this.fields);
+    const reports = runEffects(defined.effects as Array<{ effect: string; args: unknown[] }>, {
+      selfId: identityId,
+      targetId: target,
+      params: effectParams({
+        params,
+        target,
+        text: typeof args["text"] === "string" ? args["text"] : undefined,
+      }),
+      fields,
+      entities,
+      emit: () => undefined,
+      nextId: () => "ent:dry",
+      peekCurrency: (id) => this.clerk.identities.get(id)?.currency,
+      moveCurrency: () => false,
+      creditCurrency: () => false,
+    });
+    const failed = reports.find((item) => !item.ok);
+    if (failed === undefined) {
+      return null;
+    }
+    const reason = failed.reason ?? "effect failed";
+    if (reason.startsWith("unbound") || reason.includes("position must") || reason === "create requires a type") {
+      return reason;
+    }
+    return null;
+  }
+
+  private combatEmitFields(
+    name: string,
+    intent: Intent,
+    beforeIds: Set<string>,
+    priorTarget?: Entity,
+  ): Record<string, unknown> {
+    const created = [...this.entities.values()].filter((item) => !beforeIds.has(item.id));
+    const params = intent.params ?? {};
+    if (name === "war.declared") {
+      const war = created.find((item) => item.type === "war");
+      return {
+        attacker: intent.identityId,
+        defender: intent.target,
+        war: war?.id,
+        ...this.bodyOf(intent.identityId),
+      };
+    }
+    if (name === "war.struck") {
+      const wound = created.find((item) => item.type === "wound");
+      return {
+        striker: intent.identityId,
+        target: intent.target ?? params["target"],
+        name: params["name"],
+        position: params["position"],
+        tick: params["tick"] ?? this.clerk.tick,
+        wound: wound?.id,
+      };
+    }
+    if (name === "war.yielded") {
+      return { war: intent.target };
+    }
+    if (name === "body.fell") {
+      const fallen = created.find((item) => item.type === "fallen");
+      return {
+        holder: intent.target ?? fallen?.fields["holder"],
+        position: params["position"] ?? fallen?.fields["position"],
+        tick: params["tick"] ?? this.clerk.tick,
+        until: params["until"] ?? fallen?.fields["until"],
+        fallen: fallen?.id,
+      };
+    }
+    if (name === "body.rose") {
+      return { fallen: intent.target, holder: priorTarget?.fields["holder"] ?? params["holder"] };
+    }
+    return {};
+  }
+
+  private maybeAutoFall(intent: Intent): void {
+    const target = typeof intent.target === "string" ? intent.target : typeof intent.params?.["target"] === "string" ? intent.params["target"] : undefined;
+    if (target === undefined) {
+      return;
+    }
+    if (fallenFor(this.entities.values(), target) !== undefined) {
+      return;
+    }
+    const name = typeof intent.params?.["name"] === "string" ? intent.params["name"] : undefined;
+    const war = openWarBetween(this.entities.values(), intent.identityId, target);
+    const sinceTick = this.entityBornTick(war);
+    const wounds = thisWarWounds(this.entities.values(), { target, name, sinceTick });
+    if (wounds.length < WAR_WOUND_MAX) {
+      return;
+    }
+    const at =
+      parseCombatCell(intent.params?.["position"]) ??
+      this.bodies.get(target) ??
+      this.entities.get(target)?.position ??
+      this.bodyOf(intent.identityId);
+    this.writeFallen(target, at, this.clerk.tick, intent.identityId);
+  }
+
+  private entityBornTick(entity: Entity | undefined): number {
+    if (entity?.createdBy === undefined) {
+      return 0;
+    }
+    const event = this.log.events().find((item) => item.seq === entity.createdBy);
+    return event?.tick ?? 0;
+  }
+
+  private writeFallen(holder: string, at: Position, tick: number, actor: string): void {
+    const until = tick + FALL_LINGER;
+    const id = this.mintEntityId();
+    const position = formatCell(at);
+    this.entities.set(id, {
+      id,
+      type: "fallen",
+      fields: { holder, position, tick, until },
+      position: { ...at },
+    });
+    this.append("effect.create", actor, {
+      id,
+      type: "fallen",
+      fields: { holder, position, tick, until },
+      ...at,
+    });
+    this.append("body.fell", actor, { holder, position, tick, until, fallen: id, identityId: actor });
+  }
+
+  private resolveMissedRises(): void {
+    const fallen = [...this.entities.values()]
+      .filter((item) => item.type === "fallen")
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    for (const entity of fallen) {
+      const until = entity.fields["until"];
+      if (typeof until !== "number" || until > this.clerk.tick) {
+        continue;
+      }
+      const holder = typeof entity.fields["holder"] === "string" ? entity.fields["holder"] : "";
+      if (holder.length === 0) {
+        continue;
+      }
+      this.entities.delete(entity.id);
+      this.append("effect.destroy", "ARBITER", { id: entity.id });
+      const from = this.bodies.get(holder) ?? parseCombatCell(entity.fields["position"]);
+      const dest = this.homeOrPort(holder, from ?? this.spawnInNexus());
+      if (this.bodies.has(holder)) {
+        this.bodies.set(holder, dest);
+        this.append("act.move", holder, { ...dest, identityId: holder, reason: "death" });
+      }
+      this.append("body.died", "ARBITER", {
+        holder,
+        fallen: entity.id,
+        from: from === undefined || from === null ? undefined : formatCell(from),
+        dest: formatCell(dest),
+        reason: "until",
+      });
+    }
+  }
+
+  private homeOrPort(holder: string, fallback: Position): Position {
+    const homes = [...this.entities.values()]
+      .filter((item) => item.type === "home" && item.fields["owner"] === holder)
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    const homeAt = parseCombatCell(homes[0]?.fields["position"] ?? homes[0]?.position);
+    if (homeAt !== null) {
+      return homeAt;
+    }
+    const port = this.anchors.find((item) => item.designation === FIRST_PORT);
+    if (port !== undefined) {
+      return { ...port.centre };
+    }
+    const named = this.anchors.find((item) => this.clerk.registry.text[`anchors.${item.designation}.name`] === "The First Port");
+    return named === undefined ? fallback : { ...named.centre };
+  }
+
   private bindEffects(
     selfId: string,
     extras: Partial<EffectContext>,
@@ -2457,21 +2675,36 @@ export class World {
 
 }
 
+const ACT_RESERVED = new Set(["verb", "delta", "sessionToken", "inputResponses", "requestState"]);
+
 function collectVerbParams(
   declared: Record<string, string>,
   args: Record<string, unknown>,
 ): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
   for (const key of Object.keys(declared).sort()) {
-    const value = args[key];
-    if (typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isInteger(value))) {
+    const value = scalarArg(args[key]);
+    if (value !== undefined) {
+      out[key] = value;
+    }
+  }
+  for (const key of Object.keys(args).sort()) {
+    if (ACT_RESERVED.has(key) || out[key] !== undefined) {
+      continue;
+    }
+    const value = scalarArg(args[key]);
+    if (value !== undefined) {
       out[key] = value;
     }
   }
   return out;
 }
 
-function effectParams(intent: Intent): Record<string, string | number | boolean | null> {
+function effectParams(intent: {
+  params?: Record<string, string | number | boolean>;
+  text?: string;
+  target?: string;
+}): Record<string, string | number | boolean | null> {
   const params: Record<string, string | number | boolean | null> = { ...(intent.params ?? {}) };
   if (intent.text !== undefined) {
     params["text"] = intent.text;

@@ -17,6 +17,11 @@ describe("spectator listen", () => {
   it("classifies acts as spatial and amendments as governance", () => {
     expect(streamKind("act.move")).toBe("spatial");
     expect(streamKind("speak")).toBe("spatial");
+    expect(streamKind("war.declared")).toBe("spatial");
+    expect(streamKind("war.struck")).toBe("spatial");
+    expect(streamKind("body.fell")).toBe("spatial");
+    expect(streamKind("body.rose")).toBe("spatial");
+    expect(streamKind("body.died")).toBe("spatial");
     expect(streamKind("amendment.propose")).toBe("governance");
     expect(streamKind("tick.boundary")).toBe("governance");
   });
