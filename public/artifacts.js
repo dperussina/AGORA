@@ -307,28 +307,29 @@ export function cairnArtifact() {
 
 export function vantageArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(1.05, 1.15, 0.22, 24), MAT.hull, 0, 0, 0));
-  g.add(mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.08, 24), MAT.pad, 0, 0.14, 0));
-  const bay = mesh(new THREE.RingGeometry(0.22, 0.38, 24), MAT.nav, 0, 0.2, 0);
+  g.add(mesh(new THREE.CylinderGeometry(1.12, 1.22, 0.28, 24), MAT.hull, 0, 0, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.08, 24), MAT.pad, 0, 0.16, 0));
+  const bay = mesh(new THREE.RingGeometry(0.2, 0.4, 24), MAT.nav, 0, 0.22, 0);
   bay.rotation.x = -Math.PI / 2;
   bay.userData.motion = "pulse";
   g.add(bay);
-  g.add(mesh(new THREE.SphereGeometry(0.42, 16, 12), MAT.hull, 0, -0.28, 0));
-  const ring = mesh(new THREE.TorusGeometry(1.35, 0.045, 8, 40), MAT.rim, 0, 0, 0);
+  g.add(mesh(new THREE.SphereGeometry(0.48, 16, 12), MAT.hull, 0, -0.22, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.32, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), MAT.glass, 0, 0.22, 0));
+  const ring = mesh(new THREE.TorusGeometry(1.42, 0.04, 8, 40), MAT.rim, 0, 0.02, 0);
   ring.rotation.x = Math.PI / 2;
   ring.userData.motion = "orbit";
   g.add(ring);
   for (const side of [-1, 1]) {
-    const wing = mesh(new THREE.BoxGeometry(1.85, 0.04, 0.72), MAT.pad, side * 1.85, -0.05, 0);
+    const wing = mesh(new THREE.BoxGeometry(1.95, 0.06, 0.78), MAT.pad, side * 1.9, -0.02, 0);
     wing.userData.motion = "gimbal";
     g.add(wing);
-    g.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), MAT.nav, side * 1.05, 0.08, 0));
+    g.add(mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), MAT.nav, side * 1.08, 0.12, 0));
+    g.add(mesh(new THREE.BoxGeometry(0.08, 0.42, 0.08), MAT.hull, side * 0.55, -0.38, 0.18));
   }
-  const bloom = mesh(new THREE.SphereGeometry(0.55, 14, 10), MAT.watchBeam, 0, 0.05, 0);
+  const bloom = mesh(new THREE.SphereGeometry(0.42, 14, 10), MAT.watchBeam, 0, 0.08, 0);
   g.add(bloom);
-  const wash = mesh(new THREE.CylinderGeometry(0.42, 0.12, 1.35, 12, 1, true), MAT.watchBeam, 0, -0.55, 0);
+  const wash = mesh(new THREE.CylinderGeometry(0.36, 0.1, 1.15, 12, 1, true), MAT.watchBeam, 0, -0.62, 0);
   g.add(wash);
-  bellyLight(g, MAT.nav, -0.58, 0.1);
   return g;
 }
 
@@ -631,25 +632,31 @@ function barrelBlock() {
 
 function shelfBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.72, 0.78, 0.05), MAT.timberDark, 0, 0.42, -0.1));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.78, 0.22), MAT.timberDark, -0.32, 0.42, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.78, 0.22), MAT.timberDark, 0.32, 0.42, 0));
-  for (const y of [0.18, 0.42, 0.66]) {
-    g.add(mesh(new THREE.BoxGeometry(0.7, 0.05, 0.22), MAT.timber, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.78, 0.88, 0.06), MAT.timberDark, 0, 0.46, -0.12));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.88, 0.26), MAT.timberDark, -0.35, 0.46, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.88, 0.26), MAT.timberDark, 0.35, 0.46, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.78, 0.06, 0.26), MAT.timber, 0, 0.06, 0));
+  for (const y of [0.2, 0.46, 0.72]) {
+    g.add(mesh(new THREE.BoxGeometry(0.74, 0.05, 0.24), MAT.timber, 0, y, 0));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.1, 0.16, 0.08), MAT.archive, -0.16, 0.52, 0.02));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.14, 0.08), MAT.cloth, 0.12, 0.51, 0.02));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.2, 0.1), MAT.archive, -0.18, 0.58, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.16, 0.1), MAT.archiveDark, -0.06, 0.56, 0.04));
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.14, 0.1), MAT.cloth, 0.14, 0.55, 0.04));
+  g.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 8), MAT.brass, 0.22, 0.3, 0.04));
   return g;
 }
 
 function doorBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.1, 1.12, 0.1), MAT.timberDark, -0.3, 0.56, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.1, 1.12, 0.1), MAT.timberDark, 0.3, 0.56, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.7, 0.1, 0.1), MAT.timberDark, 0, 1.08, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.54, 0.98, 0.06), MAT.timber, 0, 0.55, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.04, 0.9, 0.02), MAT.timberDark, 0, 0.55, 0.04));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.08, 0.1), MAT.brass, 0.18, 0.52, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), MAT.timberDark, -0.32, 0.6, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 1.2, 0.12), MAT.timberDark, 0.32, 0.6, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.76, 0.12, 0.12), MAT.timberDark, 0, 1.16, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.76, 0.08, 0.12), MAT.timberDark, 0, 0.04, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.56, 1.02, 0.07), MAT.timber, 0, 0.58, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.05, 0.92, 0.03), MAT.timberDark, 0, 0.58, 0.05));
+  g.add(mesh(new THREE.BoxGeometry(0.48, 0.04, 0.03), MAT.timberDark, 0, 0.78, 0.05));
+  g.add(mesh(new THREE.BoxGeometry(0.48, 0.04, 0.03), MAT.timberDark, 0, 0.38, 0.05));
+  g.add(mesh(new THREE.BoxGeometry(0.09, 0.09, 0.12), MAT.brass, 0.18, 0.54, 0.08));
   return g;
 }
 
@@ -754,26 +761,31 @@ function awningBlock() {
 
 function benchBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.9, 0.08, 0.3), MAT.timber, 0, 0.3, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.9, 0.28, 0.06), MAT.timber, 0, 0.48, -0.12));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.3, 0.28), MAT.timberDark, -0.36, 0.15, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.3, 0.28), MAT.timberDark, 0.36, 0.15, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.96, 0.07, 0.34), MAT.timber, 0, 0.32, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.9, 0.04, 0.3), MAT.linen, 0, 0.37, 0.01));
+  g.add(mesh(new THREE.BoxGeometry(0.96, 0.32, 0.07), MAT.timber, 0, 0.52, -0.14));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.32, 0.3), MAT.timberDark, -0.4, 0.16, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.32, 0.3), MAT.timberDark, 0.4, 0.16, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.8, 0.04, 0.04), MAT.timberDark, 0, 0.12, 0.12));
   return g;
 }
 
 function stallBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.92, 0.08, 0.46), MAT.timber, 0, 0.44, 0));
-  for (const [x, z] of [[-0.38, 0.18], [0.38, 0.18], [-0.38, -0.18], [0.38, -0.18]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.07, 0.44, 0.07), MAT.timberDark, x, 0.22, z));
+  g.add(mesh(new THREE.BoxGeometry(0.96, 0.08, 0.52), MAT.timber, 0, 0.46, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.9, 0.05, 0.48), MAT.timberDark, 0, 0.4, 0));
+  for (const [x, z] of [[-0.4, 0.2], [0.4, 0.2], [-0.4, -0.2], [0.4, -0.2]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.08, 0.4, 0.08), MAT.timberDark, x, 0.2, z));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.07, 0.4, 0.07), MAT.timberDark, -0.42, 0.64, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.07, 0.4, 0.07), MAT.timberDark, 0.42, 0.64, 0));
-  const roof = mesh(new THREE.BoxGeometry(0.98, 0.05, 0.58), MAT.cloth, 0, 0.88, 0);
-  roof.rotation.x = -0.12;
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.48, 0.08), MAT.timberDark, -0.44, 0.7, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.48, 0.08), MAT.timberDark, 0.44, 0.7, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.96, 0.05, 0.08), MAT.timber, 0, 0.94, 0));
+  const roof = mesh(new THREE.BoxGeometry(1.02, 0.05, 0.62), MAT.cloth, 0, 0.98, 0);
+  roof.rotation.x = -0.14;
   g.add(roof);
-  g.add(mesh(new THREE.BoxGeometry(0.16, 0.12, 0.16), MAT.timberDark, -0.18, 0.54, 0.04));
-  g.add(mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.1, 8), MAT.brass, 0.16, 0.54, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.18, 0.14, 0.16), MAT.timberDark, -0.2, 0.56, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), MAT.archive, -0.02, 0.54, 0.08));
+  g.add(mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.1, 8), MAT.brass, 0.2, 0.56, 0.06));
   return g;
 }
 
