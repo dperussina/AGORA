@@ -13,8 +13,8 @@ function physical(color, extra = {}) {
 }
 
 export const MAT = {
-  stone: physical(0x8a7358, { roughness: 0.78, metalness: 0.04, clearcoat: 0.08, flatShading: false }),
-  stoneDark: physical(0x3f3a34, { roughness: 0.86, metalness: 0.06, clearcoat: 0.04 }),
+  stone: physical(0x8a7358, { roughness: 0.78, metalness: 0.04, clearcoat: 0.08, emissive: 0x1a120c, emissiveIntensity: 0.18 }),
+  stoneDark: physical(0x3f3a34, { roughness: 0.86, metalness: 0.06, clearcoat: 0.04, emissive: 0x0c0806, emissiveIntensity: 0.1 }),
   brass: physical(0xc4a05a, { roughness: 0.22, metalness: 0.88, clearcoat: 0.55, clearcoatRoughness: 0.18, emissive: 0x2a1c08, emissiveIntensity: 0.12 }),
   iron: physical(0x2c3838, { roughness: 0.34, metalness: 0.72, clearcoat: 0.2 }),
   rock: physical(0xc5cdd4, { roughness: 0.9, metalness: 0.02, clearcoat: 0 }),
@@ -74,8 +74,8 @@ export const MAT = {
   secret: physical(0x1a0a0c, { roughness: 0.22, metalness: 0.12, emissive: 0x2a0406, emissiveIntensity: 0.55 }),
   secretGlow: new THREE.MeshBasicMaterial({ color: 0xff1a14, transparent: true, opacity: 0.78, blending: THREE.AdditiveBlending, depthWrite: false }),
   ember: new THREE.MeshBasicMaterial({ color: 0xff2a18 }),
-  timber: physical(0x9a6234, { roughness: 0.78, metalness: 0.04, clearcoat: 0.08 }),
-  timberDark: physical(0x3f2414, { roughness: 0.88, metalness: 0.03 }),
+  timber: physical(0x9a6234, { roughness: 0.78, metalness: 0.04, clearcoat: 0.08, emissive: 0x2a1408, emissiveIntensity: 0.28 }),
+  timberDark: physical(0x3f2414, { roughness: 0.88, metalness: 0.03, emissive: 0x140804, emissiveIntensity: 0.16 }),
   coal: physical(0x1a1412, { roughness: 0.7, metalness: 0.08, emissive: 0x2a0c06, emissiveIntensity: 0.35 }),
   water: physical(0x1a3848, {
     roughness: 0.06,
@@ -94,7 +94,7 @@ export const MAT = {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   }),
-  linen: physical(0xc4a888, { roughness: 0.92, metalness: 0, sheen: 0.4, sheenColor: 0xe8d2b4 }),
+  linen: physical(0xc4a888, { roughness: 0.92, metalness: 0, sheen: 0.4, sheenColor: 0xe8d2b4, emissive: 0x2a1c12, emissiveIntensity: 0.2 }),
   hide: physical(0x16080c, {
     roughness: 0.32,
     metalness: 0.06,
@@ -182,9 +182,19 @@ export const MAT = {
 export function mesh(geometry, material, x = 0, y = 0, z = 0) {
   const item = new THREE.Mesh(geometry, material);
   item.position.set(x, y, z);
-  item.castShadow = false;
-  item.receiveShadow = false;
+  item.castShadow = true;
+  item.receiveShadow = true;
   return item;
+}
+
+export function carryLight(group, color = 0xffc878, intensity = 0.85, distance = 2.8, y = 0.42) {
+  const light = new THREE.PointLight(color, intensity, distance, 1.8);
+  light.position.set(0, y, 0);
+  light.castShadow = false;
+  light.userData.motion = "lamp";
+  light.userData.rest = intensity;
+  group.add(light);
+  return light;
 }
 
 function lathe(xy, segments = 28) {
@@ -256,6 +266,7 @@ export function cityArtifact() {
     g.add(lamp);
   }
   bellyLight(g, MAT.navWarm, -0.32, 0.22);
+  carryLight(g, 0xffb45a, 2.4, 8.5, 1.2);
   return g;
 }
 
@@ -287,6 +298,7 @@ export function cairnArtifact() {
   pulse.userData.motion = "pulse";
   g.add(pulse);
   bellyLight(g, MAT.navWarm, -0.2, 0.12);
+  carryLight(g, 0xd8e4ee, 1.6, 5.5, 1.1);
   return g;
 }
 
@@ -314,6 +326,7 @@ export function vantageArtifact() {
   const wash = mesh(new THREE.CylinderGeometry(0.42, 0.12, 1.35, 12, 1, true), MAT.watchBeam, 0, -0.55, 0);
   g.add(wash);
   bellyLight(g, MAT.nav, -0.58, 0.1);
+  carryLight(g, 0x7af0ff, 1.8, 5.2, 0.2);
   return g;
 }
 
@@ -389,6 +402,7 @@ export function hollowArtifact() {
     g.add(limb);
   }
   bellyLight(g, MAT.secretGlow, -0.22, 0.16);
+  carryLight(g, 0xff2a18, 2.6, 7.2, 0.55);
   return g;
 }
 
@@ -408,6 +422,7 @@ export function driftArtifact() {
   const belly = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.ion, 0, -0.14, 0);
   belly.userData.motion = "pulse";
   g.add(belly);
+  carryLight(g, 0x3ef0d4, 0.9, 2.4, 0.05);
   return g;
 }
 
@@ -424,6 +439,7 @@ export function entityArtifact() {
   const belly = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.navWarm, 0, -0.36, 0);
   belly.userData.motion = "pulse";
   g.add(belly);
+  carryLight(g, 0xffb45a, 1.1, 2.8, 0.2);
   return g;
 }
 
@@ -501,14 +517,23 @@ function bedBlock() {
   return g;
 }
 
+function wallBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(1, 1, 1), MAT.deck, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.02, 0.1, 1.02), MAT.ion, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.01, 0.05, 1.01), MAT.nav, 0, 0.975, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.01, 0.05, 1.01), MAT.slate, 0, 0.025, 0));
+  return g;
+}
+
 function crateBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.44, 0.5), MAT.timber, 0, 0.22, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.54, 0.05, 0.54), MAT.timberDark, 0, 0.44, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.54, 0.05, 0.54), MAT.timberDark, 0, 0.04, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.52, 0.04, 0.52), MAT.iron, 0, 0.22, 0));
-  for (const [x, z] of [[0.23, 0.23], [-0.23, 0.23], [0.23, -0.23], [-0.23, -0.23]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.05, 0.44, 0.05), MAT.iron, x, 0.22, z));
+  g.add(mesh(new THREE.BoxGeometry(1, 1, 1), MAT.timber, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.02, 0.08, 1.02), MAT.timberDark, 0, 0.96, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.02, 0.08, 1.02), MAT.timberDark, 0, 0.04, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.01, 0.1, 1.01), MAT.iron, 0, 0.5, 0));
+  for (const [x, z] of [[0.46, 0.46], [-0.46, 0.46], [0.46, -0.46], [-0.46, -0.46]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.08, 1, 0.08), MAT.iron, x, 0.5, z));
   }
   return g;
 }
@@ -697,7 +722,9 @@ export function wakeArtifact() {
   const glint = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.lamp, 0.16, 0.18, 0.12);
   glint.userData.motion = "pulse";
   g.add(glint);
-  return sitOnCell(g);
+  const grave = sitOnCell(g);
+  carryLight(grave, 0xffd089, 1.15, 2.8, 0.42);
+  return grave;
 }
 
 export function beastArtifact() {
@@ -720,7 +747,9 @@ export function beastArtifact() {
   const coal = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.ember, 0.26, 0.44, 0.22);
   coal.userData.motion = "pulse";
   g.add(coal);
-  return sitOnCell(g);
+  const beast = sitOnCell(g);
+  carryLight(beast, 0xff2a18, 1.35, 3.1, 0.4);
+  return beast;
 }
 
 export function blockSlab() {
@@ -743,6 +772,13 @@ const BLOCK_BUILDERS = {
   lantern: lampBlock,
   bed: bedBlock,
   crate: crateBlock,
+  box: wallBlock,
+  cube: wallBlock,
+  wall: wallBlock,
+  hull: wallBlock,
+  keep: wallBlock,
+  hangar: wallBlock,
+  dock: wallBlock,
   barrel: barrelBlock,
   shelf: shelfBlock,
   door: doorBlock,
@@ -776,17 +812,40 @@ export function kindHash(kind) {
 
 export function blockForm(kind) {
   const key = typeof kind === "string" ? kind.toLowerCase() : "";
-  return key in BLOCK_BUILDERS ? key : "crate";
+  return key in BLOCK_BUILDERS ? key : "wall";
 }
 
+const BLOCK_LIGHTS = {
+  hearth: { color: 0xff7a28, intensity: 2.6, distance: 4.8, y: 0.42 },
+  lamp: { color: 0xffd089, intensity: 2.3, distance: 4.4, y: 0.72 },
+  lantern: { color: 0xffd089, intensity: 2.3, distance: 4.4, y: 0.72 },
+  chimney: { color: 0xff6a20, intensity: 1.7, distance: 3.4, y: 1.05 },
+  window: { color: 0xffe2a8, intensity: 1.5, distance: 3.2, y: 0.58 },
+  well: { color: 0x4a88aa, intensity: 0.95, distance: 2.6, y: 0.4 },
+  stall: { color: 0xffc070, intensity: 0.95, distance: 2.8, y: 0.7 },
+  banner: { color: 0xff8a3a, intensity: 0.8, distance: 2.5, y: 0.7 },
+  wall: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  box: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  cube: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  hull: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  keep: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  hangar: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  dock: { color: 0x3ef0d4, intensity: 0.28, distance: 1.5, y: 0.5 },
+  crate: { color: 0xffc070, intensity: 0.35, distance: 1.6, y: 0.5 },
+};
+
 export function blockArtifact(kind) {
-  const build = BLOCK_BUILDERS[blockForm(kind)] ?? crateBlock;
-  return sitOnCell(build());
+  const form = blockForm(kind);
+  const group = sitOnCell((BLOCK_BUILDERS[form] ?? crateBlock)());
+  const spec = BLOCK_LIGHTS[form] ?? { color: 0xffc070, intensity: 0.7, distance: 2.4, y: 0.38 };
+  carryLight(group, spec.color, spec.intensity, spec.distance, spec.y);
+  return group;
 }
 
 export function wardenArtifact() {
   const g = new THREE.Group();
   g.add(mesh(new THREE.SphereGeometry(0.12, 10, 8), MAT.rim, 0, 0.12, 0));
+  carryLight(g, 0x7af0ff, 0.7, 1.8, 0.12);
   return g;
 }
 
@@ -803,6 +862,7 @@ export function markArtifact() {
   tip.userData.motion = "pulse";
   g.add(tip);
   bellyLight(g, MAT.holo, -0.08, 0.07);
+  carryLight(g, 0xff6a28, 1.2, 3.2, 1.35);
   return g;
 }
 
@@ -839,11 +899,13 @@ function landerHull(skin, canopy, lit) {
     corona.userData.motion = "pulse";
     g.add(corona);
     bellyLight(g, MAT.aqua, -0.14, 0.08);
+    carryLight(g, 0x00ffd4, 1.8, 3.6, 0.4);
   } else {
     const wake = mesh(new THREE.ConeGeometry(0.16, 0.36, 8, 1, true), MAT.echo, 0, -0.04, 0);
     wake.rotation.x = Math.PI;
     g.add(wake);
     bellyLight(g, MAT.nav, -0.12, 0.07);
+    carryLight(g, 0x8aa0aa, 0.85, 2.6, 0.35);
   }
   return g;
 }

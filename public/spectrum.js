@@ -152,8 +152,9 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.15));
 renderer.setClearColor(0x16101f, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
-renderer.shadowMap.enabled = false;
+renderer.toneMappingExposure = 1.32;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x16101f);
@@ -278,8 +279,8 @@ function dolly(factor) {
   controls.update();
 }
 
-scene.add(new THREE.HemisphereLight(0x8a9aab, 0x1c1612, 0.42));
-const key = new THREE.DirectionalLight(0xc4d0da, 0.28);
+scene.add(new THREE.HemisphereLight(0xc4d0da, 0x2a1810, 0.72));
+const key = new THREE.DirectionalLight(0xffe8c8, 0.88);
 key.position.set(36, 88, 18);
 key.castShadow = true;
 key.shadow.mapSize.set(1024, 1024);
@@ -291,6 +292,12 @@ key.shadow.camera.top = 48;
 key.shadow.camera.bottom = -48;
 key.shadow.bias = -0.0002;
 scene.add(key);
+const rim = new THREE.DirectionalLight(0x6a88aa, 0.48);
+rim.position.set(-42, 28, -36);
+scene.add(rim);
+const fill = new THREE.DirectionalLight(0xffb070, 0.28);
+fill.position.set(8, -22, 40);
+scene.add(fill);
 
 const FORMS = {
   nexus: KNOWN.nexus(),
@@ -2578,6 +2585,9 @@ function tick() {
           node.rotation.z += 0.002;
         } else if (node.userData.motion === "pulse") {
           node.scale.setScalar(1 + Math.sin(now * 0.0025) * 0.12);
+        } else if (node.userData.motion === "lamp") {
+          const rest = typeof node.userData.rest === "number" ? node.userData.rest : 0.85;
+          node.intensity = rest * (0.82 + Math.sin(now * 0.003 + (node.userData.phase ?? 0)) * 0.18);
         } else if (node.userData.motion === "flicker" || node.userData.motion === "glow") {
           const n = flicker(now, node.userData.phase ?? 0);
           const rest = node.userData.rest;
