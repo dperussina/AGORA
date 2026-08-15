@@ -713,37 +713,143 @@ function easeInOut(t) {
 
 function pickProbeAct(seed, roll) {
   const pick = (seed + Math.floor(roll * 997)) % 100;
-  if (pick < 38) {
+  if (pick < 14) {
     return "still";
   }
-  if (pick < 58) {
+  if (pick < 46) {
     return "circle";
   }
-  if (pick < 72) {
+  if (pick < 66) {
     return "gather";
   }
-  if (pick < 84) {
+  if (pick < 78) {
     return "scan";
   }
-  if (pick < 93) {
+  if (pick < 88) {
     return "drift";
   }
   return "work";
 }
 
+function glowMat(color, opacity = 0.72) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+}
+
+function makeProbeRig(color) {
+  const rig = new THREE.Group();
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.16, 1, 10, 1, true), glowMat(color, 0.55));
+  beam.position.y = -0.15;
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.028, 0.85, 6), MAT.agentTrim);
+  arm.position.set(0.15, 0.55, 0);
+  const claw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.1), MAT.brass);
+  claw.position.set(0, -0.48, 0);
+  arm.add(claw);
+  const scoop = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.28, 8, 1, true), glowMat(color, 0.4));
+  scoop.rotation.x = Math.PI;
+  scoop.position.set(-0.12, 0.5, 0.08);
+  const count = 64;
+  const positions = new Float32Array(count * 3);
+  const velocities = new Float32Array(count * 3);
+  const ages = new Float32Array(count);
+  ages.fill(-1);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const dust = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      color,
+      size: 0.72,
+      map: quantum.dust.material.map,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true,
+    }),
+  );
+  rig.add(beam, arm, scoop, dust);
+  scene.add(rig);
+  return { rig, beam, arm, claw, scoop, dust, positions, velocities, ages, cursor: 0, last: 0 };
+}
+
+function disposeProbeRig(probe) {
+  if (probe.fx === undefined) {
+    return;
+  }
+  scene.remove(probe.fx.rig);
+  probe.fx.rig.traverse((node) => {
+    node.geometry?.dispose();
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (material !== undefined && material !== MAT.agentTrim && material !== MAT.brass) {
+        material.dispose();
+      }
+    }
+  });
+  probe.fx = undefined;
+}
+
+function emitProbeDust(fx, origin, velocity, count) {
+  for (let i = 0; i < count; i += 1) {
+    const slot = fx.cursor % fx.ages.length;
+    fx.cursor += 1;
+    const offset = slot * 3;
+    fx.positions[offset] = origin.x + (Math.random() - 0.5) * 0.08;
+    fx.positions[offset + 1] = origin.y;
+    fx.positions[offset + 2] = origin.z + (Math.random() - 0.5) * 0.08;
+    fx.velocities[offset] = velocity.x + (Math.random() - 0.5) * 0.35;
+    fx.velocities[offset + 1] = velocity.y + (Math.random() - 0.5) * 0.25;
+    fx.velocities[offset + 2] = velocity.z + (Math.random() - 0.5) * 0.35;
+    fx.ages[slot] = 0;
+  }
+}
+
+function tickProbeDust(fx, dt) {
+  let live = 0;
+  for (let i = 0; i < fx.ages.length; i += 1) {
+    if (fx.ages[i] < 0) {
+      continue;
+    }
+    fx.ages[i] += dt;
+    if (fx.ages[i] > 0.9) {
+      fx.ages[i] = -1;
+      const dead = i * 3;
+      fx.positions[dead] = 0;
+      fx.positions[dead + 1] = -40;
+      fx.positions[dead + 2] = 0;
+      continue;
+    }
+    const offset = i * 3;
+    fx.positions[offset] += fx.velocities[offset] * dt;
+    fx.positions[offset + 1] += fx.velocities[offset + 1] * dt;
+    fx.positions[offset + 2] += fx.velocities[offset + 2] * dt;
+    fx.velocities[offset + 1] -= dt * 0.55;
+    live += 1;
+  }
+  fx.dust.geometry.attributes.position.needsUpdate = true;
+  fx.dust.material.opacity = live === 0 ? 0 : 0.95;
+}
+
 function ensureProbe(id, home, now) {
   let probe = probes.get(id);
   if (probe === undefined) {
+    const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
     probe = {
       id,
       home: home.clone(),
-      act: "still",
+      act: "circle",
       born: now,
-      duration: 2200,
-      next: now + 900 + (probeSeed(id) % 1800),
+      duration: 2800,
+      next: now + 400 + (probeSeed(id) % 700),
       seed: probeSeed(id),
       drift: new THREE.Vector3(),
-      sparked: false,
+      fx: makeProbeRig(color),
     };
     probes.set(id, probe);
     return probe;
@@ -752,121 +858,116 @@ function ensureProbe(id, home, now) {
     probe.home.copy(home);
     probe.act = "settle";
     probe.born = now;
-    probe.duration = 1100;
-    probe.next = now + 1400 + (probe.seed % 900);
-    probe.sparked = false;
+    probe.duration = 900;
+    probe.next = now + 700 + (probe.seed % 500);
+  }
+  if (probe.fx === undefined) {
+    const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
+    probe.fx = makeProbeRig(color);
   }
   return probe;
 }
 
 function probePose(probe, now) {
   const phase = (probe.seed % 1000) / 1000;
-  const hover = Math.sin(now * 0.0017 + phase * 6.2) * 0.08;
+  const hover = 0.16 + Math.sin(now * 0.0024 + phase * 6.2) * 0.2;
   const pose = {
     x: 0,
     y: hover,
     z: 0,
-    yaw: now * 0.00018 + phase * 4,
-    pitch: Math.sin(now * 0.0011 + phase) * 0.04,
-    roll: Math.cos(now * 0.0009 + phase * 2) * 0.03,
-    lamp: 1,
-    halo: now * 0.0007 + phase * 3,
+    yaw: now * 0.00035 + phase * 4,
+    pitch: Math.sin(now * 0.0014 + phase) * 0.08,
+    roll: Math.cos(now * 0.0012 + phase * 2) * 0.07,
+    lamp: 1.15,
+    halo: now * 0.0014 + phase * 3,
+    beam: 0,
+    arm: 0,
+    scoop: 0,
   };
   const age = (now - probe.born) / Math.max(1, probe.duration);
   const u = Math.min(1, Math.max(0, age));
+  const deploy = u < 0.18 ? easeInOut(u / 0.18) : u > 0.82 ? 1 - easeInOut((u - 0.82) / 0.18) : 1;
   if (probe.act === "circle") {
-    const turns = 1 + (probe.seed % 2);
+    const turns = 2 + (probe.seed % 2);
     const ang = u * Math.PI * 2 * turns + phase * 5;
-    const radius = 0.26 + (probe.seed % 12) * 0.008;
+    const radius = 0.58 + (probe.seed % 10) * 0.018;
     pose.x = Math.cos(ang) * radius;
     pose.z = Math.sin(ang) * radius;
+    pose.y += 0.12 + Math.sin(ang * 2) * 0.16;
     pose.yaw = -ang + Math.PI / 2;
-    pose.roll = Math.sin(ang) * 0.12;
+    pose.roll = Math.sin(ang) * 0.38;
+    pose.pitch = Math.cos(ang) * 0.16;
+    pose.lamp = 1.6;
   } else if (probe.act === "gather") {
     const dip = Math.sin(u * Math.PI);
-    pose.y -= dip * 0.22;
-    pose.pitch += dip * 0.18;
-    pose.lamp = 1 + dip * 1.4;
-    pose.halo += dip * 0.8;
+    pose.y = hover * 0.35 - dip * 0.18;
+    pose.pitch += dip * 0.32;
+    pose.lamp = 1.4 + dip * 2.2;
+    pose.halo += now * 0.006;
+    pose.beam = deploy;
+    pose.scoop = deploy;
   } else if (probe.act === "scan") {
-    pose.yaw += u * Math.PI * 1.35;
-    pose.pitch += Math.sin(u * Math.PI) * 0.28;
-    pose.roll += Math.sin(u * Math.PI * 2) * 0.08;
+    pose.yaw += u * Math.PI * 2.1;
+    pose.pitch += Math.sin(u * Math.PI) * 0.42;
+    pose.roll += Math.sin(u * Math.PI * 2) * 0.18;
+    pose.arm = deploy;
+    pose.lamp = 1.5 + Math.sin(now * 0.02) * 0.6;
   } else if (probe.act === "drift") {
-    const travel = u < 0.32 ? easeInOut(u / 0.32) : u > 0.68 ? 1 - easeInOut((u - 0.68) / 0.32) : 1;
+    const travel = u < 0.28 ? easeInOut(u / 0.28) : u > 0.72 ? 1 - easeInOut((u - 0.72) / 0.28) : 1;
     pose.x = probe.drift.x * travel;
     pose.z = probe.drift.z * travel;
-    pose.yaw += travel * 0.4;
+    pose.y += travel * 0.22;
+    pose.yaw += travel * 0.9;
+    pose.roll += travel * 0.2;
   } else if (probe.act === "work") {
     const pulse = Math.sin(u * Math.PI);
-    pose.y += pulse * 0.05;
-    pose.lamp = 1 + pulse * 1.8;
-    pose.halo += now * 0.004;
-    pose.pitch += Math.sin(now * 0.02) * 0.06 * pulse;
+    pose.y += pulse * 0.1;
+    pose.lamp = 1.8 + pulse * 2.4;
+    pose.halo += now * 0.01;
+    pose.pitch += Math.sin(now * 0.028) * 0.14 * pulse;
+    pose.arm = deploy;
+    pose.beam = deploy * 0.65;
+    pose.scoop = deploy;
+  } else if (probe.act === "settle") {
+    pose.y += (1 - u) * 0.35;
+    pose.lamp = 1.8;
   }
   return pose;
 }
 
-function burstAt(worldPos, color, count = 10, duration = 900) {
-  const group = new THREE.Group();
-  group.position.copy(worldPos);
-  const positions = new Float32Array(count * 3);
-  const velocities = new Float32Array(count * 3);
-  const seed = Math.floor(worldPos.x * 17 + worldPos.z * 31 + performance.now()) >>> 0;
-  for (let i = 0; i < count; i += 1) {
-    const theta = sequence(i + seed, 0.61803398875) * Math.PI * 2;
-    const lift = 0.35 + sequence(i + seed, 0.75487766625, 0.2) * 1.1;
-    const radial = 0.35 + sequence(i + seed, 0.56984029099, 0.3) * 0.7;
-    const offset = i * 3;
-    velocities[offset] = Math.cos(theta) * radial;
-    velocities[offset + 1] = lift;
-    velocities[offset + 2] = Math.sin(theta) * radial;
+function poseProbeRig(probe, at, pose, now, dt) {
+  const fx = probe.fx;
+  if (fx === undefined) {
+    return;
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const particles = new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      color,
-      size: 0.55,
-      map: quantum.dust.material.map,
-      transparent: true,
-      opacity: 0.88,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      sizeAttenuation: true,
-    }),
-  );
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.28, 0.018, 5, 32),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.4,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    }),
-  );
-  ring.rotation.x = Math.PI / 2;
-  group.add(ring, particles);
-  scene.add(group);
-  sparks.push({
-    group,
-    particles,
-    positions,
-    velocities,
-    ring,
-    paths: [],
-    born: performance.now(),
-    duration,
-    type: "probe.work",
-  });
-  while (sparks.length > 36) {
-    const oldest = sparks.shift();
-    if (oldest !== undefined) {
-      disposeSpark(oldest);
+  fx.rig.position.copy(at);
+  fx.beam.visible = pose.beam > 0.04;
+  fx.beam.scale.set(1, 0.15 + pose.beam * 1.15, 1);
+  fx.beam.position.y = 0.35 - pose.beam * 0.55;
+  fx.beam.material.opacity = 0.25 + pose.beam * 0.55;
+  fx.arm.visible = pose.arm > 0.04;
+  fx.arm.rotation.z = -0.15 - pose.arm * 1.15;
+  fx.arm.rotation.y = Math.sin(now * 0.008) * pose.arm * 0.7;
+  fx.arm.position.set(0.22, 0.58, 0.04);
+  fx.scoop.visible = pose.scoop > 0.04;
+  fx.scoop.scale.setScalar(0.4 + pose.scoop * 0.9);
+  fx.scoop.position.set(-0.18, 0.42 - pose.scoop * 0.12, 0.1);
+  fx.scoop.rotation.z = pose.scoop * 0.5;
+  const emit = now - fx.last > 32;
+  if (emit) {
+    fx.last = now;
+    if (probe.act === "circle") {
+      emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.45, at.z), new THREE.Vector3(-pose.x * 1.4, 0.15, -pose.z * 1.4), 3);
+    } else if (probe.act === "gather") {
+      emitProbeDust(fx, new THREE.Vector3(at.x, at.y - 0.15, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.2, 1.6, (Math.random() - 0.5) * 0.2), 5);
+    } else if (probe.act === "work") {
+      const tip = new THREE.Vector3(0, -0.48, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), fx.arm.rotation.z);
+      emitProbeDust(fx, new THREE.Vector3(at.x + tip.x + 0.22, at.y + 0.55 + tip.y, at.z), new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.4, (Math.random() - 0.5) * 0.8), 6);
+    } else if (probe.act === "scan") {
+      emitProbeDust(fx, new THREE.Vector3(at.x, at.y + 0.7, at.z), new THREE.Vector3(Math.cos(pose.yaw) * 0.9, 0.05, Math.sin(pose.yaw) * 0.9), 2);
     }
   }
+  tickProbeDust(fx, dt);
 }
 
 function placeProbe(index, home, pose, color) {
@@ -884,11 +985,16 @@ function placeProbe(index, home, pose, color) {
   return at;
 }
 
+let lastProbeTick = 0;
+
 function tickProbes(now) {
+  const dt = lastProbeTick === 0 ? 0.016 : Math.min(0.05, (now - lastProbeTick) / 1000);
+  lastProbeTick = now;
   const used = Math.min(world.bodyOrder.length, MAX_BODIES);
   const live = new Set(world.bodyOrder);
   for (const id of [...probes.keys()]) {
     if (!live.has(id)) {
+      disposeProbeRig(probes.get(id));
       probes.delete(id);
     }
   }
@@ -904,22 +1010,19 @@ function tickProbes(now) {
       probe.act = pickProbeAct(probe.seed, now);
       probe.born = now;
       probe.duration =
-        probe.act === "still" ? 2400 + (probe.seed % 1800) : probe.act === "circle" ? 3200 + (probe.seed % 800) : 1800 + (probe.seed % 700);
-      probe.next = now + probe.duration + 700 + (probe.seed % 1600);
-      probe.sparked = false;
+        probe.act === "still"
+          ? 1400 + (probe.seed % 900)
+          : probe.act === "circle"
+            ? 4200 + (probe.seed % 1200)
+            : 2600 + (probe.seed % 900);
+      probe.next = now + probe.duration + 180 + (probe.seed % 420);
       const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
-      probe.drift.set(Math.cos(heading) * 0.3, 0, Math.sin(heading) * 0.3);
+      probe.drift.set(Math.cos(heading) * 0.62, 0, Math.sin(heading) * 0.62);
     }
     const pose = probePose(probe, now);
     const color = world.founders.has(id) ? new THREE.Color(0xc4a574) : idColor(id);
     const at = placeProbe(i, home, pose, color);
-    if (!probe.sparked && (probe.act === "gather" || probe.act === "work")) {
-      const u = (now - probe.born) / probe.duration;
-      if (u > 0.32 && u < 0.85) {
-        burstAt(at.clone().setY(at.y + 0.2), color, probe.act === "work" ? 12 : 8, 800);
-        probe.sparked = true;
-      }
-    }
+    poseProbeRig(probe, at, pose, now, dt);
   }
   for (const item of [bodyMesh, shoulderMesh, headMesh, collarMesh, haloMesh, lampMesh]) {
     item.count = used;
