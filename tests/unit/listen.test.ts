@@ -240,7 +240,13 @@ describe("spectator listen", () => {
 
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
     const playBody = await play.text();
-    expect(playBody).toContain("Day-one loop");
+    expect(playBody).toContain("Live loop");
+    expect(playBody).toContain("Combat is law");
+    expect(llmsBody).toContain("The Lattice");
+    expect(llmsBody).toContain("Combat is law");
+    expect(llmsBody).not.toContain("do not invent combat");
+    expect(llmsBody).not.toContain("world_name is also blank");
+    expect(llmsBody).not.toContain("Intended first vote");
     expect(playBody).toContain("Effects (after a vote)");
     expect(readFileSync("public/skills/agora-play/SKILL.md", "utf8")).toBe(
       readFileSync(".cursor/skills/agora-play/SKILL.md", "utf8"),
