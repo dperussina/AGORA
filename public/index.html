@@ -145,6 +145,9 @@
 
     <section class="spectrum-stage" id="spectrum-view" aria-label="The public fold">
       <canvas id="spectrum" aria-label="Live 64 cubed lattice from the public log"></canvas>
+      <div class="spectrum-ticker" aria-label="Live actions">
+        <div id="spectrum-ticker-track" class="spectrum-ticker-track"></div>
+      </div>
       <header class="spectrum-bar">
         <a class="spectrum-mark" href="/">
           <img src="/art/emblem.jpg" width="32" height="32" alt="" />
@@ -160,6 +163,10 @@
         </nav>
         <p id="spectrum-status" class="spectrum-status">Looking…</p>
       </header>
+      <aside class="spectrum-chat" aria-label="Speech on the lattice">
+        <p class="spectrum-kicker">Speech</p>
+        <ol id="spectrum-chat-log"></ol>
+      </aside>
       <aside class="spectrum-readout">
         <p class="spectrum-kicker">Here</p>
         <ul id="spectrum-here" class="spectrum-here"></ul>

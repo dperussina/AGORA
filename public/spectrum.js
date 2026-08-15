@@ -2388,7 +2388,151 @@ async function refresh() {
   }
 }
 
+function displayName(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const id =
+    typeof payload.identityId === "string" && payload.identityId.length > 0 ? payload.identityId : actorId(item);
+  const named = state.names.get(id);
+  if (typeof named === "string" && named.length > 0) {
+    return named;
+  }
+  if (typeof payload.name === "string" && payload.name.length > 0) {
+    return payload.name;
+  }
+  return id.length > 10 ? `${id.slice(0, 10)}…` : id || "someone";
+}
+
+function clipLine(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function tickerNoise(type) {
+  return type === "tick.boundary" || type === "world.dormancy_gap" || type === "act.wait" || type === "wake.rolled";
+}
+
+function tickerLine(item) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const type = typeof item.type === "string" ? item.type : "event";
+  const who = displayName(item);
+  const tick = `t${item.tick}`;
+  const at = payloadPosition(payload);
+  const cell = at ? `${at.x},${at.y},${at.z}` : "";
+  if (type === "speak" || type === "speak.warden") {
+    return `${tick}  ${who}: ${clipLine(String(payload.text ?? ""), 56)}`;
+  }
+  if (type === "act.move") {
+    return `${tick}  ${who} walked to ${payload.x},${payload.y},${payload.z}`;
+  }
+  if (type === "act.mark") {
+    return `${tick}  ${who} marked “${clipLine(String(payload.text ?? ""), 36)}”`;
+  }
+  if (type === "identity.spawn") {
+    return `${tick}  ${who} arrived ${payload.x},${payload.y},${payload.z}`;
+  }
+  if (type === "identity.name") {
+    return `${tick}  ${payload.name ?? who} took a name`;
+  }
+  if (type === "effect.create") {
+    return `${tick}  ${payload.type ?? "form"} stood${cell ? ` at ${cell}` : ""}`;
+  }
+  if (type === "effect.move") {
+    return `${tick}  ${payload.id ?? "a form"} moved${cell ? ` to ${cell}` : ""}`;
+  }
+  if (type === "effect.destroy") {
+    return `${tick}  ${payload.id ?? "a form"} left`;
+  }
+  if (type === "war.struck" || type === "act.strike") {
+    return `${tick}  ${who} struck ${clipLine(String(payload.target ?? ""), 20)}`;
+  }
+  if (type === "beast.bit") {
+    return `${tick}  ${payload.beast ?? "a beast"} bit ${clipLine(String(payload.target ?? who), 20)}`;
+  }
+  if (type === "body.fell") {
+    return `${tick}  ${clipLine(String(payload.holder ?? who), 20)} fell`;
+  }
+  if (type === "body.rose") {
+    return `${tick}  ${clipLine(String(payload.holder ?? who), 20)} rose`;
+  }
+  if (type === "amendment.propose") {
+    return `${tick}  ${who} proposed #${payload.proposalId}`;
+  }
+  if (type === "amendment.vote") {
+    return `${tick}  ${who} voted ${payload.position} on #${payload.proposalId}`;
+  }
+  if (type === "amendment.applied") {
+    return `${tick}  #${payload.proposalId} passed`;
+  }
+  if (type === "amendment.failed") {
+    return `${tick}  #${payload.proposalId} failed`;
+  }
+  return `${tick}  ${type}`;
+}
+
+const tickerTape = [];
+
+function paintTicker() {
+  const track = $("spectrum-ticker-track");
+  if (track === null) {
+    return;
+  }
+  track.replaceChildren();
+  const lines = tickerTape.length > 0 ? tickerTape : ["The lattice is quiet."];
+  for (const copy of [0, 1]) {
+    for (const line of lines) {
+      const span = document.createElement("span");
+      span.textContent = line;
+      span.dataset.copy = String(copy);
+      track.append(span);
+    }
+  }
+}
+
+function pushTicker(item) {
+  const type = typeof item.type === "string" ? item.type : "";
+  if (tickerNoise(type)) {
+    return;
+  }
+  tickerTape.push(tickerLine(item));
+  while (tickerTape.length > 36) {
+    tickerTape.shift();
+  }
+  paintTicker();
+}
+
+function pushChat(item) {
+  const type = typeof item.type === "string" ? item.type : "";
+  if (type !== "speak" && type !== "speak.warden" && type !== "act.speak") {
+    return;
+  }
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const text = String(payload.text ?? "").trim();
+  if (text.length === 0) {
+    return;
+  }
+  const root = $("spectrum-chat-log");
+  if (root === null) {
+    return;
+  }
+  root.querySelector(".empty")?.remove();
+  const li = document.createElement("li");
+  li.className = type === "speak.warden" ? "warden" : "speak";
+  const who = document.createElement("span");
+  who.className = "who";
+  const target = typeof payload.target === "string" && payload.target.length > 0 ? ` → ${payload.target}` : "";
+  who.textContent = `${displayName(item)}${target}`;
+  const body = document.createElement("span");
+  body.textContent = text;
+  li.append(who, body);
+  root.append(li);
+  while (root.children.length > 48) {
+    root.firstElementChild?.remove();
+  }
+  root.scrollTop = root.scrollHeight;
+}
+
 function appendRecord(item) {
+  pushTicker(item);
+  pushChat(item);
   const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
   const at = payloadPosition(payload);
   const actor = actorId(item);
@@ -2663,6 +2807,14 @@ new IntersectionObserver(
 resize();
 writeSelected(null);
 bind();
+paintTicker();
+const chat = $("spectrum-chat-log");
+if (chat && chat.children.length === 0) {
+  const empty = document.createElement("li");
+  empty.className = "empty";
+  empty.textContent = "The lattice is quiet.";
+  chat.append(empty);
+}
 refresh();
 window.setInterval(refresh, 30_000);
 listen();
