@@ -713,16 +713,13 @@ function easeInOut(t) {
 
 function pickProbeAct(seed, roll) {
   const pick = (seed + Math.floor(roll * 997)) % 100;
-  if (pick < 14) {
-    return "still";
-  }
-  if (pick < 46) {
+  if (pick < 40) {
     return "circle";
   }
-  if (pick < 66) {
+  if (pick < 62) {
     return "gather";
   }
-  if (pick < 78) {
+  if (pick < 76) {
     return "scan";
   }
   if (pick < 88) {
@@ -753,6 +750,8 @@ function makeProbeRig(color) {
   const scoop = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.28, 8, 1, true), glowMat(color, 0.4));
   scoop.rotation.x = Math.PI;
   scoop.position.set(-0.12, 0.5, 0.08);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.03, 6, 40), glowMat(color, 0.45));
+  ring.rotation.x = Math.PI / 2;
   const count = 64;
   const positions = new Float32Array(count * 3);
   const velocities = new Float32Array(count * 3);
@@ -773,9 +772,9 @@ function makeProbeRig(color) {
       sizeAttenuation: true,
     }),
   );
-  rig.add(beam, arm, scoop, dust);
+  rig.add(beam, arm, scoop, ring, dust);
   scene.add(rig);
-  return { rig, beam, arm, claw, scoop, dust, positions, velocities, ages, cursor: 0, last: 0 };
+  return { rig, beam, arm, claw, scoop, ring, dust, positions, velocities, ages, cursor: 0, last: 0 };
 }
 
 function disposeProbeRig(probe) {
@@ -883,6 +882,7 @@ function probePose(probe, now) {
     beam: 0,
     arm: 0,
     scoop: 0,
+    ring: 0,
   };
   const age = (now - probe.born) / Math.max(1, probe.duration);
   const u = Math.min(1, Math.max(0, age));
@@ -890,7 +890,7 @@ function probePose(probe, now) {
   if (probe.act === "circle") {
     const turns = 2 + (probe.seed % 2);
     const ang = u * Math.PI * 2 * turns + phase * 5;
-    const radius = 0.58 + (probe.seed % 10) * 0.018;
+    const radius = 1.15 + (probe.seed % 10) * 0.02;
     pose.x = Math.cos(ang) * radius;
     pose.z = Math.sin(ang) * radius;
     pose.y += 0.12 + Math.sin(ang * 2) * 0.16;
@@ -898,6 +898,7 @@ function probePose(probe, now) {
     pose.roll = Math.sin(ang) * 0.38;
     pose.pitch = Math.cos(ang) * 0.16;
     pose.lamp = 1.6;
+    pose.ring = 1;
   } else if (probe.act === "gather") {
     const dip = Math.sin(u * Math.PI);
     pose.y = hover * 0.35 - dip * 0.18;
@@ -906,12 +907,14 @@ function probePose(probe, now) {
     pose.halo += now * 0.006;
     pose.beam = deploy;
     pose.scoop = deploy;
+    pose.ring = deploy * 0.55;
   } else if (probe.act === "scan") {
     pose.yaw += u * Math.PI * 2.1;
     pose.pitch += Math.sin(u * Math.PI) * 0.42;
     pose.roll += Math.sin(u * Math.PI * 2) * 0.18;
     pose.arm = deploy;
     pose.lamp = 1.5 + Math.sin(now * 0.02) * 0.6;
+    pose.ring = deploy;
   } else if (probe.act === "drift") {
     const travel = u < 0.28 ? easeInOut(u / 0.28) : u > 0.72 ? 1 - easeInOut((u - 0.72) / 0.28) : 1;
     pose.x = probe.drift.x * travel;
@@ -928,6 +931,7 @@ function probePose(probe, now) {
     pose.arm = deploy;
     pose.beam = deploy * 0.65;
     pose.scoop = deploy;
+    pose.ring = deploy;
   } else if (probe.act === "settle") {
     pose.y += (1 - u) * 0.35;
     pose.lamp = 1.8;
@@ -953,6 +957,10 @@ function poseProbeRig(probe, at, pose, now, dt) {
   fx.scoop.scale.setScalar(0.4 + pose.scoop * 0.9);
   fx.scoop.position.set(-0.18, 0.42 - pose.scoop * 0.12, 0.1);
   fx.scoop.rotation.z = pose.scoop * 0.5;
+  fx.ring.visible = pose.ring > 0.04;
+  fx.ring.scale.setScalar(0.75 + pose.ring * 0.4);
+  fx.ring.rotation.z = now * 0.0022;
+  fx.ring.material.opacity = 0.2 + pose.ring * 0.45;
   const emit = now - fx.last > 32;
   if (emit) {
     fx.last = now;
@@ -1009,13 +1017,8 @@ function tickProbes(now) {
     if (now >= probe.next) {
       probe.act = pickProbeAct(probe.seed, now);
       probe.born = now;
-      probe.duration =
-        probe.act === "still"
-          ? 1400 + (probe.seed % 900)
-          : probe.act === "circle"
-            ? 4200 + (probe.seed % 1200)
-            : 2600 + (probe.seed % 900);
-      probe.next = now + probe.duration + 180 + (probe.seed % 420);
+      probe.duration = probe.act === "circle" ? 3800 + (probe.seed % 900) : 2200 + (probe.seed % 700);
+      probe.next = now + probe.duration;
       const heading = ((probe.seed + Math.floor(now)) % 360) * (Math.PI / 180);
       probe.drift.set(Math.cos(heading) * 0.62, 0, Math.sin(heading) * 0.62);
     }

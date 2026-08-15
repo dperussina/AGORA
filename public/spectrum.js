@@ -687,6 +687,12 @@ function tickFlights(now) {
       if (node) {
         node.position.copy(jetAt);
         node.quaternion.setFromUnitVectors(Y_UP, jetDir);
+        if (node.userData.idleRig !== undefined) {
+          node.userData.idleRig.beam.visible = false;
+          node.userData.idleRig.arm.visible = false;
+          node.userData.idleRig.scoop.visible = false;
+          node.userData.idleRig.ring.visible = false;
+        }
       }
       if (!reduced) {
         puffJet(jetExhaust.copy(jetAt).addScaledVector(jetBack, 0.22), jetBack, now);
@@ -698,6 +704,13 @@ function tickFlights(now) {
       if (node) {
         node.quaternion.identity();
         node.position.copy(flight.to);
+      }
+      const idle = idles.get(id);
+      if (idle !== undefined) {
+        idle.act = "circle";
+        idle.born = now;
+        idle.duration = 2800;
+        idle.next = now + 2800;
       }
       state.flights.delete(id);
       landed = true;
@@ -923,6 +936,10 @@ const state = {
   flights: new Map(),
 };
 
+const idles = new Map();
+const idleScratch = new THREE.Vector3();
+const idleBack = new THREE.Vector3();
+
 function occupantKey(kind, id, extra = "") {
   return `${kind}:${id}:${extra}`;
 }
@@ -980,12 +997,218 @@ function beginFlight(id, fromLattice, toLattice) {
 
 function livingWorld(row, now = performance.now()) {
   const flight = state.flights.get(row.id);
-  if (flight === undefined) {
-    return cell(row.position);
+  if (flight !== undefined) {
+    const t = Math.min(1, (now - flight.born) / flight.duration);
+    const ease = t * t * (3 - 2 * t);
+    return flight.from.clone().lerp(flight.to, ease);
   }
-  const t = Math.min(1, (now - flight.born) / flight.duration);
-  const ease = t * t * (3 - 2 * t);
-  return flight.from.clone().lerp(flight.to, ease);
+  const home = cell(row.position);
+  const idle = idles.get(row.id);
+  if (idle !== undefined) {
+    const pose = idlePose(idle, now);
+    home.x += pose.x;
+    home.y += pose.y;
+    home.z += pose.z;
+  }
+  return home;
+}
+
+function easeInOut(t) {
+  const clamped = Math.min(1, Math.max(0, t));
+  return clamped < 0.5 ? 2 * clamped * clamped : 1 - (2 - 2 * clamped) ** 2 / 2;
+}
+
+function pickIdleAct(seed, now) {
+  const pick = (seed + Math.floor(now * 0.013)) % 100;
+  if (pick < 42) {
+    return "circle";
+  }
+  if (pick < 64) {
+    return "gather";
+  }
+  if (pick < 78) {
+    return "scan";
+  }
+  if (pick < 88) {
+    return "drift";
+  }
+  return "work";
+}
+
+function ensureIdle(id, now) {
+  let idle = idles.get(id);
+  if (idle === undefined) {
+    idle = {
+      act: "circle",
+      born: now,
+      duration: 3200,
+      next: now + 3200,
+      seed: fnv(id),
+      heading: (fnv(id) % 360) * (Math.PI / 180),
+    };
+    idles.set(id, idle);
+  }
+  if (now >= idle.next) {
+    idle.act = pickIdleAct(idle.seed, now);
+    idle.born = now;
+    idle.duration = idle.act === "circle" ? 3800 + (idle.seed % 800) : 2200 + (idle.seed % 600);
+    idle.next = now + idle.duration;
+    idle.heading = ((idle.seed + Math.floor(now)) % 360) * (Math.PI / 180);
+  }
+  return idle;
+}
+
+function idlePose(idle, now) {
+  const phase = (idle.seed % 1000) / 1000;
+  const u = Math.min(1, Math.max(0, (now - idle.born) / Math.max(1, idle.duration)));
+  const deploy = u < 0.16 ? easeInOut(u / 0.16) : u > 0.84 ? 1 - easeInOut((u - 0.84) / 0.16) : 1;
+  const pose = {
+    x: 0,
+    y: 0.14 + Math.sin(now * 0.003 + phase * 5) * 0.18,
+    z: 0,
+    yaw: 0,
+    pitch: 0,
+    roll: 0,
+    beam: 0,
+    arm: 0,
+    scoop: 0,
+    ring: 0,
+  };
+  if (idle.act === "circle") {
+    const ang = u * Math.PI * 2 * (2 + (idle.seed % 2)) + phase * 4;
+    pose.x = Math.cos(ang) * 1.35;
+    pose.z = Math.sin(ang) * 1.35;
+    pose.y += 0.2 + Math.sin(ang * 2) * 0.24;
+    pose.yaw = -ang + Math.PI / 2;
+    pose.roll = Math.sin(ang) * 0.5;
+    pose.pitch = Math.cos(ang) * 0.18;
+    pose.ring = 1;
+  } else if (idle.act === "gather") {
+    const dip = Math.sin(u * Math.PI);
+    pose.y = 0.05 - dip * 0.14;
+    pose.pitch = dip * 0.35;
+    pose.beam = deploy;
+    pose.scoop = deploy;
+    pose.ring = deploy * 0.55;
+  } else if (idle.act === "scan") {
+    pose.yaw = u * Math.PI * 2.4;
+    pose.pitch = Math.sin(u * Math.PI) * 0.4;
+    pose.arm = deploy;
+    pose.ring = deploy;
+  } else if (idle.act === "drift") {
+    const travel = u < 0.28 ? easeInOut(u / 0.28) : u > 0.72 ? 1 - easeInOut((u - 0.72) / 0.28) : 1;
+    pose.x = Math.cos(idle.heading) * 1.25 * travel;
+    pose.z = Math.sin(idle.heading) * 1.25 * travel;
+    pose.y += travel * 0.35;
+    pose.yaw = idle.heading;
+    pose.roll = travel * 0.28;
+  } else if (idle.act === "work") {
+    const pulse = Math.sin(u * Math.PI);
+    pose.y += pulse * 0.16;
+    pose.arm = deploy;
+    pose.beam = deploy * 0.7;
+    pose.scoop = deploy;
+    pose.ring = deploy;
+    pose.pitch = Math.sin(now * 0.02) * 0.16 * pulse;
+  }
+  return pose;
+}
+
+function glowIdle(color, opacity) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+}
+
+function ensureIdleRig(node) {
+  if (node.userData.idleRig !== undefined) {
+    return node.userData.idleRig;
+  }
+  const glow = glowIdle(0x00ffd4, 0.62);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.28, 1, 10, 1, true), glow);
+  const brass = new THREE.MeshStandardMaterial({ color: 0xc4a574, metalness: 0.75, roughness: 0.28 });
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.032, 1.15, 6), brass);
+  const claw = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.1, 0.14), brass);
+  claw.position.set(0, -0.62, 0);
+  arm.add(claw);
+  const scoop = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.36, 8, 1, true), glowIdle(0x00ffd4, 0.45));
+  scoop.rotation.x = Math.PI;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.035, 6, 48), glowIdle(0x00ffd4, 0.5));
+  ring.rotation.x = Math.PI / 2;
+  node.add(beam, arm, scoop, ring);
+  node.userData.idleRig = { beam, arm, scoop, ring, last: 0 };
+  return node.userData.idleRig;
+}
+
+function poseIdleRig(rig, pose, now) {
+  rig.beam.visible = pose.beam > 0.04;
+  rig.beam.scale.set(1, 0.2 + pose.beam * 2.6, 1);
+  rig.beam.position.y = 0.2 - pose.beam * 1.4;
+  rig.beam.material.opacity = 0.28 + pose.beam * 0.55;
+  rig.arm.visible = pose.arm > 0.04;
+  rig.arm.position.set(0.28, 0.42, 0.06);
+  rig.arm.rotation.z = -0.2 - pose.arm * 1.2;
+  rig.arm.rotation.y = Math.sin(now * 0.008) * pose.arm * 0.8;
+  rig.scoop.visible = pose.scoop > 0.04;
+  rig.scoop.position.set(-0.22, 0.28 - pose.scoop * 0.1, 0.12);
+  rig.scoop.scale.setScalar(0.45 + pose.scoop);
+  rig.ring.visible = pose.ring > 0.04;
+  rig.ring.scale.setScalar(0.7 + pose.ring * 0.45);
+  rig.ring.rotation.z = now * 0.0024;
+  rig.ring.material.opacity = 0.22 + pose.ring * 0.45;
+}
+
+function tickIdles(now) {
+  const live = new Set();
+  for (const row of listOf("identity")) {
+    live.add(row.id);
+    if (state.flights.has(row.id)) {
+      continue;
+    }
+    const node = godNode(row.id);
+    if (node === null) {
+      continue;
+    }
+    const idle = ensureIdle(row.id, now);
+    const pose = idlePose(idle, now);
+    const home = cell(row.position);
+    node.position.set(home.x + pose.x, home.y + pose.y, home.z + pose.z);
+    node.rotation.set(pose.pitch, pose.yaw, pose.roll);
+    const rig = ensureIdleRig(node);
+    poseIdleRig(rig, pose, now);
+    if (reduced || now - rig.last <= 40) {
+      continue;
+    }
+    rig.last = now;
+    idleScratch.set(node.position.x, node.position.y, node.position.z);
+    if (idle.act === "circle") {
+      idleBack.set(-pose.x, 0.12, -pose.z);
+      if (idleBack.lengthSq() > 1e-6) {
+        idleBack.normalize();
+        puffJet(idleScratch, idleBack, now, 3);
+      }
+    } else if (idle.act === "gather") {
+      puffJet(idleScratch.setY(idleScratch.y - 0.4), idleBack.set((Math.random() - 0.5) * 0.3, 1, (Math.random() - 0.5) * 0.3), now, 4);
+    } else if (idle.act === "work") {
+      puffJet(
+        idleScratch.setY(idleScratch.y + 0.2),
+        idleBack.set((Math.random() - 0.5) * 1.2, 0.35, (Math.random() - 0.5) * 1.2),
+        now,
+        5,
+      );
+    } else if (idle.act === "scan") {
+      puffJet(idleScratch.setY(idleScratch.y + 0.45), idleBack.set(Math.cos(pose.yaw), 0.05, Math.sin(pose.yaw)), now, 2);
+    }
+  }
+  for (const id of [...idles.keys()]) {
+    if (!live.has(id)) {
+      idles.delete(id);
+    }
+  }
 }
 
 function rememberBody(id, position, kind) {
@@ -1423,10 +1646,6 @@ function syncLiving() {
   for (const row of listOf("identity")) {
     const node = at.get(`identity:${row.id}`);
     if (node) {
-      if (!state.flights.has(row.id)) {
-        node.position.copy(cell(row.position));
-        node.quaternion.identity();
-      }
       node.userData.row = row;
     }
   }
@@ -2041,6 +2260,7 @@ function tick() {
     const now = performance.now();
     tickFly(now);
     tickFlights(now);
+    tickIdles(now);
     tickJet(now);
     tickSparks(now);
     controls.update();
