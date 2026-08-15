@@ -922,17 +922,23 @@ export function wardenArtifact() {
 
 export function markArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.1, 10), MAT.hull, 0, 0.05, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.07, 1.85, 0.07), MAT.iron, 0, 1.0, 0));
-  const plate = mesh(new THREE.BoxGeometry(0.95, 0.62, 0.03), MAT.holo, 0.52, 1.35, 0);
-  g.add(plate);
-  g.add(mesh(new THREE.BoxGeometry(0.62, 0.04, 0.02), MAT.navWarm, 0.5, 1.5, 0.03));
-  g.add(mesh(new THREE.BoxGeometry(0.48, 0.03, 0.02), MAT.navWarm, 0.44, 1.36, 0.03));
-  g.add(mesh(new THREE.BoxGeometry(0.55, 0.03, 0.02), MAT.navWarm, 0.48, 1.22, 0.03));
-  const tip = mesh(new THREE.SphereGeometry(0.08, 8, 6), MAT.holo, 0, 1.98, 0);
+  g.add(mesh(new THREE.CylinderGeometry(0.32, 0.38, 0.12, 8), MAT.stoneDark, 0, 0.06, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.08, 8), MAT.hull, 0, 0.14, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 1.72, 0.08), MAT.iron, 0, 1.02, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.12, 0.08, 0.12), MAT.rim, 0, 1.86, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.92, 0.05, 0.05), MAT.iron, 0.42, 1.62, 0));
+  const cloth = mesh(new THREE.BoxGeometry(0.72, 0.58, 0.03), MAT.markFlag, 0.48, 1.28, 0.04);
+  g.add(cloth);
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.04, 0.04), MAT.holo, 0.48, 1.54, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.5, 0.025, 0.02), MAT.navWarm, 0.42, 1.36, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.02, 0.02), MAT.navWarm, 0.46, 1.24, 0.06));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.02, 0.02), MAT.holo, 0.38, 1.12, 0.06));
+  const tip = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.holo, 0, 1.96, 0);
   tip.userData.motion = "pulse";
   g.add(tip);
-  bellyLight(g, MAT.holo, -0.08, 0.07);
+  const ring = mesh(new THREE.TorusGeometry(0.2, 0.018, 6, 16), MAT.holo, 0, 0.18, 0);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
   return g;
 }
 
