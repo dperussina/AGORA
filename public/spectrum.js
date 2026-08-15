@@ -461,8 +461,14 @@ function visualTone(type) {
   if (type === "effect.create") {
     return { color: 0xffc44d, count: 20, duration: 1500, spread: 5 };
   }
-  if (type === "effect.destroy" || type.endsWith("_failed")) {
-    return { color: 0xff1a14, count: 18, duration: 1200, spread: 3 };
+  if (type === "effect.destroy" || type.endsWith("_failed") || type === "body.fell" || type === "body.died") {
+    return { color: 0xff1a14, count: 28, duration: 1400, spread: 6 };
+  }
+  if (type === "war.struck" || type === "act.strike") {
+    return { color: 0xc4e8ff, count: 20, duration: 900, spread: 4 };
+  }
+  if (type === "beast.bit") {
+    return { color: 0xff3a6a, count: 20, duration: 980, spread: 4 };
   }
   if (type === "effect.move" || type === "act.move") {
     return { color: 0x7af0ff, count: 14, duration: 1100, spread: 3 };
@@ -477,6 +483,10 @@ function visualEvent(type) {
     (type.startsWith("act.") && type !== "act.wait") ||
     type.startsWith("effect.") ||
     type.startsWith("amendment.") ||
+    type.startsWith("war.") ||
+    type === "beast.bit" ||
+    type === "body.fell" ||
+    type === "body.died" ||
     type.endsWith("_failed")
   );
 }
@@ -720,6 +730,9 @@ function godNode(id) {
 function tickFlights(now) {
   let landed = false;
   for (const [id, flight] of state.flights) {
+    if (foldCombatBusy(id, now)) {
+      continue;
+    }
     const t = Math.min(1, (now - flight.born) / flight.duration);
     const ease = t * t * (3 - 2 * t);
     jetAt.copy(flight.from).lerp(flight.to, ease);
@@ -1109,6 +1122,14 @@ function startIdleAct(idle, now) {
 
 const foldShots = [];
 const recentFoldShots = [];
+const dogfights = new Map();
+const booms = [];
+
+const foldCombat = {
+  poses: new Map(),
+  homes: new Map(),
+  wounds: new Map(),
+};
 
 function occupantCell(id) {
   if (typeof id !== "string" || id.length === 0) {
@@ -1119,78 +1140,716 @@ function occupantCell(id) {
       return row.position;
     }
   }
+  return foldCombat.homes.get(id) ?? null;
+}
+
+function rememberCombatCell(id, at) {
+  if (typeof id !== "string" || id.length === 0 || at === null || at === undefined) {
+    return;
+  }
+  foldCombat.homes.set(id, at);
+}
+
+function namedBody(name) {
+  if (typeof name !== "string" || name.length === 0) {
+    return "";
+  }
+  const folded = name.toLowerCase();
+  for (const [id, label] of state.names) {
+    if (typeof label === "string" && label.toLowerCase() === folded) {
+      return id;
+    }
+  }
+  for (const row of state.occupants.values()) {
+    const named = typeof row.name === "string" ? row.name : "";
+    const kindName = typeof row.kindName === "string" ? row.kindName : "";
+    const type = typeof row.type === "string" ? row.type : "";
+    if (named.toLowerCase() === folded || kindName.toLowerCase() === folded || type.toLowerCase() === folded) {
+      return row.id;
+    }
+  }
+  return "";
+}
+
+function occupantAt(at) {
+  if (at === null) {
+    return "";
+  }
+  for (const row of state.occupants.values()) {
+    if (row.position && sameCell(row.position, at) && row.kind !== "mark" && row.kind !== "echo") {
+      return row.id;
+    }
+  }
+  return "";
+}
+
+function resolveCombatId(id, payload) {
+  if (typeof id === "string" && id.length > 0 && occupantCell(id) !== null) {
+    return id;
+  }
+  const named = namedBody(typeof payload?.name === "string" ? payload.name : typeof id === "string" ? id : "");
+  if (named.length > 0) {
+    return named;
+  }
+  const occupant = occupantAt(payloadPosition(payload ?? {}));
+  if (occupant.length > 0) {
+    return occupant;
+  }
+  return typeof id === "string" ? id : "";
+}
+
+function setFoldPose(id, mode, now, extra = {}) {
+  if (typeof id !== "string" || id.length === 0) {
+    return;
+  }
+  const duration =
+    extra.duration ??
+    (mode === "hurt" ? 3800 : mode === "rise" ? 2200 : mode === "dead" ? 2400 : mode === "fallen" ? 1e9 : 900);
+  foldCombat.poses.set(id, { mode, born: now, duration, ...extra });
+}
+
+function lookYaw(from, to) {
+  const delta = to.clone().sub(from);
+  return Math.atan2(delta.x, delta.z);
+}
+
+function foldPoseFor(id, now) {
+  const pose = foldCombat.poses.get(id);
+  if (pose === undefined) {
+    return null;
+  }
+  const u = Math.min(1, Math.max(0, (now - pose.born) / Math.max(1, pose.duration)));
+  if (now - pose.born > pose.duration && pose.mode !== "fallen" && pose.mode !== "dead") {
+    if (pose.mode === "hit") {
+      setFoldPose(id, "hurt", now, { wounds: pose.wounds, duration: 3600 });
+      return foldPoseFor(id, now);
+    }
+    foldCombat.poses.delete(id);
+    return null;
+  }
+  const base = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
+  const toward = typeof pose.toward === "string" ? occupantCell(pose.toward) : null;
+  const here = occupantCell(id);
+  if (toward !== null && here !== null) {
+    base.yaw = lookYaw(cell(here), cell(toward));
+  }
+  if (pose.mode === "lock") {
+    base.y = 0.08;
+    return base;
+  }
+  if (pose.mode === "fire") {
+    const kick = gate(u, 0.12, 0.7);
+    base.z -= kick * 0.16;
+    base.pitch = -kick * 0.35;
+    return base;
+  }
+  if (pose.mode === "hit") {
+    const rock = gate(u, 0.08, 0.55);
+    const wounds = pose.wounds ?? 1;
+    base.z += rock * (0.16 + wounds * 0.08);
+    base.pitch = rock * 0.55;
+    base.roll = Math.sin(u * 22) * rock * 0.4;
+    return base;
+  }
+  if (pose.mode === "hurt") {
+    const wounds = pose.wounds ?? 1;
+    const linger = 1 - u;
+    base.pitch = linger * (0.12 + wounds * 0.08);
+    base.roll = Math.sin(now * 0.012) * linger * 0.1;
+    return base;
+  }
+  if (pose.mode === "rise") {
+    const lift = u * u * (3 - 2 * u);
+    base.pitch = (1 - lift) * (Math.PI / 2);
+    base.y = 0.08 + lift * 0.12;
+    return base;
+  }
+  if (pose.mode === "fallen") {
+    base.pitch = Math.PI / 2;
+    base.y = 0.08;
+    base.roll = 0.08;
+    return base;
+  }
+  if (pose.mode === "dead") {
+    base.pitch = Math.PI / 2 + u * 1.2;
+    base.y = 0.2 + u * 0.4;
+    base.roll = u * 2.2;
+    return base;
+  }
+  return base;
+}
+
+function combatNode(id) {
+  if (typeof id !== "string" || id.length === 0) {
+    return null;
+  }
+  const god = godNode(id);
+  if (god) {
+    return god;
+  }
+  for (const root of [relics, volumes]) {
+    for (const child of root.children) {
+      if (child.userData.row?.id === id) {
+        return child;
+      }
+    }
+  }
+  const at = occupantCell(id);
+  if (at === null) {
+    return null;
+  }
+  for (const child of volumes.children) {
+    const row = child.userData.row;
+    if (row?.type !== "hollow" || !row.position) {
+      continue;
+    }
+    const reach = Math.max(
+      Math.abs(row.position.x - at.x),
+      Math.abs(row.position.y - at.y),
+      Math.abs(row.position.z - at.z),
+    );
+    if (reach <= 2) {
+      return child;
+    }
+  }
   return null;
 }
 
+function plantedCombat(node) {
+  const row = node?.userData?.row;
+  return row?.kind === "anchor" || row?.type === "hollow";
+}
+
+function fightKey(a, b) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
 function foldCombatBusy(id, now) {
+  if (foldPoseFor(id, now) !== null) {
+    return true;
+  }
+  for (const fight of dogfights.values()) {
+    if ((fight.a === id || fight.b === id) && now < fight.until) {
+      return true;
+    }
+  }
   return foldShots.some((shot) => (shot.fromId === id || shot.toId === id) && now - shot.born < shot.duration);
 }
 
-function fireFoldShot(fromId, toId, item, now) {
-  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
-  const fromAt = occupantCell(fromId) ?? occupantCell(typeof payload.identityId === "string" ? payload.identityId : "");
-  const toAt = occupantCell(toId) ?? payloadPosition(payload);
+function combatWorld(id) {
+  const node = combatNode(id);
+  if (node) {
+    return node.position.clone();
+  }
+  const at = occupantCell(id);
+  return at === null ? null : cell(at);
+}
+
+function beginDogfight(fromId, toId, item, now) {
+  if (typeof fromId !== "string" || fromId.length === 0 || typeof toId !== "string" || toId.length === 0) {
+    return null;
+  }
+  const fromAt = occupantCell(fromId);
+  const toAt = occupantCell(toId) ?? payloadPosition(item.payload);
   if (fromAt === null || toAt === null) {
-    return;
-  }
-  if (recentFoldShots.some((row) => row.fromId === fromId && row.toId === toId && now - row.born < 900)) {
-    return;
-  }
-  recentFoldShots.push({ fromId, toId, born: now });
-  while (recentFoldShots.length > 24) {
-    recentFoldShots.shift();
+    return null;
   }
   const from = cell(fromAt);
-  from.y += 0.78;
   const to = cell(toAt);
-  to.y += 0.7;
-  const beast = item.type === "beast.bit" || (typeof fromId === "string" && fromId.startsWith("ent:"));
-  const color = new THREE.Color(beast ? 0xff3a6a : 0xc4e8ff);
-  const hot = new THREE.Color(beast ? 0xffc078 : 0xf4fff8);
+  const key = fightKey(fromId, toId);
+  let fight = dogfights.get(key);
+  const nodeA = combatNode(fromId);
+  const nodeB = combatNode(toId);
+  if (fight === undefined) {
+    const mid = from.clone().lerp(to, 0.5);
+    const span = Math.max(1.2, from.distanceTo(to));
+    const hollow = plantedCombat(nodeA) || plantedCombat(nodeB);
+    fight = {
+      a: fromId,
+      b: toId,
+      mid,
+      radius: hollow ? Math.min(5.4, Math.max(2.8, span * 0.42)) : Math.min(3.8, Math.max(1.8, span * 0.38)),
+      born: now,
+      until: now + 4600,
+      seed: (fnv(key) % 628) / 100,
+      hitA: 0,
+      hitB: 0,
+      lastVolley: now,
+      volley: 0,
+      dead: null,
+      deadAt: 0,
+      framed: false,
+      homeA: from.clone(),
+      homeB: to.clone(),
+      beast: item.type === "beast.bit" || fromId.startsWith("ent:") || toId.startsWith("ent:"),
+    };
+    dogfights.set(key, fight);
+    state.flights.delete(fromId);
+    state.flights.delete(toId);
+  } else {
+    fight.until = Math.max(fight.until, now + 4600);
+    if (nodeA) {
+      fight.homeA.copy(nodeA.userData.combatHome ?? fight.homeA);
+    }
+    if (nodeB) {
+      fight.homeB.copy(nodeB.userData.combatHome ?? fight.homeB);
+    }
+  }
+  if (!fight.framed && !reduced) {
+    fight.framed = true;
+    const look = fight.mid.clone();
+    if (controls.target.distanceTo(look) > 8) {
+      const away = camera.position.clone().sub(controls.target);
+      if (away.lengthSq() < 0.01) {
+        away.set(18, 12, 18);
+      }
+      away.setLength(hollowLook(fight));
+      flyTo(look.clone().add(away), look, 1100);
+    }
+  }
+  return fight;
+}
+
+function hollowLook(fight) {
+  return plantedCombat(combatNode(fight.a)) || plantedCombat(combatNode(fight.b)) ? 16 : 12;
+}
+
+function markFightHit(fight, toId, now) {
+  if (toId === fight.a) {
+    fight.hitA = now;
+  }
+  if (toId === fight.b) {
+    fight.hitB = now;
+  }
+  fight.until = Math.max(fight.until, now + 4200);
+}
+
+function spawnFoldShot(from, to, fromId, toId, kind, now) {
+  const bite = kind === "bite";
+  const rocket = kind === "rocket";
+  const blast = kind === "blast";
+  const color = new THREE.Color(bite ? 0xff3a6a : rocket ? 0xff7a28 : blast ? 0x7af0ff : 0xc4e8ff);
+  const hot = new THREE.Color(bite ? 0xffc078 : rocket ? 0xffe08a : 0xf4fff8);
   const length = Math.max(0.35, from.distanceTo(to));
   const mid = from.clone().lerp(to, 0.5);
   const group = new THREE.Group();
   group.position.copy(mid);
   group.lookAt(to);
-  const fat = beast ? 0.28 : 0.12;
+  const fat = bite ? 0.28 : blast ? 0.2 : rocket ? 0.1 : 0.11;
   const bloom = new THREE.Mesh(
-    new THREE.CylinderGeometry(fat * 2.4, fat * 1.6, length, 12, 1, true),
-    glowIdle(color, 0.28),
+    new THREE.CylinderGeometry(fat * 2.4, fat * 1.6, rocket ? Math.min(1.1, length * 0.22) : length, 12, 1, true),
+    glowIdle(color, rocket ? 0.4 : 0.28),
   );
   bloom.rotation.x = Math.PI / 2;
   const core = new THREE.Mesh(
-    new THREE.CylinderGeometry(fat * 0.35, fat * 0.22, length, 8, 1, true),
+    new THREE.CylinderGeometry(fat * 0.35, fat * 0.22, rocket ? Math.min(0.7, length * 0.16) : length, 8, 1, true),
     glowIdle(hot, 0.95),
   );
   core.rotation.x = Math.PI / 2;
   group.add(bloom, core);
-  const bolt = new THREE.Mesh(new THREE.SphereGeometry(beast ? 0.22 : 0.14, 12, 10), glowIdle(hot, 0.95));
+  const bolt = new THREE.Mesh(
+    rocket
+      ? new THREE.ConeGeometry(0.16, 0.42, 8)
+      : new THREE.SphereGeometry(bite ? 0.22 : blast ? 0.2 : 0.13, 12, 10),
+    glowIdle(hot, 0.95),
+  );
+  if (rocket) {
+    bolt.quaternion.setFromUnitVectors(Y_UP, to.clone().sub(from).normalize());
+  }
   scene.add(group, bolt);
   foldShots.push({
     group,
     bolt,
     bloom,
     core,
-    from,
-    to,
+    from: from.clone(),
+    to: to.clone(),
     fromId,
     toId,
+    kind,
     born: now,
-    duration: beast ? 980 : 640,
+    duration: rocket ? 820 : bite ? 980 : blast ? 560 : 380,
+    boom: rocket || blast,
   });
-  while (foldShots.length > 10) {
+  while (foldShots.length > 16) {
     const oldest = foldShots.shift();
     if (oldest !== undefined) {
       scene.remove(oldest.group, oldest.bolt);
     }
   }
-  const midCell = {
-    x: Math.round((fromAt.x + toAt.x) / 2),
-    y: Math.round((fromAt.y + toAt.y) / 2),
-    z: Math.round((fromAt.z + toAt.z) / 2),
+}
+
+function shotMuzzle(id, fallback) {
+  const node = combatNode(id);
+  if (node) {
+    const tip = node.position.clone();
+    tip.y += plantedCombat(node) ? 1.4 : 0.55;
+    return tip;
+  }
+  return fallback.clone();
+}
+
+function fireFoldShot(fromId, toId, item, now) {
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  const striker = resolveCombatId(fromId, payload);
+  const target = resolveCombatId(toId, payload);
+  const hinted = payloadPosition(payload);
+  if (hinted !== null) {
+    if (occupantCell(target) === null) {
+      rememberCombatCell(target, hinted);
+    }
+    if (occupantCell(striker) === null) {
+      rememberCombatCell(striker, hinted);
+    }
+  }
+  const actor = actorId(item);
+  if (occupantCell(striker) === null && actor.length > 0) {
+    rememberCombatCell(striker, occupantCell(actor));
+  }
+  let fromAt = occupantCell(striker);
+  let toAt = occupantCell(target) ?? hinted;
+  if (fromAt === null && hinted !== null && toAt !== null && !sameCell(hinted, toAt)) {
+    fromAt = hinted;
+    rememberCombatCell(striker, hinted);
+  }
+  if (fromAt === null && hinted !== null) {
+    fromAt = hinted;
+    rememberCombatCell(striker, hinted);
+  }
+  if (toAt === null && hinted !== null) {
+    toAt = hinted;
+    rememberCombatCell(target, hinted);
+  }
+  if (fromAt === null || toAt === null) {
+    return;
+  }
+  if (recentFoldShots.some((row) => row.fromId === striker && row.toId === target && now - row.born < 280)) {
+    const existing = beginDogfight(striker, target, item, now);
+    if (existing) {
+      markFightHit(existing, target, now);
+    }
+    return;
+  }
+  recentFoldShots.push({ fromId: striker, toId: target, born: now });
+  while (recentFoldShots.length > 24) {
+    recentFoldShots.shift();
+  }
+  const fight = beginDogfight(striker, target, item, now);
+  const from = shotMuzzle(striker, cell(fromAt));
+  const to = shotMuzzle(target, cell(toAt));
+  const bite = item.type === "beast.bit" || striker.startsWith("ent:");
+  spawnFoldShot(from, to, striker, target, bite ? "bite" : "blast", now);
+  const wounds = Math.min(3, (foldCombat.wounds.get(target) ?? 0) + 1);
+  foldCombat.wounds.set(target, wounds);
+  setFoldPose(striker, "fire", now, { toward: target, duration: 820 });
+  setFoldPose(target, "hit", now, { from: striker, wounds, duration: 620 });
+  if (fight) {
+    markFightHit(fight, target, now);
+  }
+}
+
+function boomAt(world, now, scale = 1) {
+  const group = new THREE.Group();
+  group.position.copy(world);
+  const fire = new THREE.Mesh(new THREE.SphereGeometry(0.55 * scale, 12, 10), glowIdle(0xff6a20, 0.95));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.22 * scale, 10, 8), glowIdle(0xffe8a0, 1));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42 * scale, 0.07, 6, 22), glowIdle(0xff3a18, 0.85));
+  ring.rotation.x = Math.PI / 2;
+  group.add(fire, core, ring);
+  scene.add(group);
+  booms.push({ group, fire, core, ring, born: now, duration: 920 });
+  puffJet(world, Y_UP, now, Math.round(16 * scale));
+  puffJet(world, new THREE.Vector3(0.4, 0.7, -0.2), now, 8);
+}
+
+function tickBooms(now) {
+  for (let i = booms.length - 1; i >= 0; i -= 1) {
+    const boom = booms[i];
+    const u = (now - boom.born) / boom.duration;
+    if (u >= 1) {
+      scene.remove(boom.group);
+      boom.group.traverse((node) => {
+        node.geometry?.dispose();
+        node.material?.dispose();
+      });
+      booms.splice(i, 1);
+      continue;
+    }
+    const grow = 0.45 + u * 3.4;
+    boom.fire.scale.setScalar(grow);
+    boom.core.scale.setScalar(0.7 + u * 1.6);
+    boom.ring.scale.setScalar(1 + u * 4.2);
+    boom.fire.material.opacity = 0.92 * (1 - u);
+    boom.core.material.opacity = 1 - u;
+    boom.ring.material.opacity = 0.8 * (1 - u);
+    boom.ring.rotation.z += 0.08;
+  }
+}
+
+function dogfightPose(fight, side, now) {
+  const node = combatNode(side === 0 ? fight.a : fight.b);
+  const home = side === 0 ? fight.homeA : fight.homeB;
+  const t = (now - fight.born) * 0.001;
+  const phase = side === 0 ? 0 : Math.PI;
+  if (plantedCombat(node)) {
+    const other = combatWorld(side === 0 ? fight.b : fight.a) ?? fight.mid;
+    const toward = other.clone().sub(home);
+    if (toward.lengthSq() > 1e-6) {
+      toward.normalize();
+    }
+    const lunge = 0.22 + Math.sin(t * 1.7 + phase) * 0.28;
+    return {
+      x: home.x + toward.x * lunge,
+      y: home.y + Math.sin(t * 1.1) * 0.12,
+      z: home.z + toward.z * lunge,
+      yaw: Math.atan2(toward.x, toward.z),
+      roll: Math.sin(t * 2.2 + phase) * 0.12,
+      pitch: Math.cos(t * 1.6) * 0.08,
+    };
+  }
+  const ang = t * 1.28 + phase + fight.seed;
+  const weave = Math.sin(t * 2.35 + phase) * 0.72;
+  const climb = Math.sin(t * 1.55 + phase * 0.7) * 0.82;
+  const jink = Math.sin(t * 4.05 + fight.seed + phase) * 0.38;
+  const radius = fight.radius + weave;
+  return {
+    x: fight.mid.x + Math.cos(ang) * radius + Math.cos(ang + 1.2) * jink,
+    y: fight.mid.y + 1.05 + climb,
+    z: fight.mid.z + Math.sin(ang) * radius + Math.sin(ang + 1.2) * jink,
+    yaw: ang + Math.PI / 2,
+    roll: Math.sin(t * 3.15 + phase) * 0.52,
+    pitch: Math.cos(t * 2.05 + phase) * 0.24,
   };
-  if (controls.target.distanceTo(cell(midCell)) > 10) {
-    flyToRow({ position: toAt, kind: "entity", id: toId }, 12);
+}
+
+function poseCombatant(fight, side, now) {
+  const id = side === 0 ? fight.a : fight.b;
+  const node = combatNode(id);
+  if (node === null) {
+    return;
+  }
+  if (node.userData.combatHome === undefined) {
+    node.userData.combatHome = node.position.clone();
+  }
+  hideIdleRig(node.userData.idleRig);
+  const pose = dogfightPose(fight, side, now);
+  const hitAt = side === 0 ? fight.hitA : fight.hitB;
+  const wobble = hitAt > 0 && now - hitAt < 520 ? 1 - (now - hitAt) / 520 : 0;
+  const extra = foldPoseFor(id, now);
+  node.position.set(
+    pose.x + Math.sin(now * 0.046) * wobble * 0.22 + (extra?.x ?? 0),
+    pose.y + Math.cos(now * 0.051) * wobble * 0.16 + (extra?.y ?? 0),
+    pose.z + Math.sin(now * 0.039) * wobble * 0.2 + (extra?.z ?? 0),
+  );
+  node.rotation.order = "YXZ";
+  node.rotation.set(
+    pose.pitch + Math.cos(now * 0.058) * wobble * 0.55 + (extra?.pitch ?? 0),
+    pose.yaw,
+    pose.roll + Math.sin(now * 0.064) * wobble * 0.85 + (extra?.roll ?? 0),
+  );
+  if (!reduced && !plantedCombat(node) && now - (node.userData.combatJet ?? 0) > 55) {
+    node.userData.combatJet = now;
+    puffJet(node.position, new THREE.Vector3(Math.sin(pose.yaw), 0.15, Math.cos(pose.yaw)), now, 2);
+  }
+  if (fight.dead === id && fight.deadAt > 0) {
+    const u = Math.min(1, (now - fight.deadAt) / 1100);
+    if (u < 0.18) {
+      node.scale.setScalar(1 + u * 2.4);
+    } else {
+      node.scale.setScalar(Math.max(0.01, 1.4 - (u - 0.18) * 2.2));
+    }
+    node.rotation.x += u * 1.8;
+    node.rotation.z += u * 2.4;
+  }
+}
+
+function restoreCombatant(id, home) {
+  const node = combatNode(id);
+  if (node === null) {
+    return;
+  }
+  node.position.copy(node.userData.combatHome ?? home);
+  node.rotation.set(0, 0, 0);
+  node.scale.set(1, 1, 1);
+  delete node.userData.combatHome;
+}
+
+function applyFoldCombat(now) {
+  const busy = new Set();
+  for (const fight of dogfights.values()) {
+    if (now < fight.until) {
+      busy.add(fight.a);
+      busy.add(fight.b);
+    }
+  }
+  for (const id of [...foldCombat.poses.keys()]) {
+    if (busy.has(id)) {
+      continue;
+    }
+    const node = combatNode(id);
+    if (node === null) {
+      continue;
+    }
+    const pose = foldPoseFor(id, now);
+    if (pose === null) {
+      if (node.userData.combatHome !== undefined) {
+        node.position.copy(node.userData.combatHome);
+        node.rotation.set(0, 0, 0);
+        delete node.userData.combatHome;
+      }
+      continue;
+    }
+    hideIdleRig(node.userData.idleRig);
+    const at = occupantCell(id);
+    if (node.userData.combatHome === undefined) {
+      node.userData.combatHome = at !== null ? cell(at) : node.position.clone();
+    }
+    const home = node.userData.combatHome;
+    node.position.set(home.x + pose.x, home.y + pose.y, home.z + pose.z);
+    node.rotation.order = "YXZ";
+    node.rotation.set(pose.pitch, pose.yaw, pose.roll);
+  }
+}
+
+function noteFoldCombat(item, now) {
+  const type = typeof item.type === "string" ? item.type : "";
+  const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
+  if (type === "war.declared") {
+    const attacker = resolveCombatId(typeof payload.attacker === "string" ? payload.attacker : actorId(item), payload);
+    const defender = resolveCombatId(
+      typeof payload.defender === "string" ? payload.defender : typeof payload.target === "string" ? payload.target : "",
+      payload,
+    );
+    setFoldPose(attacker, "lock", now, { toward: defender, duration: 1600 });
+    setFoldPose(defender, "lock", now, { toward: attacker, duration: 1600 });
+    beginDogfight(attacker, defender, item, now);
+    return;
+  }
+  if (type === "war.struck" || type === "act.strike") {
+    const striker = resolveCombatId(typeof payload.striker === "string" ? payload.striker : actorId(item), payload);
+    const target = resolveCombatId(typeof payload.target === "string" ? payload.target : "", payload);
+    if (type === "war.struck" && target.length === 0 && payloadPosition(payload) === null) {
+      return;
+    }
+    fireFoldShot(striker, target, item, now);
+    return;
+  }
+  if (type === "beast.bit") {
+    const beast = resolveCombatId(typeof payload.striker === "string" ? payload.striker : "", payload);
+    const victim = resolveCombatId(
+      typeof payload.target === "string"
+        ? payload.target
+        : typeof payload.identityId === "string"
+          ? payload.identityId
+          : actorId(item),
+      payload,
+    );
+    fireFoldShot(beast, victim, item, now);
+    return;
+  }
+  if (type === "body.fell") {
+    const holder = resolveCombatId(typeof payload.holder === "string" ? payload.holder : actorId(item), payload);
+    foldCombat.wounds.set(holder, 3);
+    setFoldPose(holder, "fallen", now, { duration: 1e9 });
+    noteDeath(holder, now);
+    return;
+  }
+  if (type === "body.rose") {
+    const holder = resolveCombatId(typeof payload.holder === "string" ? payload.holder : actorId(item), payload);
+    foldCombat.wounds.set(holder, 0);
+    setFoldPose(holder, "rise", now, { duration: 2200 });
+    return;
+  }
+  if (type === "body.died") {
+    const holder = resolveCombatId(typeof payload.holder === "string" ? payload.holder : actorId(item), payload);
+    setFoldPose(holder, "dead", now, { duration: 2400 });
+    noteDeath(holder, now);
+  }
+}
+
+function noteDeath(id, now) {
+  if (typeof id !== "string" || id.length === 0) {
+    return;
+  }
+  for (const fight of dogfights.values()) {
+    if (fight.dead === id && now - fight.deadAt < 1800) {
+      return;
+    }
+  }
+  let found = false;
+  for (const fight of dogfights.values()) {
+    if (fight.a === id || fight.b === id) {
+      fight.dead = id;
+      fight.deadAt = now;
+      fight.until = now + 1600;
+      found = true;
+    }
+  }
+  const world = combatWorld(id);
+  if (world) {
+    const node = combatNode(id);
+    boomAt(world, now, plantedCombat(node) ? 3.1 : 1.25);
+  }
+  if (!found && world) {
+    const node = combatNode(id);
+    if (node) {
+      node.userData.combatHome = node.position.clone();
+      dogfights.set(`dead|${id}`, {
+        a: id,
+        b: id,
+        mid: world.clone(),
+        radius: 1,
+        born: now,
+        until: now + 1400,
+        seed: 0,
+        hitA: now,
+        hitB: 0,
+        lastVolley: now,
+        volley: 0,
+        dead: id,
+        deadAt: now,
+        framed: true,
+        homeA: world.clone(),
+        homeB: world.clone(),
+        beast: id.startsWith("ent:"),
+      });
+    }
+  }
+}
+
+function tickDogfights(now) {
+  for (const [key, fight] of dogfights) {
+    if (now >= fight.until) {
+      restoreCombatant(fight.a, fight.homeA);
+      if (fight.b !== fight.a) {
+        restoreCombatant(fight.b, fight.homeB);
+      }
+      dogfights.delete(key);
+      continue;
+    }
+    poseCombatant(fight, 0, now);
+    if (fight.b !== fight.a) {
+      poseCombatant(fight, 1, now);
+    }
+    if (fight.dead !== null || reduced) {
+      continue;
+    }
+    if (now - fight.lastVolley < 300) {
+      continue;
+    }
+    fight.lastVolley = now;
+    fight.volley += 1;
+    const fromA = fight.volley % 2 === 1;
+    const fromId = fromA ? fight.a : fight.b;
+    const toId = fromA ? fight.b : fight.a;
+    const from = shotMuzzle(fromId, fromA ? fight.homeA : fight.homeB);
+    const to = shotMuzzle(toId, fromA ? fight.homeB : fight.homeA);
+    const bite = fight.beast && (fromId.startsWith("ent:") || plantedCombat(combatNode(fromId)));
+    const kind = fight.volley % 5 === 0 ? "rocket" : bite ? "bite" : fight.volley % 3 === 0 ? "blast" : "laser";
+    spawnFoldShot(from, to, fromId, toId, kind, now);
+    if (kind === "rocket" || kind === "blast") {
+      markFightHit(fight, toId, now);
+    }
   }
 }
 
@@ -1199,15 +1858,29 @@ function tickShots(now) {
     const shot = foldShots[i];
     const u = (now - shot.born) / shot.duration;
     if (u >= 1) {
+      if (shot.boom) {
+        boomAt(shot.to, now, shot.kind === "rocket" ? 0.85 : 0.55);
+      } else {
+        puffJet(shot.to, Y_UP, now, 6);
+      }
       scene.remove(shot.group, shot.bolt);
       foldShots.splice(i, 1);
       continue;
     }
-    const travel = 1 - (1 - u) * (1 - u);
-    shot.bolt.position.copy(shot.from.clone().lerp(shot.to, Math.min(1, travel)));
+    const travel = shot.kind === "rocket" ? u * u * (3 - 2 * u) : 1 - (1 - u) * (1 - u);
+    const at = shot.from.clone().lerp(shot.to, Math.min(1, travel));
+    shot.bolt.position.copy(at);
+    if (shot.kind === "rocket") {
+      shot.group.position.copy(at);
+      shot.group.lookAt(shot.to);
+      shot.bolt.quaternion.setFromUnitVectors(Y_UP, shot.to.clone().sub(shot.from).normalize());
+      if (!reduced && u * 10 - Math.floor(u * 10) < 0.35) {
+        puffJet(at, shot.from.clone().sub(shot.to).normalize(), now, 2);
+      }
+    }
     const fade = Math.max(0, 1 - u * 0.55);
     shot.core.material.opacity = fade * 0.95;
-    shot.bloom.material.opacity = fade * 0.28;
+    shot.bloom.material.opacity = fade * (shot.kind === "rocket" ? 0.4 : 0.28);
   }
 }
 
@@ -1382,7 +2055,7 @@ function tickIdles(now) {
   const live = new Set();
   for (const row of listOf("identity")) {
     live.add(row.id);
-    if (state.flights.has(row.id)) {
+    if (state.flights.has(row.id) || foldCombatBusy(row.id, now)) {
       continue;
     }
     const node = godNode(row.id);
@@ -1423,11 +2096,12 @@ function rememberBody(id, position, kind) {
   if (position === null) {
     return;
   }
+  rememberCombatCell(id, position);
   const prior = state.occupants.get(occupantKey(kind, id));
   if (prior?.position && sameCell(prior.position, position)) {
     return;
   }
-  if (kind === "identity" && prior?.position) {
+  if (kind === "identity" && prior?.position && !foldCombatBusy(id, performance.now())) {
     beginFlight(id, prior.position, position);
   }
   state.occupants.set(occupantKey(kind, id), {
@@ -2453,6 +3127,12 @@ function tickerLine(item) {
   if (type === "body.rose") {
     return `${tick}  ${clipLine(String(payload.holder ?? who), 20)} rose`;
   }
+  if (type === "body.died") {
+    return `${tick}  ${clipLine(String(payload.holder ?? who), 20)} died`;
+  }
+  if (type === "war.declared") {
+    return `${tick}  ${who} declared on ${clipLine(String(payload.defender ?? ""), 20)}`;
+  }
   if (type === "amendment.propose") {
     return `${tick}  ${who} proposed #${payload.proposalId}`;
   }
@@ -2560,18 +3240,32 @@ function appendRecord(item) {
     });
   }
   const created = foldEntity(item);
-  const combat = item.type === "war.struck" || item.type === "act.strike" || item.type === "beast.bit";
-  const fromId = typeof payload.striker === "string" ? payload.striker : actor;
-  const toId = typeof payload.target === "string" ? payload.target : "";
+  const combat =
+    item.type === "war.struck" ||
+    item.type === "act.strike" ||
+    item.type === "beast.bit" ||
+    item.type === "war.declared";
+  const fromId =
+    typeof payload.striker === "string"
+      ? payload.striker
+      : typeof payload.attacker === "string"
+        ? payload.attacker
+        : actor;
+  const toId =
+    typeof payload.target === "string"
+      ? payload.target
+      : typeof payload.defender === "string"
+        ? payload.defender
+        : "";
   const fromCell = combat
-    ? [...state.occupants.values()].find((row) => row.id === fromId)?.position ?? previousBody
+    ? occupantCell(fromId) ?? previousBody
     : item.type === "act.move"
       ? previousBody
       : item.type === "effect.move"
         ? previousEntity
         : null;
   const sparkAtCell =
-    (combat ? [...state.occupants.values()].find((row) => row.id === toId)?.position ?? at : null) ??
+    (combat ? occupantCell(toId) ?? at : null) ??
     at ??
     created ??
     (item.type === "effect.destroy" ? previousEntity : null) ??
@@ -2580,12 +3274,13 @@ function appendRecord(item) {
     from: fromCell,
     at: sparkAtCell,
   });
-  if (combat) {
-    const striker = typeof payload.striker === "string" ? payload.striker : actor;
-    const target = typeof payload.target === "string" ? payload.target : "";
-    if (!(item.type === "war.struck" && target.length === 0 && payloadPosition(payload) === null)) {
-      fireFoldShot(striker, target, item, performance.now());
-    }
+  if (
+    combat ||
+    item.type === "body.fell" ||
+    item.type === "body.rose" ||
+    item.type === "body.died"
+  ) {
+    noteFoldCombat(item, performance.now());
   }
 }
 
@@ -2707,9 +3402,12 @@ function tick() {
     tickFly(now);
     tickFlights(now);
     tickIdles(now);
+    tickDogfights(now);
+    applyFoldCombat(now);
     tickJet(now);
     tickSparks(now);
     tickShots(now);
+    tickBooms(now);
     controls.update();
     cosmos.rotation.y += 0.00018;
     aimLamps();
