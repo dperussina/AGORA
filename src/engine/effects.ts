@@ -194,14 +194,16 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       }
       if (type.value === "wound") {
         if (fields.value["target"] === undefined) {
-          if (fields.value["beast"] === ctx.selfId) {
-            fields.value["target"] = ctx.selfId;
-          } else if (ctx.targetId !== undefined) {
+          if (ctx.targetId !== undefined) {
             fields.value["target"] = ctx.targetId;
+          } else if (fields.value["beast"] === ctx.selfId) {
+            fields.value["target"] = ctx.selfId;
           }
         }
         if (fields.value["amount"] === undefined) {
-          fields.value["amount"] = 1;
+          const billed = ctx.params?.["amount"];
+          fields.value["amount"] =
+            typeof billed === "number" && Number.isInteger(billed) && billed > 0 ? billed : 1;
         }
       }
       const id = ctx.nextId();

@@ -2580,11 +2580,18 @@ export class World {
       return { war: intent.target };
     }
     if (name === "beast.bit") {
-      const wound = created.find((item) => item.type === "wound" && item.fields["beast"] === intent.identityId);
+      const wound = created.find((item) => item.type === "wound" && item.fields["target"] === intent.identityId);
+      const beast = this.combatBeast({
+        target: intent.target,
+        name: typeof params["name"] === "string" ? params["name"] : undefined,
+        position: params["position"],
+      });
+      const biter = beast?.id ?? intent.target ?? params["target"];
+      const beastName = typeof beast?.fields["name"] === "string" ? beast.fields["name"] : biter;
       return {
-        striker: intent.target ?? params["target"],
+        striker: biter,
         target: intent.identityId,
-        beast: intent.identityId,
+        beast: beastName,
         name: params["name"],
         position: params["position"],
         tick: params["tick"] ?? this.clerk.tick,
@@ -2697,13 +2704,24 @@ export class World {
     });
   }
 
-  private biteParams(identityId: string, args: Record<string, unknown>): Record<string, string | number | boolean | null> {
+  private biteActor(
+    identityId: string,
+    args: Record<string, unknown>,
+  ): { biterId: string; victimId: string; beast: Entity | undefined; amount: number } {
     const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const name = typeof args["name"] === "string" ? args["name"] : undefined;
+    const beast = this.combatBeast({ target, name, position: args["position"] });
+    const biterId = beast?.id ?? target ?? name ?? identityId;
+    return { biterId, victimId: identityId, beast, amount: beastBite(beast) ?? 1 };
+  }
+
+  private biteParams(identityId: string, args: Record<string, unknown>): Record<string, string | number | boolean | null> {
+    const actor = this.biteActor(identityId, args);
     const params = collectVerbParams(this.clerk.registry.verbs["strike"]?.params ?? {}, args);
     return fillBiteParams({
-      selfId: identityId,
-      target,
-      params: effectParams({ params, target }),
+      selfId: actor.biterId,
+      target: actor.victimId,
+      params: effectParams({ params: { ...params, amount: actor.amount }, target: actor.victimId }),
       position: typeof args["position"] === "string" ? args["position"] : formatCell(this.bodyOf(identityId)),
       tick: typeof args["tick"] === "number" ? args["tick"] : this.clerk.tick,
     });
@@ -2714,13 +2732,13 @@ export class World {
     if (trigger === undefined || !this.strikeAtLife(args, identityId)) {
       return null;
     }
-    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    const actor = this.biteActor(identityId, args);
     const params = this.biteParams(identityId, args);
     const entities = new Map(this.entities);
     const fields = new Map(this.fields);
     const reports = runEffects(trigger.effects as Array<{ effect: string; args: unknown[] }>, {
-      selfId: identityId,
-      targetId: target,
+      selfId: actor.biterId,
+      targetId: actor.victimId,
       params,
       fields,
       entities,
@@ -2754,21 +2772,15 @@ export class World {
     if (this.isFallenHolder(intent.target ?? "", name, intent.params?.["position"])) {
       return;
     }
-    const beast = this.combatBeast({ target: intent.target, name, position: intent.params?.["position"] });
-    const breathKey = beast?.id ?? name ?? intent.target ?? "life";
+    const actor = this.biteActor(intent.identityId, args);
+    const breathKey = actor.beast?.id ?? name ?? intent.target ?? "life";
     if (this.lastBreathTick.get(breathKey) === this.clerk.tick) {
       return;
     }
     const beforeIds = new Set(this.entities.keys());
-    const params = fillBiteParams({
-      selfId: intent.identityId,
-      target: intent.target,
-      params: effectParams(intent),
-      position: typeof intent.params?.["position"] === "string" ? intent.params["position"] : formatCell(this.bodyOf(intent.identityId)),
-      tick: typeof intent.params?.["tick"] === "number" ? intent.params["tick"] : this.clerk.tick,
-    });
-    const runtime = this.bindEffects(intent.identityId, {
-      targetId: intent.target,
+    const params = this.biteParams(intent.identityId, args);
+    const runtime = this.bindEffects(actor.biterId, {
+      targetId: actor.victimId,
       params,
       emit: (name, payload) => {
         const emitParams: Record<string, string | number | boolean> = { ...(intent.params ?? {}) };
@@ -2795,15 +2807,6 @@ export class World {
     }
     runtime.commitSeq();
     this.lastBreathTick.set(breathKey, this.clerk.tick);
-    const bite = beastBite(beast);
-    if (bite !== undefined) {
-      const wound = [...this.entities.values()].find(
-        (item) => !beforeIds.has(item.id) && item.type === "wound" && item.fields["beast"] === intent.identityId,
-      );
-      if (wound !== undefined) {
-        wound.fields["amount"] = bite;
-      }
-    }
     this.maybeAutoFallHolder(
       intent.identityId,
       intent.identityId,

@@ -85,17 +85,28 @@ export function woundTick(entity: Entity): number | null {
   return typeof tick === "number" && Number.isInteger(tick) ? tick : null;
 }
 
-export function woundHitsTarget(entity: Entity, target: string, name?: string): boolean {
+/** Who the wound lands on. `target` is the victim; `beast` is only a legacy fallback. */
+export function woundVictim(entity: Entity): string | null {
   if (entity.type !== "wound") {
+    return null;
+  }
+  const target = entity.fields["target"];
+  if (typeof target === "string" && target.length > 0) {
+    return target;
+  }
+  const beast = entity.fields["beast"];
+  return typeof beast === "string" && beast.length > 0 ? beast : null;
+}
+
+export function woundHitsTarget(entity: Entity, target: string, name?: string): boolean {
+  const victim = woundVictim(entity);
+  if (victim === null) {
     return false;
   }
-  if (entity.fields["target"] === target) {
+  if (victim === target) {
     return true;
   }
-  if (name !== undefined && name.length > 0 && entity.fields["beast"] === name) {
-    return true;
-  }
-  return entity.fields["beast"] === target;
+  return name !== undefined && name.length > 0 && victim === name;
 }
 
 /** Wounds that count as this-war HP. Lifetime scars before the declare do not. */

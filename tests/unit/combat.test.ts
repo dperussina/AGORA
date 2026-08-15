@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FALL_LINGER, WAR_WOUND_MAX, thisWarWounds } from "../../src/engine/combat.ts";
+import { FALL_LINGER, WAR_WOUND_MAX, thisWarWoundSum, thisWarWounds } from "../../src/engine/combat.ts";
 import { listTools } from "../../src/mcp/catalog.ts";
 import { seedRegistry } from "../../src/engine/registry.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
@@ -426,9 +426,10 @@ describe("combat law", () => {
     const wounds = [...world.entities.values()].filter((item) => item.type === "wound");
     expect(wounds).toHaveLength(2);
     const onBeast = wounds.find((item) => item.fields["beast"] === "The Coil" || item.fields["target"] === "ent:stir");
-    const onPlayer = wounds.find((item) => item.fields["beast"] === ada.identityId);
+    const onPlayer = wounds.find((item) => item.fields["target"] === ada.identityId);
     expect(onBeast?.fields["striker"]).toBe(ada.identityId);
-    expect(onPlayer?.fields["striker"]).toBe("ent:stir");
+    expect(onPlayer?.fields["beast"]).toBe("ent:stir");
+    expect(onPlayer?.fields["striker"]).toBe(ada.identityId);
     expect(onPlayer?.fields["target"]).toBe(ada.identityId);
     expect(onPlayer?.fields["position"]).toBe(cell);
     expect(onBeast?.fields["amount"]).toBe(1);
@@ -548,10 +549,14 @@ describe("combat law", () => {
     ).toMatchObject({ accepted: true });
     world.advanceTick();
     const wounds = [...world.entities.values()].filter((item) => item.type === "wound");
-    expect(wounds.filter((item) => item.fields["beast"] === "The Maw" || item.fields["target"] === "ent:maw")).toHaveLength(2);
-    const breaths = wounds.filter((item) => item.fields["beast"] === ada.identityId || item.fields["beast"] === bob.identityId);
+    expect(wounds.filter((item) => item.fields["target"] === "ent:maw")).toHaveLength(2);
+    const breaths = wounds.filter((item) => item.fields["target"] === ada.identityId || item.fields["target"] === bob.identityId);
     expect(breaths).toHaveLength(1);
+    expect(breaths[0]?.fields["beast"]).toBe("ent:maw");
+    expect(breaths[0]?.fields["striker"]).toBe(ada.identityId);
+    expect(breaths[0]?.fields["target"]).toBe(ada.identityId);
     expect(breaths[0]?.fields["amount"]).toBe(3);
+    expect(thisWarWoundSum(thisWarWounds(world.entities.values(), { target: "ent:maw", name: "The Maw", sinceTick: 0 }))).toBe(2);
     expect(world.log.events().filter((event) => event.type === "beast.bit")).toHaveLength(1);
     expect([...world.entities.values()].some((item) => item.type === "fallen")).toBe(false);
 
