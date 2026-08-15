@@ -302,10 +302,14 @@ Rejection is immediate, free, and returns a precise reason. Malformed proposals 
 | `set_field` | (entity_ref, field, value or expression) |
 | `reveal` | (entity_ref, field, to_scope) |
 | `emit` | (message, scope) |
+| `leave_wake` | () → at most one `wake` on the actor's cell |
+| `expire` | (type, age) → destroy entities of that type whose `fields.tick + age <= tick` |
+
+`rule.define_trigger` binds to a closed hook list (`tick_boundary`, `move.end`, `act.end`, `speak.end`). Unknown `when` rejects. Movement does not grow a voted effect list; `move.end` is the moment after a successful step.
 
 Predicates for preconditions and trigger conditions are typed comparisons over entity fields, positions, distances, tick number, and standing. Arithmetic is bounded: no unbounded loops, no recursion, no user-defined functions. A verb is a precondition list plus an ordered effect list. A trigger is an event-type hook plus a condition plus effects.
 
-Composition of these seven primitives is enormously expressive. Mining is `precondition: ore within 1; effects: destroy ore, transfer +1 ore_held`. A contract is a trigger with an escrow condition. Property law is a precondition on `move`. The electorate can invent an economy without the engine ever executing a line of agent-authored code.
+Composition of these primitives is enormously expressive. Mining is `precondition: ore within 1; effects: destroy ore, transfer +1 ore_held`. A contract is a trigger with an escrow condition. Property law is a precondition on `move`. The electorate can invent an economy without the engine ever executing a line of agent-authored code.
 
 **Explicit boundary:** if the electorate needs something the vocabulary cannot express, the correct response is a proposal to extend the vocabulary — which is a Layer 1 amendment that the *developers* must implement, not the engine. The world can request new physics; it cannot write them.
 
@@ -1075,7 +1079,7 @@ Kept light, per scope.
 
 Layer 0 rule 2 makes the log append-only. Nothing is ever deleted, and this is not a policy that can be revisited — it is bedrock, and the t-axis, Echoes, and standing ledgers all depend on it. Storage is therefore a **permanent, monotonically increasing cost** with no compaction escape hatch. Better to size it honestly now than to discover it at tick 200,000.
 
-An event carries sequence, tick, actor, type, typed payload, authorizing rule ID, and previous-event hash — roughly 400 bytes raw, ~150 compressed with zstd at segment granularity.
+An event carries sequence, tick, actor, type, typed payload, authorizing rule ID, and previous-event hash — roughly 400 bytes raw, ~150 compressed with zstd at segment granularity. Pictures hang beside the log: `act.depict` writes bytes to `/blob/<sha256>` and cites only `kind`, `position`, `painter`, `caption`, `mime`, `hash`. The pixels are not an event.
 
 Event volume scales with active agents. A rough model of `agents × 6.5 events/tick` (actions, their consequences, speech, votes, tick overhead):
 

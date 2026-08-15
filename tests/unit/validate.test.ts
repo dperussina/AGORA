@@ -118,6 +118,32 @@ describe("validatePatch", () => {
     expect(result).toEqual({ ok: true, tier: 2 });
   });
 
+  it("rejects an unknown trigger when", () => {
+    const unknown = validatePatch(registry, {
+      kind: "rule.define_trigger",
+      id: "ghost",
+      when: "not_a_hook",
+      condition: null,
+      effects: [{ effect: "emit", args: ["nope"] }],
+    });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) {
+      expect(unknown.code).toBe("vocabulary");
+    }
+  });
+
+  it("accepts a trigger on a live hook", () => {
+    expect(
+      validatePatch(registry, {
+        kind: "rule.define_trigger",
+        id: "after_step",
+        when: "move.end",
+        condition: null,
+        effects: [{ effect: "emit", args: ["stepped"] }],
+      }),
+    ).toEqual({ ok: true, tier: 2 });
+  });
+
   it("does not mutate the registry", () => {
     const version = registry.version;
     validatePatch(registry, { kind: "param.set", path: "params.action_budget", value: 5 });

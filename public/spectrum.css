@@ -372,6 +372,15 @@
   color: var(--mute);
 }
 
+.spectrum-likeness {
+  display: block;
+  width: 100%;
+  max-width: 14rem;
+  margin-top: 0.55rem;
+  border: 1px solid var(--line);
+  image-rendering: auto;
+}
+
 @media (max-width: 720px) {
   .spectrum-readout {
     display: none;

@@ -1,9 +1,11 @@
 import { applyPatch, rebuildRegistry } from "./apply.ts";
+import type { Entity } from "./effects.ts";
 import { fold, genesisState } from "./fold.ts";
 import { seedRegistry, type Registry } from "./registry.ts";
 import type { Event, FoldState } from "./types.ts";
 import type { Patch } from "./validate.ts";
 import type { Position } from "./tick.ts";
+import { parseCellString } from "./wake.ts";
 
 export interface WorldView {
   fold: FoldState;
@@ -14,6 +16,8 @@ export interface WorldView {
   founder: string | null;
   identities: string[];
   applied: Array<{ id: number; patch: Patch }>;
+  entities: Record<string, Entity>;
+  entitySeq: number;
 }
 
 export function foldWorld(events: readonly Event[]): WorldView {
@@ -24,8 +28,10 @@ export function foldWorld(events: readonly Event[]): WorldView {
   const bodies: Record<string, Position> = {};
   const marks: Record<string, { text: string; authorId: string; tick: number }> = {};
   const names: Record<string, string> = {};
+  const entities: Record<string, Entity> = {};
   const identitySet = new Set<string>();
   let founder: string | null = null;
+  let entitySeq = 0;
 
   for (const event of events) {
     foldState = fold(foldState, event);
@@ -54,6 +60,45 @@ export function foldWorld(events: readonly Event[]): WorldView {
       if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
         bodies[actor] = { x, y, z };
       }
+    }
+    if (event.type === "wake.left" && typeof event.payload["id"] === "string") {
+      const id = event.payload["id"];
+      const position =
+        typeof event.payload["position"] === "string" ? parseCellString(event.payload["position"]) : undefined;
+      entities[id] = {
+        id,
+        type: "wake",
+        fields: {
+          kind: typeof event.payload["kind"] === "string" ? event.payload["kind"] : "",
+          position: typeof event.payload["position"] === "string" ? event.payload["position"] : "",
+          traveler: typeof event.payload["traveler"] === "string" ? event.payload["traveler"] : "",
+          tick: typeof event.payload["tick"] === "number" ? event.payload["tick"] : event.tick,
+        },
+        ...(position === null || position === undefined ? {} : { position }),
+        createdBy: event.seq,
+      };
+      entitySeq = Math.max(entitySeq, entityNumber(id));
+    }
+    if (event.type === "act.depict" && typeof event.payload["id"] === "string") {
+      const id = event.payload["id"];
+      const named = typeof event.payload["position"] === "string" ? event.payload["position"] : "";
+      const position = parseCellString(named);
+      entities[id] = {
+        id,
+        type: typeof event.payload["kind"] === "string" ? event.payload["kind"] : "likeness",
+        fields: {
+          caption: typeof event.payload["caption"] === "string" ? event.payload["caption"] : "",
+          mime: typeof event.payload["mime"] === "string" ? event.payload["mime"] : "",
+          hash: typeof event.payload["hash"] === "string" ? event.payload["hash"] : "",
+          painter: typeof event.payload["painter"] === "string" ? event.payload["painter"] : "",
+        },
+        ...(position === null ? {} : { position }),
+        createdBy: event.seq,
+      };
+      entitySeq = Math.max(entitySeq, entityNumber(id));
+    }
+    if (event.type === "effect.destroy" && typeof event.payload["id"] === "string") {
+      delete entities[event.payload["id"]];
     }
     if (event.type === "act.mark" && actor !== undefined && typeof event.payload["text"] === "string") {
       const x = event.payload["x"];
@@ -102,7 +147,14 @@ export function foldWorld(events: readonly Event[]): WorldView {
     founder,
     identities: [...identitySet].sort(),
     applied: [...applied],
+    entities,
+    entitySeq,
   };
+}
+
+function entityNumber(id: string): number {
+  const match = /^ent:(\d+)$/.exec(id);
+  return match?.[1] === undefined ? 0 : Number(match[1]);
 }
 
 export function occupancyAtTick(

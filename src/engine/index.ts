@@ -5,7 +5,7 @@ export { fold, foldAll, genesisState } from "./fold.ts";
 export { foldFromSnapshot, foldWithSnapshots, takeSnapshot } from "./snapshot.ts";
 export { merkleRoot, sealSegment, openSegmentBlob, DEFAULT_SEGMENT_SIZE, DEFAULT_SNAPSHOT_INTERVAL } from "./segment.ts";
 export type { SealedSegment } from "./segment.ts";
-export { seedRegistry, EFFECT_VOCABULARY, MAX_EFFECTS } from "./registry.ts";
+export { seedRegistry, EFFECT_VOCABULARY, HOOK_VOCABULARY, MAX_EFFECTS } from "./registry.ts";
 export { validatePatch } from "./validate.ts";
 export type { Patch, Validation } from "./validate.ts";
 export type { Registry } from "./registry.ts";

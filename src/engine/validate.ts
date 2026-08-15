@@ -1,5 +1,6 @@
 import {
   EFFECT_VOCABULARY,
+  HOOK_VOCABULARY,
   LAYER0_PATHS,
   MAX_EFFECTS,
   type Registry,
@@ -78,7 +79,7 @@ export function validatePatch(registry: Registry, patch: unknown): Validation {
     case "action.define":
       return validateAction(registry, body);
     case "rule.define_trigger":
-      return validateEffects(body.effects);
+      return validateTrigger(body);
     case "tier.move":
       if (isLayer0(body.path) || body.path.startsWith("steward.sunset")) {
         return fail("layer0", "cannot move a Layer 0 path");
@@ -263,6 +264,16 @@ function nexusCount(anchors: Array<{ class: string }>): number {
 
 function cheby(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z));
+}
+
+function validateTrigger(body: Extract<Patch, { kind: "rule.define_trigger" }>): Validation {
+  if (typeof body.id !== "string" || body.id.length === 0) {
+    return fail("schema", "rule.define_trigger requires an id");
+  }
+  if (typeof body.when !== "string" || !(HOOK_VOCABULARY as readonly string[]).includes(body.when)) {
+    return fail("vocabulary", `unknown when ${String(body.when)}`);
+  }
+  return validateEffects(body.effects);
 }
 
 function validateAction(

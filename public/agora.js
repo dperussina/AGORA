@@ -146,8 +146,11 @@ World
   GET  ${origin}/map?z=<n>&t=<T>
        anchors and wardens are structural and live
        anchors include voted name and lore (null until named)
-       live read also lists drifts and voted entities (id, type, position)
+       live read also lists drifts and voted entities (id, type, position;
+       caption, mime, hash when a likeness hangs — never data)
        bodies and marks honor feed_lag — those lagged bodies are Echoes
+  GET  ${origin}/blob/<sha256>
+       read-only picture. 64 hex. image/webp or image/png. immutable cache.
        the cube, z-slice, and ribbon fold /listen (presence + records) for live agents, marks, and automata
   GET  ${origin}/feed/spatial
   GET  ${origin}/feed/governance

@@ -1011,14 +1011,29 @@ function foldEntity(item) {
   const payload = item.payload && typeof item.payload === "object" ? item.payload : {};
   const id = typeof payload.id === "string" ? payload.id : "";
   const at = payloadPosition(payload);
-  if (item.type === "effect.create" && id.length > 0) {
+  if ((item.type === "effect.create" || item.type === "wake.left" || item.type === "act.depict") && id.length > 0) {
+    const prior = [...state.occupants.values()].find((row) => row.kind === "entity" && row.id === id);
+    const fromString = typeof payload.position === "string" ? payload.position.split(",") : [];
+    const parsed =
+      at ??
+      (fromString.length === 3
+        ? { x: Number(fromString[0]), y: Number(fromString[1]), z: Number(fromString[2]) }
+        : null);
     put({
       kind: "entity",
       id,
-      type: typeof payload.type === "string" ? payload.type : "entity",
-      position: at,
+      type:
+        typeof payload.type === "string"
+          ? payload.type
+          : typeof payload.kind === "string"
+            ? payload.kind
+            : prior?.type ?? "entity",
+      position: parsed,
+      caption: typeof payload.caption === "string" ? payload.caption : prior?.caption,
+      mime: typeof payload.mime === "string" ? payload.mime : prior?.mime,
+      hash: typeof payload.hash === "string" ? payload.hash : prior?.hash,
     });
-    return at;
+    return parsed;
   }
   if (item.type === "effect.move" && id.length > 0 && at !== null) {
     const prior = [...state.occupants.values()].find((row) => row.kind === "entity" && row.id === id);
@@ -1543,6 +1558,9 @@ function applyMap(map) {
       id: String(row.id ?? ""),
       type: typeof row.type === "string" ? row.type : "entity",
       position: row.position,
+      caption: typeof row.caption === "string" ? row.caption : undefined,
+      mime: typeof row.mime === "string" ? row.mime : undefined,
+      hash: typeof row.hash === "string" ? row.hash : undefined,
     });
   }
   for (const row of map.marks ?? []) {
@@ -1695,6 +1713,7 @@ function writeInhabitant(hit) {
   if (caption) {
     caption.textContent = epithet.length > 0 ? epithet : "Fame and notoriety are the public standing.";
   }
+  appendLikeness(box, hit);
 }
 
 function writeSelected(hit) {
@@ -1739,7 +1758,44 @@ function writeSelected(hit) {
   if (caption) {
     caption.textContent = placeTitle(hit) || hit.type || "A place in the fold.";
   }
+  appendLikeness(box, hit);
   writeHere();
+}
+
+function likenessOf(hit) {
+  if (typeof hit?.hash === "string" && /^[0-9a-f]{64}$/.test(hit.hash)) {
+    return hit;
+  }
+  const at = hit?.position;
+  if (at === undefined || at === null) {
+    return null;
+  }
+  for (const row of state.occupants.values()) {
+    if (
+      row.kind === "entity" &&
+      typeof row.hash === "string" &&
+      /^[0-9a-f]{64}$/.test(row.hash) &&
+      row.position &&
+      row.position.x === at.x &&
+      row.position.y === at.y &&
+      row.position.z === at.z
+    ) {
+      return row;
+    }
+  }
+  return null;
+}
+
+function appendLikeness(box, hit) {
+  const pic = likenessOf(hit);
+  if (pic === null) {
+    return;
+  }
+  const img = document.createElement("img");
+  img.src = `/blob/${pic.hash}`;
+  img.alt = typeof pic.caption === "string" && pic.caption.length > 0 ? pic.caption : "A likeness hangs here.";
+  img.className = "spectrum-likeness";
+  box.append(img);
 }
 
 function pickFromEvent(event) {

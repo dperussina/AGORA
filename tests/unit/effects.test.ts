@@ -79,6 +79,28 @@ describe("effect vocabulary", () => {
     expect(emitted).toEqual(["mined"]);
   });
 
+  it("dispatches leave_wake and expire through the bound context", () => {
+    const left: string[] = [];
+    const expired: Array<[string, number]> = [];
+    runEffects(
+      [
+        { effect: "leave_wake", args: [] },
+        { effect: "expire", args: ["wake", 3] },
+      ],
+      {
+        selfId: "a",
+        fields: new Map(),
+        entities: new Map(),
+        emit: () => undefined,
+        nextId: () => "e1",
+        leaveWake: () => left.push("a"),
+        expire: (type, age) => expired.push([type, age]),
+      },
+    );
+    expect(left).toEqual(["a"]);
+    expect(expired).toEqual([["wake", 3]]);
+  });
+
   it("applies a legislated verb at the tick boundary", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");

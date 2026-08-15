@@ -27,6 +27,9 @@ import {
 } from "../engine/geography.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
 import { runEffects, type Entity } from "../engine/effects.ts";
+import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName } from "../engine/registry.ts";
+import { formatCell, wakeKind, wakeRate, type CellClass } from "../engine/wake.ts";
+import { BLOB_MAX, checkBlob, decodeDepictData, putBlob, sha256Hex } from "../persist/blob.ts";
 import {
   assessStanding,
   broadcastRadius,
@@ -59,6 +62,7 @@ import {
   ok,
   operatorReceipt,
   parseBearer,
+  publicOrigin,
   requestMeta,
   rpcError,
   type Json,
@@ -693,7 +697,15 @@ export class World {
             lore: this.clerk.registry.text[`anchors.${anchor.designation}.lore`] ?? null,
           },
       lore: this.loreAt(position, mark),
-      narration: this.narrate(anchor, mark, at.here.length, wardens.length > 0),
+      wake: this.wakeAt(position, observationalT),
+      narration: this.narrate(
+        anchor,
+        mark,
+        at.here.length,
+        wardens.length > 0,
+        this.depictionAt(position, observationalT),
+        this.wakeAt(position, observationalT),
+      ),
       heard: this.inbox.get(identityId) ?? [],
       record: this.record.slice(-8),
       nearby: observationalT === present ? this.nearby(identityId, position) : [],
@@ -753,6 +765,9 @@ export class World {
         return "cell_unmarked";
       }
     }
+    if (verb === "depict") {
+      return this.depictWouldFail(identityId, args);
+    }
     return null;
   }
 
@@ -765,6 +780,7 @@ export class World {
   private resolveIntent(intent: Intent): void {
     if (intent.verb === "wait") {
       this.append("act.wait", intent.identityId, { identityId: intent.identityId });
+      this.fireTriggers("act.end", { selfId: intent.identityId });
       return;
     }
     if (intent.verb === "move") {
@@ -785,6 +801,7 @@ export class World {
       }
       this.bodies.set(intent.identityId, moved.position);
       this.append("act.move", intent.identityId, { ...moved.position, identityId: intent.identityId });
+      this.fireTriggers("move.end", { selfId: intent.identityId, from });
       return;
     }
     if (intent.verb === "mark") {
@@ -803,6 +820,11 @@ export class World {
       this.marks.set(key, { text, authorId: intent.identityId, tick: this.clerk.tick, position: at });
       this.append("act.mark", intent.identityId, { text, ...at, identityId: intent.identityId });
       this.witness(intent.identityId, "fame");
+      this.fireTriggers("act.end", { selfId: intent.identityId });
+      return;
+    }
+    if (intent.verb === "depict") {
+      this.resolveDepict(intent);
       return;
     }
     const defined = this.clerk.registry.verbs[intent.verb];
@@ -854,6 +876,7 @@ export class World {
         target: intent.target,
         text: intent.text,
       });
+      this.fireTriggers("act.end", { selfId: intent.identityId });
     }
   }
 
@@ -882,7 +905,16 @@ export class World {
     if (cell !== null) {
       const mark = [...this.marks.values()].find((item) => cellKey(item.position) === cellKey(cell)) ?? null;
       const anchor = this.anchorAt(cell);
-      return { target, fields: this.loreAt(cell, mark, anchor) };
+      const wake = this.wakeAt(cell, this.clerk.tick);
+      const depiction = this.depictionAt(cell, this.clerk.tick);
+      return {
+        target,
+        fields: {
+          ...this.loreAt(cell, mark, anchor),
+          ...(wake === null ? {} : { wake }),
+          ...(depiction === null ? {} : { likeness: this.depictFields(depiction) }),
+        },
+      };
     }
     const anchor = this.anchors.find((item) => item.designation === target || `ANCHOR:${item.designation}` === target);
     if (anchor !== undefined) {
@@ -938,6 +970,7 @@ export class World {
           type: entity.type,
           ...entity.fields,
           ...(entity.position === undefined ? {} : { position: entity.position }),
+          ...this.depictSrc(entity),
           personifies: `types.${entity.type}`,
           createdBy: entity.createdBy ?? "derived",
           lore: this.clerk.registry.text[`types.${entity.type}.lore`] ?? null,
@@ -1255,6 +1288,7 @@ export class World {
       this.inbox.set(hearer, list);
     }
     this.append("speak", identityId, { text, hearers, identityId });
+    this.fireTriggers("speak.end", { selfId: identityId });
     return { ok: true, text, hearers, budgetSpent: 0 };
   }
 
@@ -1398,43 +1432,317 @@ export class World {
     }
   }
 
-  private fireTriggers(): void {
-    const tick = this.clerk.tick + 1;
+  private fireTriggers(when: HookName = "tick_boundary", ctx?: { selfId?: string; from?: Position }): void {
+    const tick = when === "tick_boundary" ? this.clerk.tick + 1 : this.clerk.tick;
+    const selfId = ctx?.selfId ?? "ARBITER";
+    const at = selfId === "ARBITER" ? undefined : this.bodies.get(selfId);
+    const classified = at === undefined ? undefined : this.classifyCell(at);
     const ids = Object.keys(this.clerk.registry.triggers).sort();
     for (const id of ids) {
       const trigger = this.clerk.registry.triggers[id];
-      if (trigger === undefined || trigger.when !== "tick_boundary") {
+      if (trigger === undefined || trigger.when !== when) {
         continue;
       }
       if (!triggerMatches(trigger.condition, tick, this.clerk.registry)) {
         continue;
       }
       for (const effect of trigger.effects as Array<{ effect: string; args: unknown[] }>) {
-        if (effect.effect === "create" && effect.args[0] === "drift") {
+        if (when === "tick_boundary" && effect.effect === "create" && effect.args[0] === "drift") {
           this.spawnDrift();
           continue;
         }
-        if (effect.effect === "move" && effect.args[0] === "$each_drift") {
+        if (when === "tick_boundary" && effect.effect === "move" && effect.args[0] === "$each_drift") {
           this.walkDrifts();
           continue;
         }
         runEffects([effect], {
-          selfId: "ARBITER",
+          selfId,
+          params: {
+            self: selfId,
+            ...(at === undefined ? {} : { position: formatCell(at) }),
+            ...(ctx?.from === undefined ? {} : { from: formatCell(ctx.from) }),
+            ...(classified === undefined
+              ? {}
+              : {
+                  cell_class: classified.cellClass,
+                  ...(classified.anchorClass === null ? {} : { anchor_class: classified.anchorClass }),
+                }),
+          },
           fields: this.fields,
           entities: this.entities,
           emit: (name, payload) => {
-            this.append(name, "ARBITER", { ...payload, triggerId: id });
+            this.append(name, selfId === "ARBITER" ? "ARBITER" : selfId, { ...payload, triggerId: id });
           },
           nextId: () => {
             this.entitySeq += 1;
             return `ent:${this.entitySeq}`;
           },
+          leaveWake: () => this.leaveWake(selfId),
+          expire: (type, age) => this.expireEntities(type, age),
         });
         if (effect.effect === "transfer" || effect.effect === "set_field") {
           this.append(`effect.${effect.effect}`, "ARBITER", { triggerId: id });
         }
       }
     }
+  }
+
+  private classifyCell(position: Position): { cellClass: CellClass; anchorClass: string | null } {
+    const anchor = this.anchorAt(position);
+    if (anchor !== undefined) {
+      return { cellClass: "place", anchorClass: anchor.class };
+    }
+    if (this.marks.has(cellKey(position)) || this.keptEntityAt(position)) {
+      return { cellClass: "kept", anchorClass: null };
+    }
+    return { cellClass: "empty", anchorClass: null };
+  }
+
+  private keptEntityAt(position: Position): boolean {
+    return [...this.entities.values()].some(
+      (entity) =>
+        entity.position !== undefined &&
+        cellKey(entity.position) === cellKey(position) &&
+        (entity.type === "block" || entity.type === "home"),
+    );
+  }
+
+  private leaveWake(traveler: string): void {
+    const at = this.bodies.get(traveler);
+    if (at === undefined) {
+      return;
+    }
+    if (this.wakeFor(traveler, at) !== undefined) {
+      return;
+    }
+    const classified = this.classifyCell(at);
+    const tip = this.log.tip()?.hash ?? GENESIS_SEED;
+    const oracle = new Oracle(`${tip}:wake:${traveler}:${formatCell(at)}:${this.clerk.tick}`);
+    if (oracle.int(100) >= wakeRate(classified.cellClass)) {
+      return;
+    }
+    const kind = wakeKind(classified.cellClass, classified.anchorClass);
+    this.entitySeq += 1;
+    const id = `ent:${this.entitySeq}`;
+    const position = formatCell(at);
+    const tick = this.clerk.tick;
+    this.entities.set(id, {
+      id,
+      type: "wake",
+      fields: { kind, position, traveler, tick },
+      position: { ...at },
+      createdBy: (this.log.tip()?.seq ?? -1) + 1,
+    });
+    this.append("wake.left", traveler, { id, kind, position, traveler, tick });
+    this.append("effect.create", traveler, { id, type: "wake", ...at });
+  }
+
+  private expireEntities(type: string, age: number): void {
+    const doomed = [...this.entities.values()]
+      .filter((entity) => entity.type === type && typeof entity.fields["tick"] === "number" && entity.fields["tick"] + age <= this.clerk.tick)
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
+    for (const entity of doomed) {
+      this.entities.delete(entity.id);
+      this.append("effect.destroy", "ARBITER", { id: entity.id });
+    }
+  }
+
+  private wakeFor(traveler: string, position: Position): Entity | undefined {
+    const key = cellKey(position);
+    const written = formatCell(position);
+    return [...this.entities.values()].find(
+      (entity) =>
+        entity.type === "wake" &&
+        entity.fields["traveler"] === traveler &&
+        (entity.fields["position"] === written || (entity.position !== undefined && cellKey(entity.position) === key)),
+    );
+  }
+
+  private wakeAt(position: Position, observationalT: number): { kind: string; position: string; traveler: string; tick: number } | null {
+    const key = cellKey(position);
+    const found = [...this.entities.values()]
+      .filter((entity) => {
+        if (entity.type !== "wake") {
+          return false;
+        }
+        const tick = entity.fields["tick"];
+        if (typeof tick !== "number" || tick > observationalT) {
+          return false;
+        }
+        if (entity.position !== undefined && cellKey(entity.position) === key) {
+          return true;
+        }
+        return entity.fields["position"] === formatCell(position);
+      })
+      .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+    if (found === undefined) {
+      return null;
+    }
+    return {
+      kind: String(found.fields["kind"] ?? ""),
+      position: typeof found.fields["position"] === "string" ? found.fields["position"] : formatCell(position),
+      traveler: String(found.fields["traveler"] ?? ""),
+      tick: typeof found.fields["tick"] === "number" ? found.fields["tick"] : 0,
+    };
+  }
+
+  private depictionAt(position: Position, observationalT: number): Entity | null {
+    const key = cellKey(position);
+    const found = [...this.entities.values()]
+      .filter((entity) => {
+        if (typeof entity.fields["hash"] !== "string" || typeof entity.fields["mime"] !== "string") {
+          return false;
+        }
+        if (entity.position === undefined || cellKey(entity.position) !== key) {
+          return false;
+        }
+        const created = typeof entity.createdBy === "number" ? entity.createdBy : 0;
+        const createdTick = this.log.events().find((event) => event.seq === created)?.tick ?? this.clerk.tick;
+        return createdTick <= observationalT;
+      })
+      .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
+    return found ?? null;
+  }
+
+  private depictSrc(entity: Entity): { src?: string } {
+    const hash = entity.fields["hash"];
+    return typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash) ? { src: `${publicOrigin()}/blob/${hash}` } : {};
+  }
+
+  private depictFields(entity: Entity): Record<string, unknown> {
+    return {
+      id: entity.id,
+      type: entity.type,
+      caption: entity.fields["caption"] ?? null,
+      mime: entity.fields["mime"] ?? null,
+      hash: entity.fields["hash"] ?? null,
+      painter: entity.fields["painter"] ?? null,
+      ...this.depictSrc(entity),
+    };
+  }
+
+  private depictWouldFail(identityId: string, args: Record<string, unknown>): string | null {
+    const kind = typeof args["kind"] === "string" ? args["kind"] : "";
+    if (kind === "" || this.clerk.registry.types[kind] === undefined) {
+      return "unknown kind";
+    }
+    const named = typeof args["position"] === "string" ? args["position"] : "";
+    const at = this.resolveNamedCell(named);
+    if (at === null) {
+      return "unknown position";
+    }
+    if (cellKey(this.bodyOf(identityId)) !== cellKey(at)) {
+      return "must occupy the cell";
+    }
+    const caption = typeof args["caption"] === "string" ? args["caption"] : "";
+    const max = this.clerk.registry.params["mark_length_max"]?.value ?? 280;
+    if (caption.length === 0 || caption.length > max) {
+      return "caption length";
+    }
+    const scene = args["scene"];
+    if (scene !== undefined && (typeof scene !== "string" || scene.length > max)) {
+      return "scene length";
+    }
+    const mime = typeof args["mime"] === "string" ? args["mime"] : "";
+    if (mime !== "image/webp" && mime !== "image/png") {
+      return "mime not allowed";
+    }
+    const hash = typeof args["hash"] === "string" ? args["hash"] : "";
+    const data = typeof args["data"] === "string" ? decodeDepictData(args["data"]) : null;
+    if (data === null) {
+      return "data required";
+    }
+    if (data.length > BLOB_MAX) {
+      return "blob too large";
+    }
+    if (sha256Hex(data) !== hash) {
+      return "hash mismatch";
+    }
+    const stored = checkBlob(hash, data, mime);
+    return stored.ok ? null : stored.reason;
+  }
+
+  private resolveDepict(intent: Intent): void {
+    const args = intent.params ?? {};
+    const blocked = this.depictWouldFail(intent.identityId, args);
+    if (blocked !== null) {
+      this.append("act.depict_failed", intent.identityId, { reason: blocked });
+      return;
+    }
+    const kind = String(args["kind"]);
+    const named = String(args["position"]);
+    const at = this.resolveNamedCell(named);
+    if (at === null) {
+      this.append("act.depict_failed", intent.identityId, { reason: "unknown position" });
+      return;
+    }
+    const caption = String(args["caption"]);
+    const mime = String(args["mime"]);
+    const hash = String(args["hash"]);
+    const scene = typeof args["scene"] === "string" && args["scene"].length > 0 ? args["scene"] : undefined;
+    const data = typeof args["data"] === "string" ? decodeDepictData(args["data"]) : null;
+    if (data === null) {
+      this.append("act.depict_failed", intent.identityId, { reason: "data required" });
+      return;
+    }
+    const stored = putBlob(hash, data, mime);
+    if (!stored.ok) {
+      this.append("act.depict_failed", intent.identityId, { reason: stored.reason });
+      return;
+    }
+    this.entitySeq += 1;
+    const id = `ent:${this.entitySeq}`;
+    this.entities.set(id, {
+      id,
+      type: kind,
+      fields: {
+        caption,
+        mime,
+        hash,
+        painter: intent.identityId,
+        ...(scene === undefined ? {} : { scene }),
+      },
+      position: { ...at },
+      createdBy: (this.log.tip()?.seq ?? -1) + 1,
+    });
+    this.append("act.depict", intent.identityId, {
+      id,
+      kind,
+      position: named,
+      painter: intent.identityId,
+      caption,
+      mime,
+      hash,
+    });
+    this.append("effect.create", intent.identityId, { id, type: kind, ...at });
+    this.witness(intent.identityId, "fame");
+    this.fireTriggers("act.end", { selfId: intent.identityId });
+  }
+
+  private resolveNamedCell(name: string): Position | null {
+    if (name.length === 0) {
+      return null;
+    }
+    const cell = parseInspectCell(name);
+    if (cell !== null) {
+      return cell;
+    }
+    if (name.startsWith("ent:")) {
+      return this.entities.get(name)?.position ?? null;
+    }
+    for (const entity of [...this.entities.values()].sort((a, b) => (a.id < b.id ? -1 : 1))) {
+      const title = entity.fields["name"] ?? entity.fields["title"];
+      if (title === name && entity.position !== undefined) {
+        return entity.position;
+      }
+    }
+    const anchor = this.anchors.find(
+      (item) =>
+        item.designation === name ||
+        `ANCHOR:${item.designation}` === name ||
+        this.clerk.registry.text[`anchors.${item.designation}.name`] === name,
+    );
+    return anchor?.centre ?? null;
   }
 
   private loreAt(
@@ -1464,6 +1772,8 @@ export class World {
     mark: { text: string } | null,
     hereCount: number,
     wardenHere = false,
+    depiction: Entity | null = null,
+    wake: { kind: string; position: string; traveler: string; tick: number } | null = null,
   ): string {
     const inscribed = this.clerk.registry.text["narrate.mark"] ?? "A mark is inscribed here.";
     const worldLore = this.clerk.registry.text["world_lore"];
@@ -1489,6 +1799,9 @@ export class World {
       typeof volumeLore === "string" && volumeLore.length > 0 ? volumeLore : null,
       mark !== null && !wardenHere && anchor !== undefined ? inscribed : null,
       mark !== null ? mark.text : null,
+      depiction === null ? null : (this.clerk.registry.text["narrate.likeness"] ?? "A likeness hangs here."),
+      depiction === null || typeof depiction.fields["caption"] !== "string" ? null : depiction.fields["caption"],
+      wake === null ? null : (this.clerk.registry.text["narrate.wake"] ?? "A wake remains here."),
     ].filter((part): part is string => part !== null);
     return [base, ...layers.filter((part) => part !== base)].join(" ");
   }
@@ -1516,8 +1829,20 @@ export class World {
     if (path === "verbs" || path.startsWith("verbs.")) {
       return { path, verbs: registry.verbs, storageNote };
     }
+    if (path === "types" || path.startsWith("types.")) {
+      return { path, types: registry.types, storageNote };
+    }
     if (path === "text" || path.startsWith("text.")) {
       return { path, text: registry.text, storageNote };
+    }
+    if (path === "hooks" || path === "triggers" || path.startsWith("triggers.")) {
+      return {
+        path,
+        hooks: [...HOOK_VOCABULARY],
+        effects: [...EFFECT_VOCABULARY],
+        triggers: registry.triggers,
+        storageNote,
+      };
     }
     return { path, value: null, reason: "unknown path" };
   }
@@ -1701,6 +2026,11 @@ export class World {
         }
       }
       this.clerk.tick = view.fold.tick;
+      this.entities.clear();
+      for (const [id, entity] of Object.entries(view.entities)) {
+        this.entities.set(id, entity);
+      }
+      this.entitySeq = view.entitySeq;
       this.rebuildListenLog();
       return;
     }

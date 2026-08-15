@@ -6,9 +6,15 @@ export const EFFECT_VOCABULARY = [
   "set_field",
   "reveal",
   "emit",
+  "leave_wake",
+  "expire",
 ] as const;
 
 export type EffectName = (typeof EFFECT_VOCABULARY)[number];
+
+export const HOOK_VOCABULARY = ["tick_boundary", "move.end", "act.end", "speak.end"] as const;
+
+export type HookName = (typeof HOOK_VOCABULARY)[number];
 
 export const MAX_EFFECTS = 16;
 
@@ -119,6 +125,12 @@ export function seedRegistry(): Registry {
       move: { cost: 1, params: { delta: "vec" }, preconditions: ["in_bounds", "unoccupied"], effects: [] },
       wait: { cost: 0, params: {}, preconditions: [], effects: [] },
       mark: { cost: 1, params: { text: "string" }, preconditions: ["length_ok", "cell_unmarked"], effects: [] },
+      depict: {
+        cost: 1,
+        params: { kind: "string", position: "string", caption: "string", mime: "string", hash: "string", data: "string", scene: "string" },
+        preconditions: [],
+        effects: [],
+      },
     },
     triggers: {
       drift_spawn: {
@@ -131,6 +143,16 @@ export function seedRegistry(): Registry {
         condition: null,
         effects: [{ effect: "move", args: ["$each_drift", "$oracle_step"] }],
       },
+      wake_on_arrive: {
+        when: "move.end",
+        condition: null,
+        effects: [{ effect: "leave_wake", args: [] }],
+      },
+      wake_expire: {
+        when: "tick_boundary",
+        condition: null,
+        effects: [{ effect: "expire", args: ["wake", 3] }],
+      },
     },
     text: {
       world_name: null,
@@ -140,6 +162,8 @@ export function seedRegistry(): Registry {
       "narrate.occupied": "Others occupy this cell.",
       "narrate.anchor": "Inside {label}, a {class}.",
       "narrate.warden": "Axis {axis} size {size}. Last amendment {amendmentId}. Amend space.axes.{axis}.size at Layer 1.",
+      "narrate.likeness": "A likeness hangs here.",
+      "narrate.wake": "A wake remains here.",
     },
     tiers: {},
   };

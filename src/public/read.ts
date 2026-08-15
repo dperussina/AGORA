@@ -164,6 +164,9 @@ export function publicRead(
               id: entity.id,
               type: entity.type,
               position: entity.position,
+              ...(typeof entity.fields["caption"] === "string" ? { caption: entity.fields["caption"] } : {}),
+              ...(typeof entity.fields["mime"] === "string" ? { mime: entity.fields["mime"] } : {}),
+              ...(typeof entity.fields["hash"] === "string" ? { hash: entity.fields["hash"] } : {}),
             }))
         : [],
     };

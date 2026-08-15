@@ -23,6 +23,8 @@ export interface EffectContext {
   nextId: () => string;
   /** GAME.md currency lives on the clerk, not the field bag. */
   moveCurrency?: (from: string, to: string, amount: number) => boolean;
+  leaveWake?: () => void;
+  expire?: (type: string, age: number) => void;
 }
 
 export interface EffectReport {
@@ -164,6 +166,28 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
         return fail(item.effect, message.reason);
       }
       ctx.emit(String(message.value ?? "emit"), { args: args.slice(1) });
+      return ok(item.effect);
+    }
+    case "leave_wake": {
+      if (ctx.leaveWake === undefined) {
+        return fail(item.effect, "leave_wake is not bound");
+      }
+      ctx.leaveWake();
+      return ok(item.effect);
+    }
+    case "expire": {
+      const type = evalArg(args[0], ctx);
+      const age = evalArg(args[1], ctx);
+      if (!type.ok || typeof type.value !== "string" || type.value === "") {
+        return fail(item.effect, type.ok ? "expire requires a type" : type.reason);
+      }
+      if (!age.ok || typeof age.value !== "number" || age.value < 0) {
+        return fail(item.effect, age.ok ? "expire age must be a non-negative integer" : age.reason);
+      }
+      if (ctx.expire === undefined) {
+        return fail(item.effect, "expire is not bound");
+      }
+      ctx.expire(type.value, age.value);
       return ok(item.effect);
     }
     default:

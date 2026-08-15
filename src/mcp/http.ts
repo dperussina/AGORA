@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { HASH_RE, getBlob } from "../persist/blob.ts";
 import { publicRead } from "../public/read.ts";
 import { presenceFrame, recordFrame, streamKind } from "../world/record-hub.ts";
 import { httpStatusFor, negotiatedProtocolHeader } from "../world/rpc.ts";
@@ -29,6 +30,16 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     }
     if (url.pathname === "/feed") {
       attachFeed(world, req, res, url.searchParams.get("classes") ?? "governance");
+      return;
+    }
+    if (url.pathname === "/blob" || url.pathname.startsWith("/blob/")) {
+      const blobMatch = /^\/blob\/([0-9a-f]{64})$/.exec(url.pathname);
+      if (blobMatch?.[1] !== undefined) {
+        sendBlob(res, blobMatch[1]);
+        return;
+      }
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("not found");
       return;
     }
     const site = siteFile(url.pathname, header(req, "accept") ?? "");
@@ -97,6 +108,26 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     "mcp-protocol-version": negotiatedProtocolHeader(version, body.method),
   });
   res.end(JSON.stringify(result));
+}
+
+function sendBlob(res: ServerResponse, hash: string): void {
+  if (!HASH_RE.test(hash)) {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("not found");
+    return;
+  }
+  const blob = getBlob(hash);
+  if (blob === null) {
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("not found");
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": blob.mime,
+    "cache-control": "public, max-age=31536000, immutable",
+    "access-control-allow-origin": "*",
+  });
+  res.end(blob.bytes);
 }
 
 function siteFile(pathname: string, accept: string): string | null {
