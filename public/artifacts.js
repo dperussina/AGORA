@@ -410,18 +410,23 @@ export function hollowArtifact() {
 
 export function driftArtifact() {
   const g = new THREE.Group();
-  const body = mesh(new THREE.CapsuleGeometry(0.16, 0.42, 6, 10), MAT.hull);
+  const body = mesh(new THREE.CapsuleGeometry(0.18, 0.52, 6, 12), MAT.hull);
   body.rotation.z = Math.PI / 2;
   body.userData.motion = "gimbal";
   g.add(body);
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.22, 0.55), MAT.slate, 0, 0, 0));
-  const eye = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.ion, 0.28, 0, 0);
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.28, 0.62), MAT.slate, 0, 0, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.04, 0.18), MAT.rim, 0, 0.12, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.42, 0.04, 0.18), MAT.rim, 0, -0.12, 0));
+  const eye = mesh(new THREE.SphereGeometry(0.08, 8, 6), MAT.ion, 0.34, 0, 0);
   eye.userData.motion = "pulse";
   g.add(eye);
-  const trail = mesh(new THREE.ConeGeometry(0.1, 0.32, 8, 1, true), MAT.ion, -0.32, 0, 0);
+  const canopy = mesh(new THREE.SphereGeometry(0.1, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), MAT.glass, 0.12, 0.1, 0);
+  canopy.rotation.z = -0.6;
+  g.add(canopy);
+  const trail = mesh(new THREE.ConeGeometry(0.12, 0.38, 8, 1, true), MAT.ion, -0.4, 0, 0);
   trail.rotation.z = Math.PI / 2;
   g.add(trail);
-  const belly = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.ion, 0, -0.14, 0);
+  const belly = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.ion, 0, -0.16, 0);
   belly.userData.motion = "pulse";
   g.add(belly);
   return g;
@@ -1087,7 +1092,15 @@ export function blockArtifact(kind) {
 
 export function wardenArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.SphereGeometry(0.12, 10, 8), MAT.rim, 0, 0.12, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.28, 6), MAT.iron, 0, 0.14, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.16, 0.04, 0.16), MAT.slate, 0, 0.3, 0));
+  g.add(mesh(new THREE.OctahedronGeometry(0.18, 0), MAT.watch, 0, 0.46, 0));
+  const eye = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.watchEye, 0, 0.46, 0);
+  eye.userData.motion = "pulse";
+  g.add(eye);
+  const ring = mesh(new THREE.TorusGeometry(0.13, 0.016, 6, 14), MAT.brass, 0, 0.46, 0);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
   return g;
 }
 

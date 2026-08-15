@@ -2439,9 +2439,7 @@ function placeWarden(row) {
   } else {
     node.position.y += face === 0 ? 0.2 : -0.2;
   }
-  const dot = new THREE.Sprite(GLOW_DOT);
-  dot.scale.setScalar(0.7);
-  node.add(dot);
+  node.add(KNOWN.warden());
   tag(node, row);
   return node;
 }
