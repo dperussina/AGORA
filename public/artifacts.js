@@ -532,17 +532,23 @@ function hearthBlock() {
 
 function chairBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.52, 0.06, 0.5), MAT.timber, 0, 0.34, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.44), MAT.linen, 0, 0.39, 0.01));
-  g.add(mesh(new THREE.BoxGeometry(0.5, 0.62, 0.07), MAT.timber, 0, 0.68, -0.22));
-  g.add(mesh(new THREE.BoxGeometry(0.42, 0.05, 0.05), MAT.timberDark, 0, 0.92, -0.22));
-  g.add(mesh(new THREE.BoxGeometry(0.42, 0.04, 0.04), MAT.timberDark, 0, 0.72, -0.22));
-  g.add(mesh(new THREE.BoxGeometry(0.42, 0.04, 0.04), MAT.timberDark, 0, 0.54, -0.22));
+  g.add(mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.06, 12), MAT.timber, 0, 0.34, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.05, 12), MAT.linen, 0, 0.39, 0.01));
+  const back = mesh(new THREE.BoxGeometry(0.48, 0.62, 0.06), MAT.timber, 0, 0.68, -0.22);
+  back.rotation.x = 0.12;
+  g.add(back);
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), MAT.timberDark, 0, 0.92, -0.2));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.035, 0.035), MAT.timberDark, 0, 0.72, -0.2));
+  g.add(mesh(new THREE.BoxGeometry(0.4, 0.035, 0.035), MAT.timberDark, 0, 0.54, -0.2));
   for (const [x, z] of [[-0.2, -0.18], [0.2, -0.18], [-0.2, 0.18], [0.2, 0.18]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.07, 0.34, 0.07), MAT.timberDark, x, 0.17, z));
+    g.add(mesh(new THREE.CylinderGeometry(0.032, 0.038, 0.34, 8), MAT.timberDark, x, 0.17, z));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), MAT.timberDark, 0, 0.12, 0.18));
-  g.add(mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), MAT.timberDark, 0, 0.12, -0.18));
+  const front = mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.4, 8), MAT.timberDark, 0, 0.12, 0.18);
+  front.rotation.z = Math.PI / 2;
+  g.add(front);
+  const rear = mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.4, 8), MAT.timberDark, 0, 0.12, -0.18);
+  rear.rotation.z = Math.PI / 2;
+  g.add(rear);
   return g;
 }
 
