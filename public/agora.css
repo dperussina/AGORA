@@ -1599,26 +1599,6 @@ main::before {
   text-transform: uppercase;
 }
 
-.lattice-still {
-  margin: 0 0 5rem;
-}
-
-.lattice-still img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1px solid var(--rule);
-  background: #16101f;
-}
-
-.lattice-still figcaption {
-  margin: 0.7rem 0 0;
-  color: var(--mute);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-}
-
 .principles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
