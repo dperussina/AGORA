@@ -682,16 +682,18 @@ function wallLBlock() {
 
 function crateBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.62, 0.5, 0.62), MAT.timber, 0, 0.27, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.66, 0.06, 0.66), MAT.timberDark, 0, 0.54, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.66, 0.06, 0.66), MAT.timberDark, 0, 0.04, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.64, 0.06, 0.64), MAT.iron, 0, 0.27, 0));
-  for (const [x, z] of [[0.28, 0.28], [-0.28, 0.28], [0.28, -0.28], [-0.28, -0.28]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.06, 0.5, 0.06), MAT.iron, x, 0.27, z));
+  g.add(mesh(new THREE.BoxGeometry(0.78, 0.38, 0.48), MAT.timber, 0, 0.22, 0));
+  const lid = mesh(new THREE.BoxGeometry(0.82, 0.07, 0.52), MAT.timberDark, 0.02, 0.44, 0);
+  lid.rotation.z = -0.08;
+  g.add(lid);
+  g.add(mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), MAT.timberDark, 0, 0.03, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), MAT.iron, 0, 0.22, 0));
+  for (const [x, z] of [[0.36, 0.2], [-0.36, 0.2], [0.36, -0.2], [-0.36, -0.2]]) {
+    g.add(mesh(new THREE.BoxGeometry(0.05, 0.38, 0.05), MAT.iron, x, 0.22, z));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.58, 0.04, 0.04), MAT.timberDark, 0, 0.4, 0.32));
-  g.add(mesh(new THREE.BoxGeometry(0.58, 0.04, 0.04), MAT.timberDark, 0, 0.4, -0.32));
-  g.add(mesh(new THREE.BoxGeometry(0.08, 0.05, 0.16), MAT.iron, 0, 0.58, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.03, 0.03), MAT.timberDark, 0, 0.34, 0.24));
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.03, 0.03), MAT.timberDark, 0, 0.34, -0.24));
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.04, 0.14), MAT.iron, 0.38, 0.42, 0));
   return g;
 }
 
