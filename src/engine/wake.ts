@@ -70,7 +70,7 @@ export function formatCell(position: Position): string {
 }
 
 /** Chebyshev reach for place/break/mount and other cell-writing verbs. */
-export const DEFAULT_REACH = 5;
+export const DEFAULT_REACH = 8;
 
 export function tooFarReason(from: Position, dest: Position, radius: number, verb: string): string | null {
   if (chebyshev(from, dest) <= radius) {

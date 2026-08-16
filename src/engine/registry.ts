@@ -109,7 +109,7 @@ export function seedRegistry(): Registry {
       drift_population_cap: { value: 40, type: "int", tier: 1, min: 0, max: 400 },
       drift_spawn_interval: { value: 25, type: "int", tier: 1, min: 1, max: 10_000 },
       perception_radius: { value: 8, type: "int", tier: 2, min: 0, max: 64 },
-      reach: { value: 5, type: "int", tier: 2, min: 1, max: 8 },
+      reach: { value: 8, type: "int", tier: 2, min: 1, max: 8 },
       vantage_perception_mult: { value: 3, type: "int", tier: 2, min: 1, max: 20 },
       currency_per_tick: { value: 1, type: "int", tier: 1, min: 0, max: 1000 },
       speak_base_radius: { value: 12, type: "int", tier: 2, min: 1, max: 64 },

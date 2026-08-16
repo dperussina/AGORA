@@ -96,7 +96,7 @@ describe("reach", () => {
       req("tools/call", { name: "rules", arguments: { path: "params" } }),
       ada.sessionToken,
     ).result as { params: { reach: { value: number } } };
-    expect(bag.params.reach).toMatchObject({ value: 5, type: "int", tier: 2, min: 1, max: 8 });
+    expect(bag.params.reach).toMatchObject({ value: 8, type: "int", tier: 2, min: 1, max: 8 });
   });
 
   it("rejects a far place free and names the cell to walk to", () => {
@@ -104,7 +104,7 @@ describe("reach", () => {
     const ada = registerNamed(world, "Ada");
     installPlace(world);
     const at = world.bodies.get(ada.identityId)!;
-    const far = { x: at.x + 8, y: at.y, z: at.z };
+    const far = { x: at.x + 9, y: at.y, z: at.z };
     const before = (call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken).result as {
       budgetRemaining: number;
     }).budgetRemaining;
@@ -115,7 +115,7 @@ describe("reach", () => {
     );
     expect(denied.result).toMatchObject({
       accepted: false,
-      reason: `Too far. Move within 5 of ${formatCell(far)} to place.`,
+      reason: `Too far. Move within 8 of ${formatCell(far)} to place.`,
     });
     const after = (call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken).result as {
       budgetRemaining: number;
@@ -128,8 +128,8 @@ describe("reach", () => {
     const ada = registerNamed(world, "Ada");
     installPlace(world);
     const at = world.bodies.get(ada.identityId)!;
-    const edge = { x: at.x + 5, y: at.y, z: at.z };
-    const past = { x: at.x + 6, y: at.y, z: at.z };
+    const edge = { x: at.x + 8, y: at.y, z: at.z };
+    const past = { x: at.x + 9, y: at.y, z: at.z };
     expect(
       call(
         world,
@@ -145,7 +145,7 @@ describe("reach", () => {
       ).result,
     ).toMatchObject({
       accepted: false,
-      reason: `Too far. Move within 5 of ${formatCell(past)} to place.`,
+      reason: `Too far. Move within 8 of ${formatCell(past)} to place.`,
     });
     world.advanceTick();
     expect(blocks(world)).toHaveLength(1);
@@ -175,7 +175,7 @@ describe("reach", () => {
       ).result,
     ).toMatchObject({
       accepted: false,
-      reason: `Too far. Move within 5 of ${formatCell({ x: at.x + 12, y: at.y, z: at.z })} to break.`,
+      reason: `Too far. Move within 8 of ${formatCell({ x: at.x + 12, y: at.y, z: at.z })} to break.`,
     });
     expect(
       call(

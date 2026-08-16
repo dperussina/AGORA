@@ -127,6 +127,15 @@ export const MAT = {
     side: THREE.DoubleSide,
   }),
   hull: physical(0x2a3238, { roughness: 0.22, metalness: 0.82, clearcoat: 0.45, clearcoatRoughness: 0.12 }),
+  gold: physical(0xe8b44a, {
+    roughness: 0.16,
+    metalness: 0.92,
+    clearcoat: 0.62,
+    clearcoatRoughness: 0.14,
+    emissive: 0xffb45a,
+    emissiveIntensity: 1.15,
+  }),
+  brick: physical(0x8a4a38, { roughness: 0.84, metalness: 0.04, clearcoat: 0.06 }),
   pad: physical(0xc8d2da, { roughness: 0.28, metalness: 0.55, emissive: 0x1a2430, emissiveIntensity: 0.2 }),
   nav: new THREE.MeshBasicMaterial({ color: 0x7af0ff }),
   navWarm: new THREE.MeshBasicMaterial({ color: 0xffb45a }),
@@ -622,34 +631,132 @@ function wallBlock() {
   return g;
 }
 
+function plateCube(fill, trim, accent) {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(1, 1, 1), fill, 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.02, 0.05, 1.02), trim, 0, 0.04, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.02, 0.05, 1.02), trim, 0, 0.96, 0));
+  if (accent) {
+    g.add(mesh(new THREE.BoxGeometry(1.04, 0.03, 0.08), accent, 0, 0.5, 0.5));
+    g.add(mesh(new THREE.BoxGeometry(1.04, 0.03, 0.08), accent, 0, 0.5, -0.5));
+  }
+  return g;
+}
+
+function hullBlock() {
+  return plateCube(MAT.hull, MAT.slate, MAT.ion);
+}
+
+function hangarBlock() {
+  return plateCube(MAT.slate, MAT.hull, MAT.deck);
+}
+
+function goldBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.22, 0.72), MAT.hull, 0, 0.12, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.58, 0.16, 0.58), MAT.gold, 0, 0.28, 0));
+  const globe = mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), MAT.lamp, 0, 0.58, 0);
+  globe.userData.motion = "pulse";
+  g.add(globe);
+  g.add(mesh(new THREE.BoxGeometry(0.62, 0.04, 0.62), MAT.brass, 0, 0.84, 0));
+  const wash = mesh(new THREE.CylinderGeometry(0.55, 0.12, 0.7, 12, 1, true), MAT.godFlame, 0, 0.42, 0);
+  g.add(wash);
+  return g;
+}
+
+function glassBlock() {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(1, 0.08, 1), MAT.hull, 0, 0.04, 0));
+  g.add(mesh(new THREE.BoxGeometry(1, 0.08, 1), MAT.hull, 0, 0.96, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.84, 0.08), MAT.hull, -0.46, 0.5, -0.46));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.84, 0.08), MAT.hull, 0.46, 0.5, -0.46));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.84, 0.08), MAT.hull, -0.46, 0.5, 0.46));
+  g.add(mesh(new THREE.BoxGeometry(0.08, 0.84, 0.08), MAT.hull, 0.46, 0.5, 0.46));
+  g.add(mesh(new THREE.BoxGeometry(0.9, 0.84, 0.9), MAT.glass, 0, 0.5, 0));
+  return g;
+}
+
+function woodBlock() {
+  return plateCube(MAT.timber, MAT.timberDark);
+}
+
+function brickBlock() {
+  return plateCube(MAT.brick, MAT.stoneDark);
+}
+
+function oreBlock() {
+  return plateCube(MAT.rock, MAT.iron);
+}
+
+function archway(fill, trim, accent, axis) {
+  const g = new THREE.Group();
+  const pier = 0.2;
+  const depth = 0.42;
+  const rise = 1.08;
+  if (axis === "x") {
+    g.add(mesh(new THREE.BoxGeometry(depth, rise, pier), fill, 0, rise / 2, -0.4));
+    g.add(mesh(new THREE.BoxGeometry(depth, rise, pier), fill, 0, rise / 2, 0.4));
+    g.add(mesh(new THREE.BoxGeometry(depth + 0.04, 0.22, 1), fill, 0, rise + 0.08, 0));
+    g.add(mesh(new THREE.BoxGeometry(depth + 0.08, 0.06, 1.04), trim, 0, rise + 0.2, 0));
+    if (accent) {
+      g.add(mesh(new THREE.BoxGeometry(depth + 0.1, 0.08, 0.22), accent, 0, rise + 0.08, 0));
+    }
+    return g;
+  }
+  g.add(mesh(new THREE.BoxGeometry(pier, rise, depth), fill, -0.4, rise / 2, 0));
+  g.add(mesh(new THREE.BoxGeometry(pier, rise, depth), fill, 0.4, rise / 2, 0));
+  g.add(mesh(new THREE.BoxGeometry(1, 0.22, depth + 0.04), fill, 0, rise + 0.08, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.04, 0.06, depth + 0.08), trim, 0, rise + 0.2, 0));
+  if (accent) {
+    g.add(mesh(new THREE.BoxGeometry(0.22, 0.08, depth + 0.1), accent, 0, rise + 0.08, 0));
+  }
+  return g;
+}
+
+function keepGateBlock() {
+  return archway(MAT.hull, MAT.slate, MAT.ion, "z");
+}
+
+function archBlock() {
+  return archway(MAT.stone, MAT.stoneDark, MAT.gold, "x");
+}
+
+function spanBlock() {
+  return archway(MAT.stone, MAT.stoneDark, MAT.brass, "z");
+}
+
 const SLAB = 0.12;
 
-function wallPlate(axis, sign) {
+function wallPlate(axis, sign, skin) {
+  const fill = skin?.fill ?? MAT.stone;
+  const trim = skin?.trim ?? MAT.stoneDark;
+  const accent = skin?.accent ?? MAT.iron;
+  const thick = skin?.pane ? 0.08 : SLAB;
   const g = new THREE.Group();
-  const inset = 0.5 - SLAB / 2;
+  const inset = 0.5 - thick / 2;
   if (axis === "z") {
     const z = sign * inset;
-    g.add(mesh(new THREE.BoxGeometry(1, 1, SLAB), MAT.stone, 0, 0.5, z));
-    g.add(mesh(new THREE.BoxGeometry(1.02, 0.1, SLAB + 0.04), MAT.stoneDark, 0, 0.5, z));
-    g.add(mesh(new THREE.BoxGeometry(1.04, 0.08, SLAB + 0.02), MAT.stoneDark, 0, 0.97, z));
-    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, SLAB + 0.03), MAT.iron, -0.46, 0.51, z));
-    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, SLAB + 0.03), MAT.iron, 0.46, 0.51, z));
+    g.add(mesh(new THREE.BoxGeometry(1, 1, thick), fill, 0, 0.5, z));
+    g.add(mesh(new THREE.BoxGeometry(1.02, 0.1, thick + 0.04), trim, 0, 0.5, z));
+    g.add(mesh(new THREE.BoxGeometry(1.04, 0.08, thick + 0.02), trim, 0, 0.97, z));
+    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, thick + 0.03), accent, -0.46, 0.51, z));
+    g.add(mesh(new THREE.BoxGeometry(0.08, 1.02, thick + 0.03), accent, 0.46, 0.51, z));
     return g;
   }
   if (axis === "x") {
     const x = sign * inset;
-    g.add(mesh(new THREE.BoxGeometry(SLAB, 1, 1), MAT.stone, x, 0.5, 0));
-    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.04, 0.1, 1.02), MAT.stoneDark, x, 0.5, 0));
-    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.02, 0.08, 1.04), MAT.stoneDark, x, 0.97, 0));
-    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.03, 1.02, 0.08), MAT.iron, x, 0.51, -0.46));
-    g.add(mesh(new THREE.BoxGeometry(SLAB + 0.03, 1.02, 0.08), MAT.iron, x, 0.51, 0.46));
+    g.add(mesh(new THREE.BoxGeometry(thick, 1, 1), fill, x, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(thick + 0.04, 0.1, 1.02), trim, x, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(thick + 0.02, 0.08, 1.04), trim, x, 0.97, 0));
+    g.add(mesh(new THREE.BoxGeometry(thick + 0.03, 1.02, 0.08), accent, x, 0.51, -0.46));
+    g.add(mesh(new THREE.BoxGeometry(thick + 0.03, 1.02, 0.08), accent, x, 0.51, 0.46));
     return g;
   }
-  const y = sign > 0 ? 1 - SLAB / 2 : SLAB / 2;
-  g.add(mesh(new THREE.BoxGeometry(1, SLAB, 1), MAT.stone, 0, y, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.04, SLAB + 0.02, 1.04), MAT.stoneDark, 0, y, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, SLAB + 0.03, 1.02), MAT.iron, -0.46, y, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.08, SLAB + 0.03, 1.02), MAT.iron, 0.46, y, 0));
+  const y = sign > 0 ? 1 - thick / 2 : thick / 2;
+  g.add(mesh(new THREE.BoxGeometry(1, thick, 1), fill, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(1.04, thick + 0.02, 1.04), trim, 0, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, thick + 0.03, 1.02), accent, -0.46, y, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.08, thick + 0.03, 1.02), accent, 0.46, y, 0));
   return g;
 }
 
@@ -848,26 +955,7 @@ function fenceBlock() {
 }
 
 function gateBlock() {
-  const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.96, 0.1, 0.22), MAT.stoneDark, 0, 0.05, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), MAT.timberDark, -0.42, 0.58, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.14, 1.05, 0.14), MAT.timberDark, 0.42, 0.58, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.18, 0.08, 0.18), MAT.timber, -0.42, 1.12, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.18, 0.08, 0.18), MAT.timber, 0.42, 1.12, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.96, 0.1, 0.12), MAT.timberDark, 0, 1.08, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.28, 0.08, 0.1), MAT.timber, -0.22, 1.16, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.28, 0.08, 0.1), MAT.timber, 0.22, 1.16, 0));
-  const left = mesh(new THREE.BoxGeometry(0.32, 0.78, 0.06), MAT.timber, -0.16, 0.52, 0.02);
-  left.rotation.y = 0.18;
-  g.add(left);
-  const right = mesh(new THREE.BoxGeometry(0.32, 0.78, 0.06), MAT.timber, 0.16, 0.52, 0.02);
-  right.rotation.y = -0.14;
-  g.add(right);
-  g.add(mesh(new THREE.BoxGeometry(0.04, 0.7, 0.03), MAT.iron, -0.28, 0.52, 0.06));
-  g.add(mesh(new THREE.BoxGeometry(0.04, 0.7, 0.03), MAT.iron, 0.28, 0.52, 0.06));
-  g.add(mesh(new THREE.BoxGeometry(0.22, 0.05, 0.04), MAT.iron, 0, 0.56, 0.08));
-  g.add(mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 10), MAT.iron, 0.08, 0.56, 0.1));
-  return g;
+  return keepGateBlock();
 }
 
 function signBlock() {
@@ -1091,10 +1179,21 @@ const BLOCK_BUILDERS = {
   box: wallBlock,
   cube: wallBlock,
   wall: wallBlock,
-  hull: wallBlock,
-  keep: wallBlock,
-  hangar: wallBlock,
-  dock: wallBlock,
+  stone: wallBlock,
+  block: wallBlock,
+  hull: hullBlock,
+  keep: hullBlock,
+  hangar: hangarBlock,
+  dock: hullBlock,
+  gold: goldBlock,
+  "gold-light": goldBlock,
+  glass: glassBlock,
+  airlock: glassBlock,
+  wood: woodBlock,
+  brick: brickBlock,
+  ore: oreBlock,
+  arch: archBlock,
+  span: spanBlock,
   "wall-front": wallFrontBlock,
   "wall-back": wallBackBlock,
   "wall-left": wallLeftBlock,
@@ -1133,11 +1232,6 @@ export function kindHash(kind) {
   return hash >>> 0;
 }
 
-export function blockForm(kind) {
-  const key = typeof kind === "string" ? kind.toLowerCase() : "";
-  return key in BLOCK_BUILDERS ? key : "wall";
-}
-
 const FACE_WALLS = new Set([
   "wall-front",
   "wall-back",
@@ -1148,23 +1242,159 @@ const FACE_WALLS = new Set([
   "wall-l",
 ]);
 
-const BLOCK_LIGHTS = {
-  hearth: { color: 0xff7a28, intensity: 1.4, distance: 3.6, y: 0.42 },
-  lamp: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 1.06 },
-  lantern: { color: 0xffd089, intensity: 1.2, distance: 3.2, y: 1.06 },
-  chimney: { color: 0xff6a20, intensity: 0.85, distance: 2.6, y: 1.05 },
-  window: { color: 0xffe2a8, intensity: 0.7, distance: 2.4, y: 0.58 },
+const FACE_DIR = {
+  front: { axis: "z", sign: -1 },
+  back: { axis: "z", sign: 1 },
+  left: { axis: "x", sign: -1 },
+  right: { axis: "x", sign: 1 },
+  top: { axis: "y", sign: 1 },
+  bottom: { axis: "y", sign: -1 },
 };
 
-export function blockArtifact(kind) {
-  const form = blockForm(kind);
-  const built = (BLOCK_BUILDERS[form] ?? crateBlock)();
-  const group = FACE_WALLS.has(form) ? built : sitOnCell(built);
-  const spec = BLOCK_LIGHTS[form];
-  if (spec) {
-    carryLight(group, spec.color, spec.intensity, spec.distance, spec.y);
+const SKIN = {
+  wall: { fill: MAT.stone, trim: MAT.stoneDark, accent: MAT.iron },
+  stone: { fill: MAT.stone, trim: MAT.stoneDark, accent: MAT.iron },
+  brick: { fill: MAT.brick, trim: MAT.stoneDark, accent: MAT.iron },
+  wood: { fill: MAT.timber, trim: MAT.timberDark, accent: MAT.iron },
+  ore: { fill: MAT.rock, trim: MAT.iron, accent: MAT.iron },
+  hull: { fill: MAT.hull, trim: MAT.slate, accent: MAT.ion },
+  keep: { fill: MAT.hull, trim: MAT.slate, accent: MAT.ion },
+  dock: { fill: MAT.hull, trim: MAT.slate, accent: MAT.ion },
+  coil: { fill: MAT.hull, trim: MAT.slate, accent: MAT.ion },
+  hangar: { fill: MAT.slate, trim: MAT.hull, accent: MAT.deck },
+  gold: { fill: MAT.gold, trim: MAT.brass, accent: MAT.lamp },
+  glass: { fill: MAT.glass, trim: MAT.hull, accent: MAT.ion, pane: true },
+  airlock: { fill: MAT.glass, trim: MAT.hull, accent: MAT.ion, pane: true },
+};
+
+function parseCompound(key) {
+  const parts = key.split("-").filter((part) => part.length > 0);
+  if (parts.length < 2) {
+    return null;
   }
-  return group;
+  const face = parts[parts.length - 1];
+  const head = parts.slice(0, -1).join("-");
+  const skin = SKIN[head] ?? SKIN[parts[0]];
+  if (skin === undefined) {
+    return null;
+  }
+  if (face === "l") {
+    return { cache: key, skin, plate: true, ell: true };
+  }
+  const dir = FACE_DIR[face];
+  if (dir !== undefined) {
+    return { cache: key, skin, plate: true, axis: dir.axis, sign: dir.sign };
+  }
+  if (face === "arch") {
+    return { cache: key, skin, arch: "x" };
+  }
+  if (face === "span" || face === "gate") {
+    return { cache: key, skin, arch: "z" };
+  }
+  if (face === "lamp" || face === "lantern" || face === "light") {
+    return { cache: key, lamp: true, lightKey: "gold" };
+  }
+  if (face === "glass" || face === "window") {
+    return { cache: key, glass: true, lightKey: "glass" };
+  }
+  return null;
+}
+
+function buildCompound(spec) {
+  if (spec.ell) {
+    const g = new THREE.Group();
+    takeChildren(g, wallPlate("x", -1, spec.skin));
+    takeChildren(g, wallPlate("z", -1, spec.skin));
+    return g;
+  }
+  if (spec.plate) {
+    return wallPlate(spec.axis, spec.sign, spec.skin);
+  }
+  if (spec.arch) {
+    return archway(spec.skin.fill, spec.skin.trim, spec.skin.accent, spec.arch);
+  }
+  if (spec.lamp) {
+    return goldBlock();
+  }
+  if (spec.glass) {
+    return glassBlock();
+  }
+  return wallBlock();
+}
+
+export function blockForm(kind) {
+  const key = typeof kind === "string" ? kind.toLowerCase() : "";
+  if (key in BLOCK_BUILDERS) {
+    return key;
+  }
+  const compound = parseCompound(key);
+  return compound !== null ? compound.cache : "wall";
+}
+
+const BLOCK_LIGHTS = {
+  hearth: { color: 0xff7a28, intensity: 8, distance: 6, y: 0.42 },
+  lamp: { color: 0xffd089, intensity: 18, distance: 10, y: 1.06, keepLit: true },
+  lantern: { color: 0xffd089, intensity: 18, distance: 10, y: 1.06, keepLit: true },
+  chimney: { color: 0xff6a20, intensity: 6, distance: 5, y: 1.05 },
+  window: { color: 0xffe2a8, intensity: 10, distance: 7, y: 0.58 },
+  gold: { color: 0xffc878, intensity: 42, distance: 14, y: 0.58, keepLit: true },
+  "gold-light": { color: 0xffc878, intensity: 42, distance: 14, y: 0.58, keepLit: true },
+  glass: { color: 0x8ec8e0, intensity: 6, distance: 5, y: 0.5 },
+  airlock: { color: 0x8ec8e0, intensity: 6, distance: 5, y: 0.5 },
+};
+
+function lightBlock(group, form) {
+  const spec = BLOCK_LIGHTS[form];
+  if (!spec) {
+    return;
+  }
+  const light = carryLight(group, spec.color, spec.intensity, spec.distance, spec.y);
+  if (spec.keepLit) {
+    light.userData.keepLit = true;
+  }
+}
+
+export function blockArtifact(kind) {
+  const key = typeof kind === "string" ? kind.toLowerCase() : "";
+  if (key in BLOCK_BUILDERS) {
+    const built = BLOCK_BUILDERS[key]();
+    const group = FACE_WALLS.has(key) ? built : sitOnCell(built);
+    lightBlock(group, key);
+    return group;
+  }
+  const compound = parseCompound(key);
+  if (compound !== null) {
+    const built = buildCompound(compound);
+    const group = compound.plate ? built : sitOnCell(built);
+    lightBlock(group, compound.lightKey ?? key);
+    if (compound.skin?.fill === MAT.gold && compound.plate) {
+      lightBlock(group, "gold");
+    }
+    return group;
+  }
+  return sitOnCell(wallBlock());
+}
+
+export function turretArtifact(kind) {
+  const coil = String(kind ?? "").toLowerCase() !== "keep";
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.12, 10), MAT.hull, 0, 0.06, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.24, 0.2, 0.24), MAT.slate, 0, 0.2, 0));
+  const barrel = mesh(
+    new THREE.CylinderGeometry(0.045, 0.055, 0.78, 8),
+    coil ? MAT.iron : MAT.gold,
+    0,
+    0.3,
+    0.32,
+  );
+  barrel.rotation.x = Math.PI / 2;
+  g.add(barrel);
+  const glow = mesh(new THREE.SphereGeometry(0.07, 8, 6), coil ? MAT.ion : MAT.lamp, 0, 0.3, 0.7);
+  glow.userData.motion = "pulse";
+  g.add(glow);
+  const light = carryLight(g, coil ? 0x3ef0d4 : 0xffc878, 8, 5, 0.3);
+  light.userData.keepLit = true;
+  return sitOnCell(g);
 }
 
 export function wardenArtifact() {

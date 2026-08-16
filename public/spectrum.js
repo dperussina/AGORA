@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
-import { KNOWN, blockArtifact, blockForm, wakeArtifact, wakeHasLoot } from "/artifacts.js";
+import { KNOWN, blockArtifact, blockForm, turretArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
 
 const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
@@ -168,7 +168,8 @@ camera.position.copy(HOME.pos);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = !reduced;
 controls.dampingFactor = 0.07;
-controls.enableZoom = false;
+controls.enableZoom = true;
+controls.zoomSpeed = 0.6;
 controls.minDistance = 8;
 controls.maxDistance = 180;
 controls.target.copy(HOME.target);
@@ -214,6 +215,7 @@ function flyTo(toPos, toTarget, duration = 900) {
 }
 
 function flyHome() {
+  state.holdSeat = false;
   flyTo(HOME.pos.clone(), HOME.target.clone());
 }
 
@@ -984,6 +986,7 @@ const state = {
   residue: [],
   selected: null,
   look: null,
+  holdSeat: false,
   onScreen: true,
   streamLive: false,
   dirty: true,
@@ -1433,7 +1436,7 @@ function beginDogfight(fromId, toId, item, now) {
       fight.homeB.copy(nodeB.userData.combatHome ?? fight.homeB);
     }
   }
-  if (!fight.framed && !reduced) {
+  if (!fight.framed && !reduced && !state.holdSeat) {
     fight.framed = true;
     const look = fight.mid.clone();
     if (controls.target.distanceTo(look) > 8) {
@@ -2671,7 +2674,8 @@ function buildVolumes() {
 }
 
 const blockProtos = new Map();
-const BLOCK_LIGHT_CAP = 4;
+const turretProtos = new Map();
+const BLOCK_LIGHT_CAP = 24;
 const lightWorld = new THREE.Vector3();
 
 function cachedBlock(kind) {
@@ -2684,26 +2688,153 @@ function cachedBlock(kind) {
   return proto.clone();
 }
 
+function cachedTurret(kind) {
+  const key = typeof kind === "string" && kind.length > 0 ? kind.toLowerCase() : "coil";
+  let proto = turretProtos.get(key);
+  if (proto === undefined) {
+    proto = turretArtifact(key);
+    turretProtos.set(key, proto);
+  }
+  return proto.clone();
+}
+
 function muteBlockLights() {
-  const lights = [];
+  const kept = [];
+  const rest = [];
   relics.updateMatrixWorld(true);
   relics.traverse((node) => {
     if (node.isPointLight) {
-      lights.push(node);
+      (node.userData.keepLit ? kept : rest).push(node);
     }
   });
-  if (lights.length <= BLOCK_LIGHT_CAP) {
-    return;
+  for (const light of kept) {
+    light.visible = true;
   }
-  const ranked = lights
+  rest
     .map((light) => {
       light.getWorldPosition(lightWorld);
       return { light, d: lightWorld.distanceToSquared(camera.position) };
     })
-    .sort((a, b) => a.d - b.d);
-  ranked.forEach((row, i) => {
-    row.light.visible = i < BLOCK_LIGHT_CAP;
-  });
+    .sort((a, b) => a.d - b.d)
+    .forEach((row, i) => {
+      row.light.visible = i < BLOCK_LIGHT_CAP;
+    });
+}
+
+const QUARTER = new THREE.Vector3(12, 9, 14);
+const NAMED_SEATS = {
+  cut: { x: 32, y: 22, z: 4 },
+  "the-cut": { x: 32, y: 22, z: 4 },
+  keep: { x: 40, y: 8, z: 16 },
+  "coil-keep": { x: 40, y: 8, z: 16 },
+  coil: { x: 40, y: 8, z: 16 },
+  mouth: { x: 40, y: 8, z: 16 },
+  port: { x: 38, y: 31, z: 52 },
+  "first-port": { x: 38, y: 31, z: 52 },
+  "the-first-port": { x: 38, y: 31, z: 52 },
+  fair: { x: 32, y: 8, z: 16 },
+  finish: { x: 32, y: 8, z: 16 },
+};
+
+function slugName(text) {
+  return String(text ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function viewHashTail() {
+  let raw = window.location.hash.replace(/^#/, "");
+  if (raw.startsWith("world-view")) {
+    raw = raw.slice("world-view".length).replace(/^[/?]/, "");
+  } else if (raw.startsWith("spectrum-view")) {
+    raw = raw.slice("spectrum-view".length).replace(/^[/?]/, "");
+  }
+  return raw;
+}
+
+function parseSeatRequest() {
+  const tail = viewHashTail();
+  if (!tail) {
+    return null;
+  }
+  let token = tail;
+  if (tail.includes("=")) {
+    const query = tail.includes("?") ? tail.slice(tail.indexOf("?") + 1) : tail;
+    const params = new URLSearchParams(query);
+    token = params.get("at") || params.get("look") || params.get("cell") || params.get("name") || "";
+  } else {
+    token = tail.split("/")[0];
+  }
+  try {
+    token = decodeURIComponent(token).trim();
+  } catch {
+    token = String(token).trim();
+  }
+  if (!token) {
+    return null;
+  }
+  const cellAt = parseCellText(token);
+  if (cellAt !== null) {
+    return { position: cellAt, name: token };
+  }
+  return { name: token, position: null };
+}
+
+function seatFromName(name) {
+  const key = slugName(name);
+  if (key.length === 0) {
+    return null;
+  }
+  if (NAMED_SEATS[key]) {
+    return NAMED_SEATS[key];
+  }
+  for (const row of state.occupants.values()) {
+    const labels = [row.name, row.text, row.kindName];
+    for (const label of labels) {
+      if (typeof label === "string" && slugName(label) === key) {
+        return row.position;
+      }
+    }
+  }
+  return null;
+}
+
+function seatCamera(pos) {
+  const at = cell(pos);
+  camera.position.copy(at).add(QUARTER);
+  controls.target.copy(at);
+  fly = null;
+  state.holdSeat = true;
+  controls.update();
+  setPlane(pos.z);
+  const slider = $("spectrum-z");
+  if (slider instanceof HTMLInputElement) {
+    slider.value = String(pos.z);
+  }
+  const label = $("spectrum-z-val");
+  if (label) {
+    label.textContent = String(pos.z);
+  }
+}
+
+let seatApplied = false;
+
+function applySeatFromHash(force = false) {
+  const want = parseSeatRequest();
+  if (want === null) {
+    return;
+  }
+  if (!force && seatApplied) {
+    return;
+  }
+  const at = want.position ?? seatFromName(want.name);
+  if (at === null || at === undefined) {
+    return;
+  }
+  seatCamera(at);
+  seatApplied = true;
 }
 
 function buildRelics() {
@@ -2736,6 +2867,13 @@ function buildRelics() {
     }
     if (row.type === "block") {
       const node = cachedBlock(row.kindName);
+      node.position.copy(cell(row.position));
+      tag(node, row);
+      relics.add(node);
+      continue;
+    }
+    if (row.type === "turret") {
+      const node = cachedTurret(row.kindName);
       node.position.copy(cell(row.position));
       tag(node, row);
       relics.add(node);
@@ -3277,6 +3415,7 @@ async function refresh() {
     );
     state.ledgers.clear();
     applyMap(map);
+    applySeatFromHash();
     state.dirty = true;
     if (status) {
       status.textContent = metrics.halted ? "The world is still." : `Tick ${state.tick}`;
@@ -3630,13 +3769,13 @@ function aimLamps() {
     lamp.position.y += lift[hit.row.type] ?? lift[hit.row.kind] ?? 1.1;
     lamp.color.setHex(LAMP_TINT[hit.row.type] ?? LAMP_TINT[hit.row.kind] ?? 0xffd4a0);
     if (hit.row.type === "hollow") {
-      lamp.intensity = 22;
+      lamp.intensity = state.holdSeat ? 8 : 22;
     } else if (hit.row.kind === "identity") {
-      lamp.intensity = 320;
+      lamp.intensity = state.holdSeat ? 22 : 320;
     } else if (hit.row.kind === "anchor") {
-      lamp.intensity = 140;
+      lamp.intensity = state.holdSeat ? 16 : 140;
     } else {
-      lamp.intensity = 90;
+      lamp.intensity = state.holdSeat ? 12 : 90;
     }
   }
 }
@@ -3747,6 +3886,10 @@ function bind() {
 }
 
 window.addEventListener("resize", resize);
+window.addEventListener("hashchange", () => {
+  seatApplied = false;
+  applySeatFromHash(true);
+});
 new IntersectionObserver(
   (entries) => {
     state.onScreen = entries.some((entry) => entry.isIntersecting);
@@ -3760,6 +3903,7 @@ new IntersectionObserver(
 resize();
 writeSelected(null);
 bind();
+applySeatFromHash();
 paintTicker();
 const chat = $("spectrum-chat-log");
 if (chat && chat.children.length === 0) {

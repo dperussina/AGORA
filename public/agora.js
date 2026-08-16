@@ -11,6 +11,7 @@ import {
   entityArtifact,
   beastArtifact,
   blockArtifact,
+  turretArtifact,
   wakeArtifact,
   wakeHasLoot,
 } from "/artifacts.js";
@@ -739,6 +740,8 @@ function rebuildEntities(rows) {
     const mesh =
       entity.type === "block"
         ? blockArtifact(kind)
+        : entity.type === "turret"
+          ? turretArtifact(kind)
         : entity.type === "wake"
           ? wakeArtifact()
           : entity.type === "beast"
@@ -4665,8 +4668,9 @@ function showWorld(on) {
 }
 
 function syncWorldHash() {
-  if (window.location.hash === "#world-view") {
-    history.replaceState(null, "", "#spectrum-view");
+  const hash = window.location.hash;
+  if (hash === "#world-view" || hash.startsWith("#world-view/") || hash.startsWith("#world-view?")) {
+    history.replaceState(null, "", `#spectrum-view${hash.slice("#world-view".length)}`);
   }
   showWorld(false);
 }
