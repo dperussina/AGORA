@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
-import { KNOWN, blockArtifact, blockForm, massForm, turretArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
+import { KNOWN, blockArtifact, blockForm, massKey, turretArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
 
 const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
@@ -827,7 +827,7 @@ function nightEnvironment() {
 }
 
 scene.environment = nightEnvironment();
-scene.environmentIntensity = 0.55;
+scene.environmentIntensity = 0.85;
 
 function hashUnit(seed, lane) {
   return unit(fnv(seed), lane);
@@ -2680,18 +2680,11 @@ function buildVolumes() {
 const blockProtos = new Map();
 const turretProtos = new Map();
 const MASS_CAP = 2048;
-const MASS_SKINS = {
-  hull: { color: 0x2a3238, roughness: 0.28, metalness: 0.82, emissive: 0x0c181c, emissiveIntensity: 0.18 },
-  hangar: { color: 0x161c22, roughness: 0.38, metalness: 0.7, emissive: 0x080c10, emissiveIntensity: 0.1 },
-  stone: { color: 0x8a7358, roughness: 0.82, metalness: 0.05, emissive: 0x000000, emissiveIntensity: 0 },
-  brick: { color: 0x8a4a38, roughness: 0.84, metalness: 0.04, emissive: 0x000000, emissiveIntensity: 0 },
-  wood: { color: 0x9a6234, roughness: 0.8, metalness: 0.04, emissive: 0x000000, emissiveIntensity: 0 },
-  ore: { color: 0xb8c0c8, roughness: 0.72, metalness: 0.22, emissive: 0x000000, emissiveIntensity: 0 },
-};
-const massBox = new THREE.BoxGeometry(1, 1, 1);
-const massMeshes = new Map();
+const massRigs = new Map();
 const massIndex = new Map();
 const massDummy = new THREE.Object3D();
+const massCompose = new THREE.Matrix4();
+const massRootInverse = new THREE.Matrix4();
 const CITY_LAMP_COUNT = 6;
 const cityLamps = Array.from({ length: CITY_LAMP_COUNT }, () => {
   const lamp = new THREE.PointLight(0xffc878, 0, 11, 2);
@@ -2701,60 +2694,71 @@ const cityLamps = Array.from({ length: CITY_LAMP_COUNT }, () => {
 });
 const GLOW_KINDS = new Set(["gold", "gold-light", "lantern", "lamp", "hearth"]);
 
-function massMesh(key) {
-  let mesh = massMeshes.get(key);
-  if (mesh !== undefined) {
-    return mesh;
+function massRig(key) {
+  let rig = massRigs.get(key);
+  if (rig !== undefined) {
+    return rig;
   }
-  const spec = MASS_SKINS[key] ?? MASS_SKINS.stone;
-  mesh = new THREE.InstancedMesh(
-    massBox,
-    new THREE.MeshStandardMaterial({
-      color: spec.color,
-      roughness: spec.roughness,
-      metalness: spec.metalness,
-      emissive: spec.emissive,
-      emissiveIntensity: spec.emissiveIntensity,
-      envMapIntensity: 0.4,
-    }),
-    MASS_CAP,
-  );
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.frustumCulled = true;
-  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 72);
-  mesh.count = 0;
-  mesh.userData.massKey = key;
-  mesh.matrixAutoUpdate = false;
-  mesh.updateMatrix();
-  mass.add(mesh);
-  massMeshes.set(key, mesh);
-  return mesh;
+  const proto = blockArtifact(key);
+  proto.updateMatrixWorld(true);
+  massRootInverse.copy(proto.matrixWorld).invert();
+  const parts = [];
+  proto.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+    parts.push({
+      geometry: node.geometry,
+      material: node.material,
+      local: node.matrixWorld.clone().premultiply(massRootInverse),
+    });
+  });
+  const meshes = parts.map((part, index) => {
+    const mesh = new THREE.InstancedMesh(part.geometry, part.material, MASS_CAP);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.frustumCulled = true;
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 72);
+    mesh.count = 0;
+    mesh.userData.massKey = key;
+    mesh.userData.massPick = index === 0;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    mass.add(mesh);
+    return mesh;
+  });
+  rig = { parts, meshes };
+  massRigs.set(key, rig);
+  return rig;
 }
 
 function writeMass(buckets) {
-  for (const key of massMeshes.keys()) {
+  for (const [key, rig] of massRigs) {
     if (!buckets.has(key)) {
-      const mesh = massMeshes.get(key);
-      mesh.count = 0;
+      for (const mesh of rig.meshes) {
+        mesh.count = 0;
+      }
       massIndex.set(key, []);
     }
   }
   for (const [key, rows] of buckets) {
-    const mesh = massMesh(key);
+    const rig = massRig(key);
     const n = Math.min(rows.length, MASS_CAP);
-    mesh.count = n;
     const listed = [];
     for (let i = 0; i < n; i += 1) {
-      const row = rows[i];
-      listed.push(row);
-      massDummy.position.copy(cell(row.position));
-      massDummy.position.y += 0.5;
+      listed.push(rows[i]);
+      massDummy.position.copy(cell(rows[i].position));
       massDummy.rotation.set(0, 0, 0);
       massDummy.scale.set(1, 1, 1);
       massDummy.updateMatrix();
-      mesh.setMatrixAt(i, massDummy.matrix);
+      for (let p = 0; p < rig.meshes.length; p += 1) {
+        massCompose.multiplyMatrices(massDummy.matrix, rig.parts[p].local);
+        rig.meshes[p].setMatrixAt(i, massCompose);
+      }
     }
-    mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of rig.meshes) {
+      mesh.count = n;
+      mesh.instanceMatrix.needsUpdate = true;
+    }
     massIndex.set(key, listed);
   }
 }
@@ -2763,7 +2767,9 @@ function rememberGlow(row, color) {
   if (row.position === undefined || row.position === null) {
     return;
   }
-  state.cityGlow.push({ world: cell(row.position), color });
+  const world = cell(row.position);
+  world.y += 0.55;
+  state.cityGlow.push({ world, color });
 }
 
 function freezeStatic(root) {
@@ -2830,7 +2836,7 @@ function aimCityLamps() {
     }
     lamp.position.copy(hit.row.world);
     lamp.color.setHex(hit.row.color);
-    lamp.intensity = state.holdSeat ? 7 : 12;
+    lamp.intensity = state.holdSeat ? 10 : 18;
   }
 }
 
@@ -2981,12 +2987,12 @@ function buildRelics() {
       continue;
     }
     if (row.type === "block") {
-      const massKey = massForm(row.kindName);
-      if (massKey !== null) {
-        let listed = buckets.get(massKey);
+      const key = massKey(row.kindName);
+      if (key !== null) {
+        let listed = buckets.get(key);
         if (listed === undefined) {
           listed = [];
-          buckets.set(massKey, listed);
+          buckets.set(key, listed);
         }
         listed.push(row);
         continue;
@@ -3051,8 +3057,13 @@ function buildGods() {
 
 function collectPicks() {
   state.picks = [];
-  for (const root of [volumes, relics, gods, wardens, mass]) {
+  for (const root of [volumes, relics, gods, wardens]) {
     for (const child of root.children) {
+      state.picks.push(child);
+    }
+  }
+  for (const child of mass.children) {
+    if (child.userData.massPick) {
       state.picks.push(child);
     }
   }
@@ -3474,9 +3485,9 @@ function pickFromEvent(event) {
     const planeHit = ray.intersectObject(plane, false)[0];
     return planeHit === undefined ? null : nearest(latticeOf(planeHit.point));
   }
-  const massKey = hit.object.userData.massKey;
-  if (typeof massKey === "string" && typeof hit.instanceId === "number" && hit.instanceId >= 0) {
-    const listed = massIndex.get(massKey);
+  const pickedKey = hit.object.userData.massKey;
+  if (typeof pickedKey === "string" && typeof hit.instanceId === "number" && hit.instanceId >= 0) {
+    const listed = massIndex.get(pickedKey);
     const row = listed?.[hit.instanceId];
     if (row !== undefined) {
       return row;

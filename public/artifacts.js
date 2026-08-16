@@ -1351,6 +1351,22 @@ export function massForm(kind) {
   return MASS_ALIAS[blockForm(kind)] ?? null;
 }
 
+export function massKey(kind) {
+  const aliased = massForm(kind);
+  if (aliased !== null) {
+    return aliased;
+  }
+  const key = typeof kind === "string" ? kind.toLowerCase() : "";
+  if (FACE_WALLS.has(key)) {
+    return key;
+  }
+  const compound = parseCompound(key);
+  if (compound !== null && compound.plate) {
+    return compound.cache;
+  }
+  return null;
+}
+
 export function blockArtifact(kind) {
   const key = typeof kind === "string" ? kind.toLowerCase() : "";
   if (key in BLOCK_BUILDERS) {
