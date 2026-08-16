@@ -554,16 +554,20 @@ function chairBlock() {
 
 function tableBlock() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(0.94, 0.07, 0.62), MAT.timber, 0, 0.5, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.9, 0.04, 0.58), MAT.timberDark, 0, 0.45, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.86, 0.08, 0.54), MAT.timberDark, 0, 0.4, 0));
-  for (const [x, z] of [[-0.38, -0.22], [0.38, -0.22], [-0.38, 0.22], [0.38, 0.22]]) {
-    g.add(mesh(new THREE.BoxGeometry(0.09, 0.4, 0.09), MAT.timberDark, x, 0.2, z));
+  g.add(mesh(new THREE.CylinderGeometry(0.48, 0.5, 0.06, 16), MAT.timber, 0, 0.5, 0));
+  g.add(mesh(new THREE.CylinderGeometry(0.42, 0.44, 0.05, 14), MAT.timberDark, 0, 0.44, 0));
+  g.add(mesh(new THREE.BoxGeometry(0.72, 0.04, 0.04), MAT.timberDark, 0, 0.38, 0));
+  for (const [x, z] of [[-0.32, -0.2], [0.32, -0.2], [-0.32, 0.2], [0.32, 0.2]]) {
+    g.add(mesh(new THREE.CylinderGeometry(0.035, 0.042, 0.4, 8), MAT.timberDark, x, 0.2, z));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.76, 0.04, 0.04), MAT.iron, 0, 0.16, -0.22));
-  g.add(mesh(new THREE.BoxGeometry(0.76, 0.04, 0.04), MAT.iron, 0, 0.16, 0.22));
-  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.05, 10), MAT.brass, 0.2, 0.56, 0.1));
-  g.add(mesh(new THREE.BoxGeometry(0.16, 0.04, 0.12), MAT.archive, -0.22, 0.56, -0.08));
+  const railA = mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.64, 8), MAT.iron, 0, 0.16, -0.2);
+  railA.rotation.z = Math.PI / 2;
+  g.add(railA);
+  const railB = mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.64, 8), MAT.iron, 0, 0.16, 0.2);
+  railB.rotation.z = Math.PI / 2;
+  g.add(railB);
+  g.add(mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.05, 10), MAT.brass, 0.16, 0.56, 0.08));
+  g.add(mesh(new THREE.BoxGeometry(0.16, 0.04, 0.12), MAT.archive, -0.18, 0.56, -0.08));
   return g;
 }
 
