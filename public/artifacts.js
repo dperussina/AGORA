@@ -986,11 +986,16 @@ export function wakeHasLoot(kind) {
 
 export function wakeArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.SphereGeometry(0.38, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), MAT.stoneDark, 0, 0, 0));
-  g.add(mesh(new THREE.SphereGeometry(0.22, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), MAT.stone, 0.08, 0.04, -0.06));
-  g.add(mesh(new THREE.BoxGeometry(0.16, 0.52, 0.08), MAT.stone, 0, 0.38, 0));
-  g.add(mesh(new THREE.BoxGeometry(0.22, 0.08, 0.06), MAT.stoneDark, 0, 0.58, 0.02));
-  const glint = mesh(new THREE.SphereGeometry(0.07, 8, 6), MAT.lamp, 0.16, 0.18, 0.12);
+  g.add(mesh(new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), MAT.stoneDark, 0, 0, 0));
+  const collar = mesh(new THREE.TorusGeometry(0.2, 0.028, 6, 14), MAT.iron, 0, 0.16, 0);
+  collar.rotation.x = Math.PI / 2;
+  g.add(collar);
+  const lid = mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.05, 10), MAT.slate, 0.08, 0.22, -0.04);
+  lid.rotation.z = 0.28;
+  lid.rotation.x = 0.12;
+  g.add(lid);
+  g.add(mesh(new THREE.BoxGeometry(0.045, 0.44, 0.045), MAT.iron, -0.22, 0.34, 0.16));
+  const glint = mesh(new THREE.SphereGeometry(0.055, 8, 6), MAT.lamp, 0.02, 0.18, 0.02);
   glint.userData.motion = "pulse";
   g.add(glint);
   return sitOnCell(g);
