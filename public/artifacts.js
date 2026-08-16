@@ -1227,7 +1227,37 @@ export function godArtifact() {
 }
 
 export function echoArtifact() {
-  return landerHull(MAT.echo, MAT.echo, false);
+  const g = new THREE.Group();
+  g.add(
+    mesh(
+      lathe(
+        [
+          [0.04, 0.04],
+          [0.2, 0.08],
+          [0.52, 0.14],
+          [0.68, 0.2],
+          [0.58, 0.26],
+          [0.22, 0.3],
+        ],
+        18,
+      ),
+      MAT.echo,
+    ),
+  );
+  const rim = mesh(new THREE.TorusGeometry(0.64, 0.022, 6, 22, Math.PI * 1.4), MAT.echo, 0, 0.2, 0);
+  rim.rotation.x = Math.PI / 2;
+  rim.rotation.z = 0.35;
+  g.add(rim);
+  g.add(mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.04, 12), MAT.echo, 0, 0.3, 0));
+  const well = mesh(new THREE.RingGeometry(0.05, 0.12, 14), MAT.nav, 0, 0.33, 0);
+  well.rotation.x = -Math.PI / 2;
+  g.add(well);
+  const ghost = mesh(new THREE.SphereGeometry(0.08, 8, 6), MAT.echo, 0.08, 0.38, 0.04);
+  ghost.userData.motion = "pulse";
+  g.add(ghost);
+  g.rotation.z = 0.16;
+  g.rotation.x = 0.08;
+  return g;
 }
 
 export const KNOWN = {
