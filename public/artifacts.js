@@ -279,27 +279,27 @@ export function cairnArtifact() {
   const g = new THREE.Group();
   g.add(mesh(new THREE.CylinderGeometry(1.95, 2.15, 0.22, 8), MAT.hull, 0, 0.02, 0));
   g.add(mesh(new THREE.CylinderGeometry(1.65, 1.7, 0.08, 8), MAT.vault, 0, 0.14, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.35, 0.22, 0.55), MAT.hull, 0, 0.28, 1.15));
+  g.add(mesh(new THREE.CylinderGeometry(0.55, 0.62, 0.22, 10), MAT.hull, 0, 0.28, 1.15));
   g.add(mesh(new THREE.BoxGeometry(0.42, 0.55, 0.08), MAT.slate, 0, 0.55, 1.38));
   const racks = [
-    [0.48, 2.05, 0.62, -0.62, 1.18, 0.08],
-    [0.42, 1.65, 0.52, 0.42, 0.98, -0.28],
-    [0.36, 1.28, 0.44, 0.78, 0.8, 0.48],
-    [0.32, 0.95, 0.4, -0.12, 0.62, 0.78],
-    [0.28, 0.72, 0.34, -0.85, 0.5, 0.55],
+    [0.48, 2.05, -0.62, 1.18, 0.08],
+    [0.42, 1.65, 0.42, 0.98, -0.28],
+    [0.36, 1.28, 0.78, 0.8, 0.48],
+    [0.32, 0.95, -0.12, 0.62, 0.78],
+    [0.28, 0.72, -0.85, 0.5, 0.55],
   ];
-  for (const [w, h, d, x, y, z] of racks) {
-    g.add(mesh(new THREE.BoxGeometry(w, h, d), MAT.vault, x, y, z));
-    g.add(mesh(new THREE.BoxGeometry(w * 0.78, 0.035, 0.035), MAT.nav, x, y + h * 0.32, z + d * 0.42));
-    g.add(mesh(new THREE.BoxGeometry(w * 0.6, 0.025, 0.025), MAT.navWarm, x, y - h * 0.08, z + d * 0.42));
-    g.add(mesh(new THREE.BoxGeometry(w * 0.5, 0.02, 0.02), MAT.archive, x, y + h * 0.08, z + d * 0.42));
+  for (const [w, h, x, y, z] of racks) {
+    g.add(mesh(new THREE.CylinderGeometry(w * 0.42, w * 0.48, h, 10), MAT.vault, x, y, z));
+    g.add(mesh(new THREE.CylinderGeometry(w * 0.5, w * 0.5, 0.035, 10), MAT.nav, x, y + h * 0.32, z));
+    g.add(mesh(new THREE.CylinderGeometry(w * 0.46, w * 0.46, 0.025, 10), MAT.navWarm, x, y - h * 0.08, z));
+    g.add(mesh(new THREE.CylinderGeometry(w * 0.4, w * 0.4, 0.02, 10), MAT.archive, x, y + h * 0.08, z));
   }
   const board = mesh(new THREE.BoxGeometry(1.2, 0.78, 0.05), MAT.glass, 0.08, 1.12, 1.12);
   g.add(board);
   for (let i = 0; i < 5; i += 1) {
     g.add(mesh(new THREE.BoxGeometry(0.92, 0.035, 0.02), MAT.nav, 0.08, 1.38 - i * 0.11, 1.15));
   }
-  g.add(mesh(new THREE.BoxGeometry(0.18, 2.15, 0.18), MAT.iron, -0.55, 1.2, 0.15));
+  g.add(mesh(new THREE.CylinderGeometry(0.08, 0.09, 2.15, 8), MAT.iron, -0.55, 1.2, 0.15));
   const dish = mesh(new THREE.CylinderGeometry(0.48, 0.14, 0.2, 16, 1, true), MAT.rim, -0.55, 2.28, 0.15);
   g.add(dish);
   const pulse = mesh(new THREE.SphereGeometry(0.08, 8, 6), MAT.navWarm, -0.55, 2.4, 0.15);
