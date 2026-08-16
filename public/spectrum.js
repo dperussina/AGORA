@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "/vendor/OrbitControls.js";
-import { KNOWN, blockArtifact, blockForm, turretArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
+import { KNOWN, blockArtifact, blockForm, massForm, turretArtifact, wakeArtifact, wakeHasLoot } from "/artifacts.js";
 
 const SIZE = 64;
 const HALF = (SIZE - 1) / 2;
@@ -148,7 +148,7 @@ if (!(canvas instanceof HTMLCanvasElement) || stage === null) {
 
 const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !reduced, alpha: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.15));
+renderer.setPixelRatio(1);
 renderer.setClearColor(0x16101f, 1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -395,10 +395,13 @@ scene.add(wakes);
 
 const volumes = new THREE.Group();
 const relics = new THREE.Group();
+const mass = new THREE.Group();
 const gods = new THREE.Group();
 const wardens = new THREE.Group();
 const fields = new THREE.Group();
-scene.add(volumes, relics, gods, wardens, fields);
+scene.add(volumes, relics, mass, gods, wardens, fields);
+mass.matrixAutoUpdate = false;
+mass.updateMatrix();
 const FIELD_BALL = new THREE.SphereGeometry(2.6, 22, 16);
 const FIELD_MAT = {
   nexus: MAT.fieldNexus,
@@ -780,7 +783,7 @@ function tickFlights(now) {
   }
 }
 
-const LIT_KINDS = ["identity", "echo", "entity", "mark", "anchor", "drift"];
+const LIT_KINDS = ["identity", "echo", "anchor"];
 const LAMP_TINT = {
   identity: 0x00ffd4,
   echo: 0x6ec8e8,
@@ -793,7 +796,7 @@ const LAMP_TINT = {
   hollow: 0xff1a14,
   anchor: 0xffd4a0,
 };
-const LAMP_COUNT = 10;
+const LAMP_COUNT = 4;
 const lamps = Array.from({ length: LAMP_COUNT }, () => {
   const lamp = new THREE.PointLight(0xffd4a0, 0, 16, 2);
   lamp.castShadow = false;
@@ -824,7 +827,7 @@ function nightEnvironment() {
 }
 
 scene.environment = nightEnvironment();
-scene.environmentIntensity = 0.95;
+scene.environmentIntensity = 0.55;
 
 function hashUnit(seed, lane) {
   return unit(fnv(seed), lane);
@@ -987,6 +990,7 @@ const state = {
   selected: null,
   look: null,
   holdSeat: false,
+  cityGlow: [],
   onScreen: true,
   streamLive: false,
   dirty: true,
@@ -2675,8 +2679,102 @@ function buildVolumes() {
 
 const blockProtos = new Map();
 const turretProtos = new Map();
-const BLOCK_LIGHT_CAP = 24;
-const lightWorld = new THREE.Vector3();
+const MASS_CAP = 2048;
+const MASS_SKINS = {
+  hull: { color: 0x2a3238, roughness: 0.28, metalness: 0.82, emissive: 0x0c181c, emissiveIntensity: 0.18 },
+  hangar: { color: 0x161c22, roughness: 0.38, metalness: 0.7, emissive: 0x080c10, emissiveIntensity: 0.1 },
+  stone: { color: 0x8a7358, roughness: 0.82, metalness: 0.05, emissive: 0x000000, emissiveIntensity: 0 },
+  brick: { color: 0x8a4a38, roughness: 0.84, metalness: 0.04, emissive: 0x000000, emissiveIntensity: 0 },
+  wood: { color: 0x9a6234, roughness: 0.8, metalness: 0.04, emissive: 0x000000, emissiveIntensity: 0 },
+  ore: { color: 0xb8c0c8, roughness: 0.72, metalness: 0.22, emissive: 0x000000, emissiveIntensity: 0 },
+};
+const massBox = new THREE.BoxGeometry(1, 1, 1);
+const massMeshes = new Map();
+const massIndex = new Map();
+const massDummy = new THREE.Object3D();
+const CITY_LAMP_COUNT = 6;
+const cityLamps = Array.from({ length: CITY_LAMP_COUNT }, () => {
+  const lamp = new THREE.PointLight(0xffc878, 0, 11, 2);
+  lamp.castShadow = false;
+  scene.add(lamp);
+  return lamp;
+});
+const GLOW_KINDS = new Set(["gold", "gold-light", "lantern", "lamp", "hearth"]);
+
+function massMesh(key) {
+  let mesh = massMeshes.get(key);
+  if (mesh !== undefined) {
+    return mesh;
+  }
+  const spec = MASS_SKINS[key] ?? MASS_SKINS.stone;
+  mesh = new THREE.InstancedMesh(
+    massBox,
+    new THREE.MeshStandardMaterial({
+      color: spec.color,
+      roughness: spec.roughness,
+      metalness: spec.metalness,
+      emissive: spec.emissive,
+      emissiveIntensity: spec.emissiveIntensity,
+      envMapIntensity: 0.4,
+    }),
+    MASS_CAP,
+  );
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = true;
+  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 72);
+  mesh.count = 0;
+  mesh.userData.massKey = key;
+  mesh.matrixAutoUpdate = false;
+  mesh.updateMatrix();
+  mass.add(mesh);
+  massMeshes.set(key, mesh);
+  return mesh;
+}
+
+function writeMass(buckets) {
+  for (const key of massMeshes.keys()) {
+    if (!buckets.has(key)) {
+      const mesh = massMeshes.get(key);
+      mesh.count = 0;
+      massIndex.set(key, []);
+    }
+  }
+  for (const [key, rows] of buckets) {
+    const mesh = massMesh(key);
+    const n = Math.min(rows.length, MASS_CAP);
+    mesh.count = n;
+    const listed = [];
+    for (let i = 0; i < n; i += 1) {
+      const row = rows[i];
+      listed.push(row);
+      massDummy.position.copy(cell(row.position));
+      massDummy.position.y += 0.5;
+      massDummy.rotation.set(0, 0, 0);
+      massDummy.scale.set(1, 1, 1);
+      massDummy.updateMatrix();
+      mesh.setMatrixAt(i, massDummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    massIndex.set(key, listed);
+  }
+}
+
+function rememberGlow(row, color) {
+  if (row.position === undefined || row.position === null) {
+    return;
+  }
+  state.cityGlow.push({ world: cell(row.position), color });
+}
+
+function freezeStatic(root) {
+  root.traverse((node) => {
+    if (node.userData.motion || node.userData.worldOrbit) {
+      return;
+    }
+    node.updateMatrix();
+    node.matrixAutoUpdate = false;
+  });
+}
 
 function cachedBlock(kind) {
   const form = blockForm(kind);
@@ -2698,27 +2796,42 @@ function cachedTurret(kind) {
   return proto.clone();
 }
 
-function muteBlockLights() {
-  const kept = [];
-  const rest = [];
-  relics.updateMatrixWorld(true);
-  relics.traverse((node) => {
-    if (node.isPointLight) {
-      (node.userData.keepLit ? kept : rest).push(node);
-    }
-  });
-  for (const light of kept) {
-    light.visible = true;
+function glowTint(kind) {
+  const key = String(kind ?? "").toLowerCase();
+  const form = blockForm(kind);
+  if (form === "hearth" || form === "chimney" || key.includes("hearth") || key.includes("chimney")) {
+    return 0xff7a28;
   }
-  rest
-    .map((light) => {
-      light.getWorldPosition(lightWorld);
-      return { light, d: lightWorld.distanceToSquared(camera.position) };
-    })
-    .sort((a, b) => a.d - b.d)
-    .forEach((row, i) => {
-      row.light.visible = i < BLOCK_LIGHT_CAP;
-    });
+  if (form === "window" || key.endsWith("-window") || key.endsWith("-glass")) {
+    return 0xffe2a8;
+  }
+  if (
+    GLOW_KINDS.has(key) ||
+    GLOW_KINDS.has(form) ||
+    form.endsWith("-light") ||
+    form.endsWith("-lamp") ||
+    form.endsWith("-lantern")
+  ) {
+    return 0xffc878;
+  }
+  return 0;
+}
+
+function aimCityLamps() {
+  const ranked = state.cityGlow
+    .map((row) => ({ row, d: camera.position.distanceToSquared(row.world) }))
+    .sort((a, b) => a.d - b.d);
+  for (let i = 0; i < CITY_LAMP_COUNT; i += 1) {
+    const lamp = cityLamps[i];
+    const hit = ranked[i];
+    if (hit === undefined) {
+      lamp.intensity = 0;
+      continue;
+    }
+    lamp.position.copy(hit.row.world);
+    lamp.color.setHex(hit.row.color);
+    lamp.intensity = state.holdSeat ? 7 : 12;
+  }
 }
 
 const QUARTER = new THREE.Vector3(12, 9, 14);
@@ -2839,6 +2952,8 @@ function applySeatFromHash(force = false) {
 
 function buildRelics() {
   clearGroup(relics);
+  state.cityGlow = [];
+  const buckets = new Map();
   for (const row of listOf("mark")) {
     const node = placeForm("mark", row);
     if (node !== null) {
@@ -2866,16 +2981,32 @@ function buildRelics() {
       continue;
     }
     if (row.type === "block") {
+      const massKey = massForm(row.kindName);
+      if (massKey !== null) {
+        let listed = buckets.get(massKey);
+        if (listed === undefined) {
+          listed = [];
+          buckets.set(massKey, listed);
+        }
+        listed.push(row);
+        continue;
+      }
       const node = cachedBlock(row.kindName);
       node.position.copy(cell(row.position));
       tag(node, row);
+      freezeStatic(node);
       relics.add(node);
+      const tint = glowTint(row.kindName);
+      if (tint !== 0) {
+        rememberGlow(row, tint);
+      }
       continue;
     }
     if (row.type === "turret") {
       const node = cachedTurret(row.kindName);
       node.position.copy(cell(row.position));
       tag(node, row);
+      freezeStatic(node);
       relics.add(node);
       continue;
     }
@@ -2892,7 +3023,7 @@ function buildRelics() {
       relics.add(node);
     }
   }
-  muteBlockLights();
+  writeMass(buckets);
 }
 
 function buildGods() {
@@ -2920,7 +3051,7 @@ function buildGods() {
 
 function collectPicks() {
   state.picks = [];
-  for (const root of [volumes, relics, gods, wardens]) {
+  for (const root of [volumes, relics, gods, wardens, mass]) {
     for (const child of root.children) {
       state.picks.push(child);
     }
@@ -3338,12 +3469,25 @@ function pickFromEvent(event) {
   const ray = new THREE.Raycaster();
   ray.setFromCamera({ x, y }, camera);
   const hits = ray.intersectObjects(state.picks, true);
-  if (hits[0]?.object.userData.row) {
-    return hits[0].object.userData.row;
-  }
-  if (hits[0] === undefined) {
+  const hit = hits[0];
+  if (hit === undefined) {
     const planeHit = ray.intersectObject(plane, false)[0];
     return planeHit === undefined ? null : nearest(latticeOf(planeHit.point));
+  }
+  const massKey = hit.object.userData.massKey;
+  if (typeof massKey === "string" && typeof hit.instanceId === "number" && hit.instanceId >= 0) {
+    const listed = massIndex.get(massKey);
+    const row = listed?.[hit.instanceId];
+    if (row !== undefined) {
+      return row;
+    }
+  }
+  let node = hit.object;
+  while (node) {
+    if (node.userData.row) {
+      return node.userData.row;
+    }
+    node = node.parent;
   }
   return null;
 }
@@ -3769,13 +3913,13 @@ function aimLamps() {
     lamp.position.y += lift[hit.row.type] ?? lift[hit.row.kind] ?? 1.1;
     lamp.color.setHex(LAMP_TINT[hit.row.type] ?? LAMP_TINT[hit.row.kind] ?? 0xffd4a0);
     if (hit.row.type === "hollow") {
-      lamp.intensity = state.holdSeat ? 8 : 22;
+      lamp.intensity = state.holdSeat ? 6 : 14;
     } else if (hit.row.kind === "identity") {
-      lamp.intensity = state.holdSeat ? 22 : 320;
+      lamp.intensity = state.holdSeat ? 12 : 36;
     } else if (hit.row.kind === "anchor") {
-      lamp.intensity = state.holdSeat ? 16 : 140;
+      lamp.intensity = state.holdSeat ? 10 : 28;
     } else {
-      lamp.intensity = state.holdSeat ? 12 : 90;
+      lamp.intensity = state.holdSeat ? 8 : 18;
     }
   }
 }
@@ -3803,6 +3947,7 @@ function tick() {
     controls.update();
     cosmos.rotation.y += 0.00018;
     aimLamps();
+    aimCityLamps();
     for (const node of state.movers) {
         if (node.userData.worldOrbit && node.userData.row) {
           const seat = orbitSeat(node.userData.row.position, now);

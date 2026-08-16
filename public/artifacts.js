@@ -1331,46 +1331,36 @@ export function blockForm(kind) {
   return compound !== null ? compound.cache : "wall";
 }
 
-const BLOCK_LIGHTS = {
-  hearth: { color: 0xff7a28, intensity: 8, distance: 6, y: 0.42 },
-  lamp: { color: 0xffd089, intensity: 18, distance: 10, y: 1.06, keepLit: true },
-  lantern: { color: 0xffd089, intensity: 18, distance: 10, y: 1.06, keepLit: true },
-  chimney: { color: 0xff6a20, intensity: 6, distance: 5, y: 1.05 },
-  window: { color: 0xffe2a8, intensity: 10, distance: 7, y: 0.58 },
-  gold: { color: 0xffc878, intensity: 42, distance: 14, y: 0.58, keepLit: true },
-  "gold-light": { color: 0xffc878, intensity: 42, distance: 14, y: 0.58, keepLit: true },
-  glass: { color: 0x8ec8e0, intensity: 6, distance: 5, y: 0.5 },
-  airlock: { color: 0x8ec8e0, intensity: 6, distance: 5, y: 0.5 },
+const MASS_ALIAS = {
+  hull: "hull",
+  keep: "hull",
+  dock: "hull",
+  coil: "hull",
+  hangar: "hangar",
+  stone: "stone",
+  wall: "stone",
+  block: "stone",
+  cube: "stone",
+  box: "stone",
+  brick: "brick",
+  wood: "wood",
+  ore: "ore",
 };
 
-function lightBlock(group, form) {
-  const spec = BLOCK_LIGHTS[form];
-  if (!spec) {
-    return;
-  }
-  const light = carryLight(group, spec.color, spec.intensity, spec.distance, spec.y);
-  if (spec.keepLit) {
-    light.userData.keepLit = true;
-  }
+export function massForm(kind) {
+  return MASS_ALIAS[blockForm(kind)] ?? null;
 }
 
 export function blockArtifact(kind) {
   const key = typeof kind === "string" ? kind.toLowerCase() : "";
   if (key in BLOCK_BUILDERS) {
     const built = BLOCK_BUILDERS[key]();
-    const group = FACE_WALLS.has(key) ? built : sitOnCell(built);
-    lightBlock(group, key);
-    return group;
+    return FACE_WALLS.has(key) ? built : sitOnCell(built);
   }
   const compound = parseCompound(key);
   if (compound !== null) {
     const built = buildCompound(compound);
-    const group = compound.plate ? built : sitOnCell(built);
-    lightBlock(group, compound.lightKey ?? key);
-    if (compound.skin?.fill === MAT.gold && compound.plate) {
-      lightBlock(group, "gold");
-    }
-    return group;
+    return compound.plate ? built : sitOnCell(built);
   }
   return sitOnCell(wallBlock());
 }
@@ -1392,8 +1382,6 @@ export function turretArtifact(kind) {
   const glow = mesh(new THREE.SphereGeometry(0.07, 8, 6), coil ? MAT.ion : MAT.lamp, 0, 0.3, 0.7);
   glow.userData.motion = "pulse";
   g.add(glow);
-  const light = carryLight(g, coil ? 0x3ef0d4 : 0xffc878, 8, 5, 0.3);
-  light.userData.keepLit = true;
   return sitOnCell(g);
 }
 
