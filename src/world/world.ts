@@ -47,12 +47,14 @@ import { BIND_VOCABULARY, EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName, typ
 import {
   FOLLOW_FLOOR_IDS,
   WAKE_AGE,
+  DEFAULT_REACH,
   formatCell,
   heedLoot,
   normalizeStep,
   parseCellString,
   pickFollowFloor,
   signStep,
+  tooFarReason,
   wakeIsLive,
   wakeKind,
   wakeRate,
@@ -787,6 +789,10 @@ export class World {
     if (typeof args["target"] === "string" && args["target"].startsWith("echo:")) {
       return "echoes are observational";
     }
+    const reachBlocked = this.reachWouldFail(identityId, verb, args);
+    if (reachBlocked !== null) {
+      return reachBlocked;
+    }
     if (verb === "move") {
       const delta = asDelta(args["delta"]);
       if (delta === undefined) {
@@ -897,6 +903,14 @@ export class World {
     }
     const defined = this.clerk.registry.verbs[intent.verb];
     if (defined !== undefined && defined.effects.length > 0) {
+      const reachBlocked = this.reachWouldFail(intent.identityId, intent.verb, {
+        ...(intent.params ?? {}),
+        ...(intent.target === undefined ? {} : { target: intent.target }),
+      });
+      if (reachBlocked !== null) {
+        this.append(`act.${intent.verb}_failed`, intent.identityId, { reason: reachBlocked });
+        return;
+      }
       const targetEntity = intent.target === undefined ? undefined : this.entities.get(intent.target);
       const blocked = checkPreconditions(defined.preconditions ?? [], {
         inBounds: true,
@@ -2282,7 +2296,10 @@ export class World {
     if (path === undefined || path === "") {
       return { registry, storageNote };
     }
-    if (path.startsWith("params.")) {
+    if (path === "params" || path.startsWith("params.")) {
+      if (path === "params") {
+        return { path, params: registry.params, storageNote };
+      }
       const key = path.slice("params.".length);
       return { path, param: registry.params[key] ?? null, storageNote };
     }
@@ -2628,6 +2645,44 @@ export class World {
       this.entities.delete(wound.id);
       this.append("effect.destroy", "ARBITER", { id: wound.id, type: "wound" });
     }
+  }
+
+  private reachRadius(): number {
+    const bound = this.clerk.registry.params["reach"]?.value;
+    if (typeof bound === "number" && Number.isInteger(bound) && bound > 0) {
+      return bound;
+    }
+    return DEFAULT_REACH;
+  }
+
+  private reachWouldFail(identityId: string, verb: string, args: Record<string, unknown>): string | null {
+    if (verb !== "place" && verb !== "break" && verb !== "mount" && verb !== "settle") {
+      return null;
+    }
+    const dest = this.actReachCell(args);
+    if (dest === undefined) {
+      return null;
+    }
+    return tooFarReason(this.bodyOf(identityId), dest, this.reachRadius(), verb);
+  }
+
+  private actReachCell(args: Record<string, unknown>): Position | undefined {
+    const named = args["position"];
+    if (typeof named === "string") {
+      const cell = parseCellString(named);
+      if (cell !== null) {
+        return cell;
+      }
+    }
+    const vec = asDelta(named);
+    if (vec !== undefined) {
+      return vec;
+    }
+    const target = typeof args["target"] === "string" ? args["target"] : undefined;
+    if (target === undefined || this.identities.identities.has(target) || this.bodies.has(target)) {
+      return undefined;
+    }
+    return this.entityCell(target);
   }
 
   private definedVerbWouldFail(identityId: string, verb: string, args: Record<string, unknown>): string | null {

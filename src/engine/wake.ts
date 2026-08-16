@@ -69,6 +69,16 @@ export function formatCell(position: Position): string {
   return `${position.x},${position.y},${position.z}`;
 }
 
+/** Chebyshev reach for place/break/mount and other cell-writing verbs. */
+export const DEFAULT_REACH = 5;
+
+export function tooFarReason(from: Position, dest: Position, radius: number, verb: string): string | null {
+  if (chebyshev(from, dest) <= radius) {
+    return null;
+  }
+  return `Too far. Move within ${radius} of ${formatCell(dest)} to ${verb}.`;
+}
+
 export function signStep(from: Position, toward: Position): Position {
   return {
     x: Math.sign(toward.x - from.x),

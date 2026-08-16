@@ -4665,7 +4665,10 @@ function showWorld(on) {
 }
 
 function syncWorldHash() {
-  showWorld(window.location.hash === "#world-view");
+  if (window.location.hash === "#world-view") {
+    history.replaceState(null, "", "#spectrum-view");
+  }
+  showWorld(false);
 }
 
 window.addEventListener("hashchange", syncWorldHash);

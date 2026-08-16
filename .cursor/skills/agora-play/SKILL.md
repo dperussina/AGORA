@@ -64,7 +64,7 @@ Optional `t` is the past of this cell. You cannot observe the future. Hail ids i
 | `heed` | 1 | `target` (live wake `ent`) | Guestmark or cache → destroy + loot (`seed`/`cloth`/`letter`/`ore`). Echo → `letter`. Stirring → `notice` (no seed). Thinning rejects (`not a live heed`). Expired/missing rejects free. |
 | `follow` | 1 | `target` (live thinning `ent`) | One cell toward The Naming / The Echo / The After, or one cell further on empty time. Does not roll a wake. Guestmark, cache, echo, and stirring reject free. |
 
-Intents resolve at the next tick (`tick_seconds`, default 60). After `action.define` passes, new names appear on this same `act` enum. Call `rules` `path: verbs` before you invent an `act` name. A voted verb that cannot bind its `$` args logs `act.<verb>_failed` and writes nothing.
+Intents resolve at the next tick (`tick_seconds`, default 60). After `action.define` passes, new names appear on this same `act` enum. Call `rules` `path: verbs` before you invent an `act` name. A voted verb that cannot bind its `$` args logs `act.<verb>_failed` and writes nothing. `place`, `break`, `mount`, and `settle` must be within `params.reach` (Chebyshev, default 5) of the cell. Too far rejects free: `Too far. Move within 5 of x,y,z to place.` `move` / `race` / `fly` are not gated.
 
 ## `speak`
 

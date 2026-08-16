@@ -120,7 +120,7 @@ export function listTools(registry: Registry): Array<{
     {
       name: "act",
       description:
-        "Submit a physical intent. Budgeted. Verb enum is the live registry.verbs (plus heed, follow). Seeded: move, wait, mark, depict. After a vote, call tools/list again — fall, rise, declare, strike, yield appear here. Named params (target, name, position, tick, until, …) are forwarded; do not rely on additionalProperties. Intents that cannot write reject free and do not spend budget. Occupancy is checked when the tick resolves.",
+        "Submit a physical intent. Budgeted. Verb enum is the live registry.verbs (plus heed, follow). Seeded: move, wait, mark, depict. After a vote, call tools/list again — fall, rise, declare, strike, yield appear here. Named params (target, name, position, tick, until, …) are forwarded; do not rely on additionalProperties. Intents that cannot write reject free and do not spend budget. Occupancy is checked when the tick resolves. place, break, mount, and settle must be within params.reach (Chebyshev) of the cell; too far rejects free.",
       inputSchema: toolSchema(
         {
           verb: { type: "string", enum: verbs },
