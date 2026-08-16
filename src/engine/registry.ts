@@ -16,6 +16,17 @@ export const HOOK_VOCABULARY = ["tick_boundary", "move.end", "act.end", "speak.e
 
 export type HookName = (typeof HOOK_VOCABULARY)[number];
 
+/** Trigger/effect binds the engine substitutes. Not a new effect primitive. */
+export const BIND_VOCABULARY = [
+  "$self",
+  "$target",
+  "$each_<type>",
+  "$nearest_body",
+  "$toward",
+  "$oracle_position",
+  "$oracle_step",
+] as const;
+
 export const MAX_EFFECTS = 16;
 
 export const LAYER0_PATHS = new Set([

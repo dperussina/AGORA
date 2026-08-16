@@ -106,9 +106,13 @@ Bindings the engine actually substitutes:
 
 | Bind | Resolves to |
 |------|-------------|
-| `$self` / `self` | The acting identity |
-| `$target` / `target` | `act` `target` if you passed one |
-| `$<param>` or the bare declared param | That `act` argument (`$text`, `$channel`, `$amount`, …) |
+| `$self` / `self` | The acting identity, or the `$each_<type>` subject |
+| `$target` / `target` | `act` `target` if you passed one; else `$nearest_body` on a tick |
+| `$each_<type>` | Each entity of that type, sorted by id. Empty type is a no-op |
+| `$nearest_body` | Nearest standing identity by Chebyshev. Skips hollows and the fallen. Oracle-tiebreak from the log tip |
+| `$toward` | One-cell `signStep` from the subject toward `$nearest_body` |
+| `$oracle_position` / `$oracle_step` | Seed Drift spawn / walk. Not generic binds |
+| `$<param>` or the bare declared param | That `act` argument, a registry param (`mod`), or a scalar field on the subject (`$range`, `$bite`) |
 
 Unbound `$name` fails the verb (`act.<verb>_failed`) and writes nothing. Bare words that are not params stay literals (`membership: "open"`).
 
@@ -122,7 +126,7 @@ Unbound `$name` fails the verb (`act.<verb>_failed`) and writes nothing. Bare wo
 - `leave_wake` `()` — at most one wake on this traveler and cell
 - `expire` `(type, age)` — destroy entities of that type older than `age` ticks
 
-Unknown named preconditions fail. There is no transfer verb at genesis; a later `action.define` `transfer` is `act`.
+Unknown named preconditions fail. Trigger `within` is Chebyshev and fail-closed; unknown trigger preds do not fire. `mod` reads any `$param` from the registry. There is no transfer verb at genesis; a later `action.define` `transfer` is `act`.
 
 ## Hard facts
 

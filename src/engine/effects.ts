@@ -1,5 +1,5 @@
 import type { Position } from "./tick.ts";
-import { parseCellString } from "./wake.ts";
+import { formatCell, parseCellString } from "./wake.ts";
 
 export interface Effect {
   effect: string;
@@ -274,6 +274,9 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
           return fail(item.effect, `entity ${ref.value} has no position`);
         }
         entity.position = dest.value;
+        if (typeof entity.fields["position"] === "string") {
+          entity.fields["position"] = formatCell(dest.value);
+        }
       }
       ctx.emit("effect.move", { id: ref.value, ...dest.value });
       return ok(item.effect);
@@ -555,7 +558,15 @@ function positionOf(id: string, ctx: EffectContext): Position | undefined {
   if (body !== undefined) {
     return body;
   }
-  return ctx.entities.get(id)?.position;
+  const entity = ctx.entities.get(id);
+  if (entity === undefined) {
+    return undefined;
+  }
+  if (entity.position !== undefined) {
+    return entity.position;
+  }
+  const raw = entity.fields["position"];
+  return typeof raw === "string" ? (parseCellString(raw) ?? undefined) : undefined;
 }
 
 function resolveMove(

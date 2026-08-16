@@ -43,7 +43,7 @@ import {
   thisWarWounds,
 } from "../engine/combat.ts";
 import { runEffects, type EffectContext, type Entity } from "../engine/effects.ts";
-import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName, type Registry } from "../engine/registry.ts";
+import { BIND_VOCABULARY, EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName, type Registry } from "../engine/registry.ts";
 import {
   FOLLOW_FLOOR_IDS,
   WAKE_AGE,
@@ -1542,10 +1542,97 @@ export class World {
       if (id === "beast_bite") {
         continue;
       }
-      const forwarded = {
-        self: selfId,
+      const effects = trigger.effects as Array<{ effect: string; args: unknown[] }>;
+      const seedEffects = effects.filter((effect) => isSeedDriftEffect(when, effect));
+      const genericEffects = effects.filter((effect) => !isSeedDriftEffect(when, effect));
+      const hookBound = this.bindAutomaton(selfId, tick, ctx, at, classified);
+      if (seedEffects.length > 0 && triggerMatches(trigger.condition, tick, this.clerk.registry, hookBound.params)) {
+        for (const effect of seedEffects) {
+          if (effect.effect === "create") {
+            this.spawnDrift();
+          } else {
+            this.walkDrifts();
+          }
+        }
+      }
+      if (genericEffects.length === 0) {
+        continue;
+      }
+      const eachType = eachTypeIn(genericEffects);
+      const subjects = eachType === undefined ? [selfId] : this.entitiesOfType(eachType);
+      if (eachType !== undefined && subjects.length === 0) {
+        continue;
+      }
+      for (const subject of subjects) {
+        const bound = this.bindAutomaton(subject, tick, ctx, at, classified);
+        if (!triggerMatches(trigger.condition, tick, this.clerk.registry, bound.params)) {
+          continue;
+        }
+        const actor =
+          subject === "ARBITER" || this.identities.identities.has(subject) ? subject : "ARBITER";
+        for (const effect of genericEffects) {
+          const rewritten = rewriteEach(effect, subject);
+          const runtime = this.bindEffects(subject, {
+            targetId: bound.targetId,
+            params: bound.params,
+            emit: (name, payload) => {
+              this.append(name, actor, { ...payload, triggerId: id });
+            },
+            leaveWake: () => this.leaveWake(subject),
+            expire: (type, age) => this.expireEntities(type, age),
+          });
+          const reports = runEffects([rewritten], runtime.ctx);
+          if (reports.every((item) => item.ok)) {
+            runtime.commitSeq();
+          }
+          if (effect.effect === "transfer" || effect.effect === "set_field") {
+            this.append(`effect.${effect.effect}`, "ARBITER", { triggerId: id });
+          }
+        }
+      }
+    }
+  }
+
+  private bindAutomaton(
+    subjectId: string,
+    tick: number,
+    ctx:
+      | {
+          from?: Position;
+          verb?: string;
+          targetId?: string;
+          params?: Record<string, string | number | boolean | null>;
+        }
+      | undefined,
+    hookAt: Position | undefined,
+    hookClassified: { cellClass: CellClass; anchorClass: string | null } | undefined,
+  ): { targetId?: string; params: Record<string, string | number | boolean | null> } {
+    const cell = this.entityCell(subjectId) ?? hookAt;
+    const classified = cell === undefined ? hookClassified : this.classifyCell(cell);
+    const nearest = this.nearestBodyId(subjectId, cell, tick);
+    const nearestAt = nearest === undefined ? undefined : this.bodies.get(nearest);
+    const toward =
+      cell !== undefined && nearestAt !== undefined ? formatCell(signStep(cell, nearestAt)) : undefined;
+    const scalars: Record<string, string | number | boolean | null> = {};
+    const entity = this.entities.get(subjectId);
+    if (entity !== undefined) {
+      for (const [key, value] of Object.entries(entity.fields)) {
+        if (key !== "position") {
+          scalars[key] = value;
+        }
+      }
+    }
+    return {
+      targetId: ctx?.targetId ?? nearest,
+      params: {
+        ...scalars,
+        self: subjectId,
+        tick,
+        ...(cell === undefined ? {} : { position: formatCell(cell) }),
+        ...(nearest === undefined ? {} : { nearest_body: nearest }),
+        ...(nearestAt === undefined ? {} : { nearest_at: formatCell(nearestAt) }),
+        ...(toward === undefined ? {} : { toward }),
         ...(ctx?.verb === undefined ? {} : { verb: ctx.verb }),
-        ...(at === undefined ? {} : { position: formatCell(at) }),
         ...(ctx?.from === undefined ? {} : { from: formatCell(ctx.from) }),
         ...(classified === undefined
           ? {}
@@ -1554,37 +1641,61 @@ export class World {
               ...(classified.anchorClass === null ? {} : { anchor_class: classified.anchorClass }),
             }),
         ...(ctx?.params ?? {}),
-      };
-      if (!triggerMatches(trigger.condition, tick, this.clerk.registry, forwarded)) {
+      },
+    };
+  }
+
+  private entityCell(id: string): Position | undefined {
+    const body = this.bodies.get(id);
+    if (body !== undefined) {
+      return body;
+    }
+    const entity = this.entities.get(id);
+    if (entity === undefined) {
+      return undefined;
+    }
+    if (entity.position !== undefined) {
+      return entity.position;
+    }
+    const raw = entity.fields["position"];
+    return typeof raw === "string" ? (parseCellString(raw) ?? undefined) : undefined;
+  }
+
+  private entitiesOfType(type: string): string[] {
+    return [...this.entities.values()]
+      .filter((entity) => entity.type === type)
+      .map((entity) => entity.id)
+      .sort((a, b) => (a < b ? -1 : 1));
+  }
+
+  private nearestBodyId(subjectId: string, from: Position | undefined, tick: number): string | undefined {
+    if (from === undefined) {
+      return undefined;
+    }
+    const candidates: Array<{ id: string; distance: number }> = [];
+    for (const [id, body] of this.bodies) {
+      if (id === subjectId) {
         continue;
       }
-      for (const effect of trigger.effects as Array<{ effect: string; args: unknown[] }>) {
-        if (when === "tick_boundary" && effect.effect === "create" && effect.args[0] === "drift") {
-          this.spawnDrift();
-          continue;
-        }
-        if (when === "tick_boundary" && effect.effect === "move" && effect.args[0] === "$each_drift") {
-          this.walkDrifts();
-          continue;
-        }
-        const runtime = this.bindEffects(selfId, {
-          targetId: ctx?.targetId,
-          params: forwarded,
-          emit: (name, payload) => {
-            this.append(name, selfId === "ARBITER" ? "ARBITER" : selfId, { ...payload, triggerId: id });
-          },
-          leaveWake: () => this.leaveWake(selfId),
-          expire: (type, age) => this.expireEntities(type, age),
-        });
-        const reports = runEffects([effect], runtime.ctx);
-        if (reports.every((item) => item.ok)) {
-          runtime.commitSeq();
-        }
-        if (effect.effect === "transfer" || effect.effect === "set_field") {
-          this.append(`effect.${effect.effect}`, "ARBITER", { triggerId: id });
-        }
+      if (this.anchorAt(body)?.class === "hollow") {
+        continue;
       }
+      if (this.isFallenHolder(id)) {
+        continue;
+      }
+      candidates.push({ id, distance: chebyshev(from, body) });
     }
+    if (candidates.length === 0) {
+      return undefined;
+    }
+    const nearest = Math.min(...candidates.map((item) => item.distance));
+    const tied = candidates
+      .filter((item) => item.distance === nearest)
+      .map((item) => item.id)
+      .sort((a, b) => (a < b ? -1 : 1));
+    const tip = this.log.tip()?.hash ?? GENESIS_SEED;
+    const oracle = new Oracle(`${tip}:nearest:${subjectId}:${formatCell(from)}:${tick}`);
+    return tied[oracle.int(tied.length)];
   }
 
   private classifyCell(position: Position): { cellClass: CellClass; anchorClass: string | null } {
@@ -2191,6 +2302,7 @@ export class World {
       return {
         path,
         hooks: [...HOOK_VOCABULARY],
+        binds: [...BIND_VOCABULARY],
         effects: [...EFFECT_VOCABULARY],
         triggers: registry.triggers,
         storageNote,
@@ -3086,6 +3198,72 @@ function parseInspectCell(target: string): Position | null {
   return { x, y, z };
 }
 
+function isSeedDriftEffect(when: HookName, effect: { effect: string; args: unknown[] }): boolean {
+  if (when !== "tick_boundary") {
+    return false;
+  }
+  if (effect.effect === "create" && effect.args[0] === "drift" && effect.args[1] === "$oracle_position") {
+    return true;
+  }
+  return effect.effect === "move" && effect.args[0] === "$each_drift" && effect.args[1] === "$oracle_step";
+}
+
+function eachTypeIn(effects: Array<{ args: unknown[] }>): string | undefined {
+  for (const effect of effects) {
+    const found = findEachType(effect.args);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+function findEachType(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const match = /^\$each_(\w+)$/.exec(value);
+    return match?.[1];
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findEachType(item);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      const found = findEachType(item);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+  }
+  return undefined;
+}
+
+function rewriteEach(effect: { effect: string; args: unknown[] }, subjectId: string): { effect: string; args: unknown[] } {
+  return { effect: effect.effect, args: rewriteEachValue(effect.args, subjectId) as unknown[] };
+}
+
+function rewriteEachValue(value: unknown, subjectId: string): unknown {
+  if (typeof value === "string") {
+    return /^\$each_\w+$/.test(value) ? subjectId : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => rewriteEachValue(item, subjectId));
+  }
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = rewriteEachValue(item, subjectId);
+    }
+    return out;
+  }
+  return value;
+}
+
 function triggerMatches(
   condition: unknown,
   tick: number,
@@ -3100,17 +3278,81 @@ function triggerMatches(
   }
   const row = condition as { pred?: unknown; args?: unknown[] };
   if (row.pred === "mod" && Array.isArray(row.args)) {
-    const raw = row.args[1];
-    const divisor = raw === "$drift_spawn_interval"
-      ? (registry.params["drift_spawn_interval"]?.value ?? 25)
-      : Number(raw);
+    const divisor = modDivisor(row.args[1], registry);
     const remainder = Number(row.args[2]);
-    return Number.isInteger(divisor) && divisor > 0 && tick % divisor === remainder;
+    return Number.isInteger(divisor) && divisor > 0 && Number.isInteger(remainder) && tick % divisor === remainder;
   }
   if (row.pred === "eq" && Array.isArray(row.args)) {
     return conditionArg(row.args[0], params) === conditionArg(row.args[1], params);
   }
-  return true;
+  if (row.pred === "within" && Array.isArray(row.args)) {
+    const a = triggerCell(row.args[0], params);
+    const b = triggerCell(row.args[1], params);
+    const radius = triggerNumber(row.args[2], params);
+    if (a === undefined || b === undefined || !Number.isInteger(radius) || radius < 0) {
+      return false;
+    }
+    return chebyshev(a, b) <= radius;
+  }
+  return false;
+}
+
+function modDivisor(raw: unknown, registry: { params: Record<string, { value: number } | undefined> }): number {
+  if (typeof raw === "number") {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.startsWith("$")) {
+    const name = raw.slice(1);
+    const bound = registry.params[name]?.value;
+    if (typeof bound === "number" && Number.isInteger(bound)) {
+      return bound;
+    }
+    return name === "drift_spawn_interval" ? 25 : Number.NaN;
+  }
+  return Number(raw);
+}
+
+function triggerCell(
+  raw: unknown,
+  params?: Record<string, string | number | boolean | null>,
+): Position | undefined {
+  if (typeof raw === "string") {
+    if (raw === "$self" || raw === "$position") {
+      return parseBoundCell(params?.["position"]);
+    }
+    if (raw === "$nearest_body" || raw === "$nearest_at" || raw === "$target") {
+      return parseBoundCell(params?.["nearest_at"]);
+    }
+    const bound = conditionArg(raw, params);
+    if (typeof bound === "string") {
+      return parseBoundCell(bound);
+    }
+  }
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const row = raw as { x?: unknown; y?: unknown; z?: unknown };
+    if (Number.isInteger(row.x) && Number.isInteger(row.y) && Number.isInteger(row.z)) {
+      return { x: row.x as number, y: row.y as number, z: row.z as number };
+    }
+  }
+  return undefined;
+}
+
+function triggerNumber(raw: unknown, params?: Record<string, string | number | boolean | null>): number {
+  if (typeof raw === "number") {
+    return raw;
+  }
+  const bound = conditionArg(raw, params);
+  if (typeof bound === "number") {
+    return bound;
+  }
+  if (typeof bound === "string" && /^-?\d+$/.test(bound)) {
+    return Number(bound);
+  }
+  return Number(raw);
+}
+
+function parseBoundCell(value: unknown): Position | undefined {
+  return typeof value === "string" ? (parseCellString(value) ?? undefined) : undefined;
 }
 
 function conditionArg(value: unknown, params?: Record<string, string | number | boolean | null>): string | number | boolean | null | undefined {
