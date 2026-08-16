@@ -232,36 +232,39 @@ export function cityArtifact() {
   landingPad(g, -1.85, -1.35, 0.82);
   landingPad(g, 1.85, -1.35, 0.82);
   g.add(mesh(new THREE.BoxGeometry(4.4, 0.06, 0.55), MAT.hull, 0, 0.08, 1.55));
-  g.add(mesh(new THREE.BoxGeometry(3.6, 0.85, 1.15), MAT.hull, 0, 0.52, 2.35));
+  const hangar = mesh(new THREE.CylinderGeometry(0.62, 0.62, 3.4, 18, 1, false, 0, Math.PI), MAT.hull, 0, 0.52, 2.35);
+  hangar.rotation.z = Math.PI / 2;
+  g.add(hangar);
   g.add(mesh(new THREE.BoxGeometry(3.2, 0.22, 0.18), MAT.glass, 0, 0.72, 2.78));
   g.add(mesh(new THREE.BoxGeometry(2.4, 0.16, 0.16), MAT.navWarm, 0, 0.58, 2.78));
-  g.add(mesh(new THREE.BoxGeometry(0.42, 2.85, 0.42), MAT.hull, 1.55, 1.55, 2.45));
+  g.add(mesh(new THREE.CylinderGeometry(0.2, 0.24, 2.85, 10), MAT.hull, 1.55, 1.55, 2.45));
   g.add(mesh(new THREE.CylinderGeometry(0.55, 0.38, 0.38, 8), MAT.glass, 1.55, 3.12, 2.45));
-  g.add(mesh(new THREE.BoxGeometry(0.95, 0.12, 0.7), MAT.pad, 1.55, 3.38, 2.45));
+  g.add(mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.1, 12), MAT.pad, 1.55, 3.38, 2.45));
   const beacon = mesh(new THREE.SphereGeometry(0.12, 10, 8), MAT.nav, 1.55, 3.55, 2.45);
   beacon.userData.motion = "pulse";
   g.add(beacon);
-  g.add(mesh(new THREE.BoxGeometry(1.7, 1.35, 1.4), MAT.hull, -2.55, 0.75, 0.1));
+  g.add(mesh(new THREE.CylinderGeometry(0.72, 0.82, 1.35, 12), MAT.hull, -2.55, 0.75, 0.1));
   g.add(mesh(new THREE.BoxGeometry(1.2, 0.55, 0.08), MAT.glass, -2.55, 0.85, 0.82));
-  g.add(mesh(new THREE.BoxGeometry(1.55, 0.12, 1.25), MAT.slate, -2.55, 1.46, 0.1));
-  g.add(mesh(new THREE.BoxGeometry(1.7, 1.15, 1.4), MAT.hull, 2.55, 0.65, 0.1));
+  g.add(mesh(new THREE.CylinderGeometry(0.68, 0.68, 0.1, 12), MAT.slate, -2.55, 1.46, 0.1));
+  g.add(mesh(new THREE.CylinderGeometry(0.7, 0.78, 1.15, 12), MAT.hull, 2.55, 0.65, 0.1));
   g.add(mesh(new THREE.BoxGeometry(1.2, 0.42, 0.08), MAT.slate, 2.55, 0.7, 0.82));
-  g.add(mesh(new THREE.BoxGeometry(0.55, 1.85, 0.55), MAT.hull, 2.15, 1.55, 0.35));
+  g.add(mesh(new THREE.CylinderGeometry(0.22, 0.26, 1.85, 10), MAT.hull, 2.15, 1.55, 0.35));
   g.add(mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.12, 10), MAT.navWarm, 2.15, 2.52, 0.35));
   for (const side of [-1, 1]) {
-    const arm = mesh(new THREE.BoxGeometry(1.35, 0.08, 0.08), MAT.rim, side * 1.15, 0.85, -1.35);
+    const arm = mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.35, 8), MAT.rim, side * 1.15, 0.85, -1.35);
+    arm.rotation.z = Math.PI / 2;
     g.add(arm);
-    g.add(mesh(new THREE.BoxGeometry(0.1, 0.55, 0.1), MAT.hull, side * 1.85, 0.55, -1.35));
-    g.add(mesh(new THREE.BoxGeometry(0.18, 0.08, 0.18), MAT.nav, side * 0.55, 0.85, -1.35));
+    g.add(mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.55, 8), MAT.hull, side * 1.85, 0.55, -1.35));
+    g.add(mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), MAT.nav, side * 0.55, 0.85, -1.35));
   }
   for (let i = 0; i < 6; i += 1) {
     const z = -2.15 - i * 0.32;
-    g.add(mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), i % 2 === 0 ? MAT.nav : MAT.navWarm, -0.55, 0.2, z));
-    g.add(mesh(new THREE.BoxGeometry(0.08, 0.22, 0.08), i % 2 === 0 ? MAT.navWarm : MAT.nav, 0.55, 0.2, z));
+    g.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 8), i % 2 === 0 ? MAT.nav : MAT.navWarm, -0.55, 0.2, z));
+    g.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.22, 8), i % 2 === 0 ? MAT.navWarm : MAT.nav, 0.55, 0.2, z));
   }
   for (let i = 0; i < 8; i += 1) {
     const a = (i / 8) * Math.PI * 2 + 0.2;
-    const pole = mesh(new THREE.BoxGeometry(0.07, 0.85, 0.07), MAT.hull);
+    const pole = mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.85, 8), MAT.hull);
     pole.position.set(Math.cos(a) * 3.35, 0.48, Math.sin(a) * 3.35);
     g.add(pole);
     const lamp = mesh(new THREE.SphereGeometry(0.08, 8, 6), i % 2 === 0 ? MAT.navWarm : MAT.nav);
