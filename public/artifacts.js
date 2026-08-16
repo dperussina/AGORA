@@ -1006,31 +1006,35 @@ export function beastArtifact() {
   const body = new THREE.Group();
   body.userData.motion = "writhe";
   body.userData.phase = 0.4;
-  const base = mesh(new THREE.TorusGeometry(0.38, 0.14, 8, 22), MAT.hide, 0, 0.16, 0);
-  base.rotation.x = Math.PI / 2;
-  body.add(base);
-  const mid = mesh(new THREE.TorusGeometry(0.26, 0.12, 8, 18), MAT.hide, 0.1, 0.34, 0.08);
-  mid.rotation.x = 0.95;
-  mid.rotation.z = 0.35;
-  body.add(mid);
-  const neck = mesh(new THREE.TorusGeometry(0.16, 0.1, 8, 16), MAT.hide, 0.22, 0.52, 0.16);
-  neck.rotation.x = 1.15;
-  body.add(neck);
+  const trunk = mesh(
+    lathe(
+      [
+        [0.05, 0],
+        [0.18, 0.08],
+        [0.3, 0.22],
+        [0.32, 0.42],
+        [0.24, 0.64],
+        [0.12, 0.82],
+        [0.04, 0.92],
+      ],
+      12,
+    ),
+    MAT.hide,
+  );
+  trunk.rotation.z = Math.PI / 2;
+  trunk.position.set(-0.18, 0.22, 0);
+  body.add(trunk);
+  body.add(mesh(new THREE.BoxGeometry(0.38, 0.07, 0.2), MAT.iron, -0.06, 0.4, 0));
   g.add(body);
-  g.add(mesh(new THREE.SphereGeometry(0.2, 12, 10), MAT.hide, 0.3, 0.68, 0.28));
-  const jaw = mesh(new THREE.ConeGeometry(0.13, 0.24, 7, 1, true), MAT.secret, 0.38, 0.64, 0.44);
+  g.add(mesh(new THREE.SphereGeometry(0.16, 10, 8), MAT.hide, 0.36, 0.3, 0.04));
+  const jaw = mesh(new THREE.ConeGeometry(0.11, 0.2, 6, 1, true), MAT.secret, 0.5, 0.26, 0.16);
   jaw.rotation.x = Math.PI / 2;
   g.add(jaw);
-  g.add(mesh(new THREE.ConeGeometry(0.06, 0.1, 5), MAT.hide, 0.22, 0.82, 0.22));
-  g.add(mesh(new THREE.ConeGeometry(0.05, 0.08, 5), MAT.hide, 0.36, 0.8, 0.2));
   for (const side of [-1, 1]) {
-    const eye = mesh(new THREE.SphereGeometry(0.05, 8, 6), MAT.ember, 0.3 + side * 0.09, 0.76, 0.38);
+    const eye = mesh(new THREE.SphereGeometry(0.04, 8, 6), MAT.ember, 0.4, 0.4, side * 0.09);
     eye.userData.motion = "pulse";
     g.add(eye);
   }
-  const coal = mesh(new THREE.SphereGeometry(0.06, 8, 6), MAT.ember, 0.36, 0.62, 0.34);
-  coal.userData.motion = "pulse";
-  g.add(coal);
   return sitOnCell(g);
 }
 
