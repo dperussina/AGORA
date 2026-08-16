@@ -310,7 +310,21 @@ export function cairnArtifact() {
 
 export function vantageArtifact() {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.CylinderGeometry(1.12, 1.22, 0.28, 24), MAT.hull, 0, 0, 0));
+  g.add(
+    mesh(
+      lathe(
+        [
+          [0.22, -0.1],
+          [0.92, -0.04],
+          [1.2, 0.04],
+          [1.08, 0.14],
+          [0.52, 0.16],
+        ],
+        24,
+      ),
+      MAT.hull,
+    ),
+  );
   g.add(mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.08, 24), MAT.pad, 0, 0.16, 0));
   const bay = mesh(new THREE.RingGeometry(0.2, 0.4, 24), MAT.nav, 0, 0.22, 0);
   bay.rotation.x = -Math.PI / 2;
@@ -323,11 +337,12 @@ export function vantageArtifact() {
   ring.userData.motion = "orbit";
   g.add(ring);
   for (const side of [-1, 1]) {
-    const wing = mesh(new THREE.BoxGeometry(1.95, 0.06, 0.78), MAT.pad, side * 1.9, -0.02, 0);
+    const wing = mesh(new THREE.CylinderGeometry(0.36, 0.4, 1.9, 12), MAT.pad, side * 1.9, -0.02, 0);
+    wing.rotation.z = Math.PI / 2;
     wing.userData.motion = "gimbal";
     g.add(wing);
-    g.add(mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), MAT.nav, side * 1.08, 0.12, 0));
-    g.add(mesh(new THREE.BoxGeometry(0.08, 0.42, 0.08), MAT.hull, side * 0.55, -0.38, 0.18));
+    g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.08, 8), MAT.nav, side * 1.08, 0.12, 0));
+    g.add(mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.42, 8), MAT.hull, side * 0.55, -0.38, 0.18));
   }
   const bloom = mesh(new THREE.SphereGeometry(0.42, 14, 10), MAT.watchBeam, 0, 0.08, 0);
   g.add(bloom);
