@@ -67,6 +67,21 @@ export function foldWorld(events: readonly Event[]): WorldView {
         bodies[actor] = { x, y, z };
       }
     }
+    if (event.type === "effect.move") {
+      const id = typeof event.payload["id"] === "string" ? event.payload["id"] : "";
+      const x = event.payload["x"];
+      const y = event.payload["y"];
+      const z = event.payload["z"];
+      if (id !== "" && typeof x === "number" && typeof y === "number" && typeof z === "number") {
+        if (identitySet.has(id) || bodies[id] !== undefined) {
+          bodies[id] = { x, y, z };
+        }
+        const entity = entities[id];
+        if (entity !== undefined) {
+          entity.position = { x, y, z };
+        }
+      }
+    }
     if (event.type === "effect.create" && typeof event.payload["id"] === "string") {
       const id = event.payload["id"];
       entitySeq = Math.max(entitySeq, entityNumber(id));
@@ -220,6 +235,17 @@ export function occupancyAtTick(
       const z = event.payload["z"];
       if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
         bodies[actor] = { x, y, z };
+      }
+    }
+    if (event.type === "effect.move") {
+      const id = typeof event.payload["id"] === "string" ? event.payload["id"] : actor;
+      const x = event.payload["x"];
+      const y = event.payload["y"];
+      const z = event.payload["z"];
+      if (id !== undefined && id !== "" && typeof x === "number" && typeof y === "number" && typeof z === "number") {
+        if (bodies[id] !== undefined || id === actor) {
+          bodies[id] = { x, y, z };
+        }
       }
     }
   }

@@ -43,7 +43,7 @@ import {
   thisWarWounds,
 } from "../engine/combat.ts";
 import { runEffects, type EffectContext, type Entity } from "../engine/effects.ts";
-import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName } from "../engine/registry.ts";
+import { EFFECT_VOCABULARY, HOOK_VOCABULARY, type HookName, type Registry } from "../engine/registry.ts";
 import {
   FOLLOW_FLOOR_IDS,
   WAKE_AGE,
@@ -924,6 +924,7 @@ export class World {
           this.witness(intent.identityId, name === "effect.destroy" ? "notoriety" : "fame");
         },
       });
+      const from = this.bodyOf(intent.identityId);
       const reports = runEffects(defined.effects as Array<{ effect: string; args: unknown[] }>, runtime.ctx);
       const failed = reports.find((item) => !item.ok);
       if (failed !== undefined) {
@@ -935,6 +936,11 @@ export class World {
         return;
       }
       runtime.commitSeq();
+      const landed = this.bodies.get(intent.identityId);
+      if (landed !== undefined && cellKey(from) !== cellKey(landed)) {
+        this.rememberStep(intent.identityId, from, landed);
+        this.fireTriggers("move.end", { selfId: intent.identityId, from });
+      }
       this.append(`act.${intent.verb}`, intent.identityId, {
         identityId: intent.identityId,
         verb: intent.verb,
@@ -2531,6 +2537,8 @@ export class World {
       }),
       fields,
       entities,
+      bodies: new Map(this.bodies),
+      boundReason: (at) => cellBoundReason(at, this.clerk.registry),
       emit: () => undefined,
       nextId: () => "ent:dry",
       peekCurrency: (id) => this.clerk.identities.get(id)?.currency,
@@ -2542,7 +2550,12 @@ export class World {
       return null;
     }
     const reason = failed.reason ?? "effect failed";
-    if (reason.startsWith("unbound") || reason.includes("position must") || reason === "create requires a type") {
+    if (
+      reason.startsWith("unbound") ||
+      reason.includes("position must") ||
+      reason.includes("out of bounds") ||
+      reason === "create requires a type"
+    ) {
       return reason;
     }
     return null;
@@ -2899,6 +2912,9 @@ export class World {
       selfId,
       fields: this.fields,
       entities: this.entities,
+      bodies: this.bodies,
+      occupied: (at, except) => this.occupied(at, except),
+      boundReason: (at) => cellBoundReason(at, this.clerk.registry),
       emit: () => undefined,
       ...extras,
       nextId: () => this.mintEntityId(),
@@ -2970,8 +2986,14 @@ export class World {
       if (actor === undefined) {
         continue;
       }
-      if (event.type !== "identity.spawn" && event.type !== "act.move") {
+      if (event.type !== "identity.spawn" && event.type !== "act.move" && event.type !== "effect.move") {
         continue;
+      }
+      if (event.type === "effect.move") {
+        const moved = event.payload["id"];
+        if (moved !== actor) {
+          continue;
+        }
       }
       const x = event.payload["x"];
       const y = event.payload["y"];
@@ -2992,13 +3014,22 @@ export class World {
 
 const ACT_RESERVED = new Set(["verb", "delta", "sessionToken", "inputResponses", "requestState"]);
 
+function collectArg(value: unknown): string | number | boolean | undefined {
+  const scalar = scalarArg(value);
+  if (scalar !== undefined) {
+    return scalar;
+  }
+  const vec = asDelta(value);
+  return vec === undefined ? undefined : formatCell(vec);
+}
+
 function collectVerbParams(
   declared: Record<string, string>,
   args: Record<string, unknown>,
 ): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
   for (const key of Object.keys(declared).sort()) {
-    const value = scalarArg(args[key]);
+    const value = collectArg(args[key]);
     if (value !== undefined) {
       out[key] = value;
     }
@@ -3007,12 +3038,22 @@ function collectVerbParams(
     if (ACT_RESERVED.has(key) || out[key] !== undefined) {
       continue;
     }
-    const value = scalarArg(args[key]);
+    const value = collectArg(args[key]);
     if (value !== undefined) {
       out[key] = value;
     }
   }
   return out;
+}
+
+function cellBoundReason(at: Position, registry: Registry): string | null {
+  for (const name of ["x", "y", "z"] as const) {
+    const size = axisSize(registry, name);
+    if (at[name] < 0 || at[name] >= size) {
+      return `${name} out of bounds`;
+    }
+  }
+  return null;
 }
 
 function effectParams(intent: {

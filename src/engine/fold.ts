@@ -27,13 +27,14 @@ export function fold(state: FoldState, event: Event): FoldState {
   if (event.type === "amendment.reverted") {
     next.rulesetVersion = Math.max(0, state.rulesetVersion - 1);
   }
-  if (event.type === "act.move" || event.type === "identity.spawn") {
+  if (event.type === "act.move" || event.type === "identity.spawn" || event.type === "effect.move") {
     const actor = event.actor.startsWith("identity:") ? event.actor.slice("identity:".length) : "";
+    const id = event.type === "effect.move" && typeof event.payload["id"] === "string" ? event.payload["id"] : actor;
     const x = event.payload["x"];
     const y = event.payload["y"];
     const z = event.payload["z"];
-    if (actor !== "" && typeof x === "number" && typeof y === "number" && typeof z === "number") {
-      next.mutable[`pos:${actor}`] = `${x},${y},${z}`;
+    if (id !== "" && typeof x === "number" && typeof y === "number" && typeof z === "number") {
+      next.mutable[`pos:${id}`] = `${x},${y},${z}`;
     }
   }
   if (event.type === "act.mark") {

@@ -29,6 +29,10 @@ export interface EffectContext {
   applyCurrency?: (balances: Map<string, number>) => void;
   leaveWake?: () => void;
   expire?: (type: string, age: number) => void;
+  /** Identity cells live on bodies, not entities. */
+  bodies?: Map<string, Position>;
+  occupied?: (at: Position, except?: string) => boolean;
+  boundReason?: (at: Position) => string | null;
 }
 
 export interface EffectReport {
@@ -65,6 +69,7 @@ function cloneFields(
 export function runEffects(effects: readonly Effect[], ctx: EffectContext): EffectReport[] {
   const stagedEntities = cloneEntities(ctx.entities);
   const stagedFields = cloneFields(ctx.fields);
+  const stagedBodies = ctx.bodies === undefined ? undefined : new Map(ctx.bodies);
   const currency = new Map<string, number>();
   const emits: Array<{ name: string; payload: Record<string, unknown> }> = [];
   let leave = false;
@@ -87,6 +92,7 @@ export function runEffects(effects: readonly Effect[], ctx: EffectContext): Effe
     ...ctx,
     entities: stagedEntities,
     fields: stagedFields,
+    ...(stagedBodies === undefined ? {} : { bodies: stagedBodies }),
     emit: (name, payload) => {
       emits.push({ name, payload });
     },
@@ -144,6 +150,12 @@ export function runEffects(effects: readonly Effect[], ctx: EffectContext): Effe
   ctx.fields.clear();
   for (const [id, bag] of stagedFields) {
     ctx.fields.set(id, bag);
+  }
+  if (ctx.bodies !== undefined && stagedBodies !== undefined) {
+    ctx.bodies.clear();
+    for (const [id, at] of stagedBodies) {
+      ctx.bodies.set(id, at);
+    }
   }
   if (ctx.peekCurrency !== undefined) {
     ctx.applyCurrency?.(currency);
@@ -238,16 +250,32 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       if (!ref.ok) {
         return fail(item.effect, ref.reason);
       }
-      const entity = ctx.entities.get(ref.value);
-      if (entity?.position === undefined) {
+      const from = positionOf(ref.value, ctx);
+      if (from === undefined) {
         return fail(item.effect, `entity ${ref.value} has no position`);
       }
-      const dest = resolveMove(entity.position, args[1]);
+      const dest = resolveMove(from, args[1], ctx);
       if (!dest.ok) {
         return fail(item.effect, dest.reason);
       }
-      entity.position = dest.value;
-      ctx.emit("effect.move", { id: ref.value, ...entity.position });
+      const hopping = ctx.bodies?.has(ref.value) === true;
+      if (hopping) {
+        const bound = ctx.boundReason?.(dest.value);
+        if (bound !== undefined && bound !== null) {
+          return fail(item.effect, bound);
+        }
+        if (ctx.occupied?.(dest.value, ref.value) === true) {
+          return fail(item.effect, "destination occupied");
+        }
+        ctx.bodies?.set(ref.value, dest.value);
+      } else {
+        const entity = ctx.entities.get(ref.value);
+        if (entity === undefined) {
+          return fail(item.effect, `entity ${ref.value} has no position`);
+        }
+        entity.position = dest.value;
+      }
+      ctx.emit("effect.move", { id: ref.value, ...dest.value });
       return ok(item.effect);
     }
     case "transfer": {
@@ -522,19 +550,47 @@ function resolvePosition(
   return { ok: true, value: vec };
 }
 
+function positionOf(id: string, ctx: EffectContext): Position | undefined {
+  const body = ctx.bodies?.get(id);
+  if (body !== undefined) {
+    return body;
+  }
+  return ctx.entities.get(id)?.position;
+}
+
 function resolveMove(
   from: Position,
   value: unknown,
+  ctx: EffectContext,
 ): { ok: true; value: Position } | { ok: false; reason: string } {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  let token = "";
+  let raw: unknown = value;
+  if (typeof value === "string") {
+    token = value.startsWith("$") ? value.slice(1) : value;
+    const bound = bindParam(value, ctx);
+    if (bound === undefined && value.startsWith("$")) {
+      return { ok: false, reason: `unbound ${value}` };
+    }
+    if (bound !== undefined && bound !== null) {
+      raw = bound;
+    }
+  }
+  if (typeof raw === "string") {
+    const cell = parseCellString(raw);
+    if (cell === null) {
+      return { ok: false, reason: "move requires a vec" };
+    }
+    raw = cell;
+  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, reason: "move requires a vec" };
   }
-  const row = value as Record<string, unknown>;
-  const vec = asPosition(value);
+  const row = raw as Record<string, unknown>;
+  const vec = asPosition(raw);
   if (vec === undefined) {
     return { ok: false, reason: "move requires a vec" };
   }
-  if (row["absolute"] === true) {
+  if (token === "end" || row["absolute"] === true) {
     return { ok: true, value: vec };
   }
   return { ok: true, value: { x: from.x + vec.x, y: from.y + vec.y, z: from.z + vec.z } };

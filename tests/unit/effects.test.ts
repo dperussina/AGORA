@@ -360,6 +360,121 @@ describe("effect vocabulary", () => {
     expect(emitted).toEqual(["effect.move", "id_ada took ore", "effect.destroy"]);
   });
 
+  it("hops a standing body for $self and treats $end as a dest", () => {
+    const bodies = new Map([["id_ada", { x: 31, y: 22, z: 4 }]]);
+    const emitted: Array<{ name: string; payload: Record<string, unknown> }> = [];
+    const reports = runEffects([{ effect: "move", args: ["$self", "$end"] }], {
+      selfId: "id_ada",
+      params: { end: "32,22,4" },
+      fields: new Map(),
+      entities: new Map(),
+      bodies,
+      emit: (name, payload) => emitted.push({ name, payload }),
+      nextId: () => "e",
+    });
+    expect(reports.every((item) => item.ok)).toBe(true);
+    expect(bodies.get("id_ada")).toEqual({ x: 32, y: 22, z: 4 });
+    expect(emitted).toEqual([{ name: "effect.move", payload: { id: "id_ada", x: 32, y: 22, z: 4 } }]);
+  });
+
+  it("adds $delta when hopping a body", () => {
+    const bodies = new Map([["id_ada", { x: 32, y: 22, z: 4 }]]);
+    const reports = runEffects([{ effect: "move", args: ["$self", "$delta"] }], {
+      selfId: "id_ada",
+      params: { delta: "-1,0,0" },
+      fields: new Map(),
+      entities: new Map(),
+      bodies,
+      emit: () => undefined,
+      nextId: () => "e",
+    });
+    expect(reports.every((item) => item.ok)).toBe(true);
+    expect(bodies.get("id_ada")).toEqual({ x: 31, y: 22, z: 4 });
+  });
+
+  it("rejects an occupied body hop", () => {
+    const bodies = new Map([
+      ["id_ada", { x: 31, y: 22, z: 4 }],
+      ["id_bob", { x: 32, y: 22, z: 4 }],
+    ]);
+    const reports = runEffects([{ effect: "move", args: ["$self", "$end"] }], {
+      selfId: "id_ada",
+      params: { end: "32,22,4" },
+      fields: new Map(),
+      entities: new Map(),
+      bodies,
+      occupied: (at, except) =>
+        [...bodies.entries()].some(([id, body]) => id !== except && body.x === at.x && body.y === at.y && body.z === at.z),
+      emit: () => undefined,
+      nextId: () => "e",
+    });
+    expect(reports[0]?.ok).toBe(false);
+    expect(reports[0]?.reason).toBe("destination occupied");
+    expect(bodies.get("id_ada")).toEqual({ x: 31, y: 22, z: 4 });
+  });
+
+  it("lets race and fly hop a live body the same way move does", () => {
+    const world = new World();
+    const ada = registerNamed(world, "Ada");
+    const bob = registerNamed(world, "Bob");
+    world.clerk.registry.verbs["race"] = {
+      cost: 1,
+      params: { end: "vec" },
+      preconditions: [],
+      effects: [
+        { effect: "move", args: ["$self", "$end"] },
+        { effect: "emit", args: ["race.ran"] },
+      ],
+    };
+    world.clerk.registry.verbs["fly"] = {
+      cost: 1,
+      params: { delta: "vec" },
+      preconditions: [],
+      effects: [
+        { effect: "move", args: ["$self", "$delta"] },
+        { effect: "emit", args: ["probe.flew"] },
+      ],
+    };
+    world.bodies.set(ada.identityId, { x: 31, y: 22, z: 4 });
+    world.bodies.set(bob.identityId, { x: 40, y: 22, z: 4 });
+    const raced = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "race", end: { x: 32, y: 22, z: 4 } } }, 7),
+      ada.sessionToken,
+    );
+    expect(raced.result).toMatchObject({ accepted: true });
+    world.advanceTick();
+    expect(world.bodies.get(ada.identityId)).toEqual({ x: 32, y: 22, z: 4 });
+    expect(world.log.events().some((event) => event.type === "race.ran")).toBe(true);
+    expect(world.log.events().some((event) => event.type === "act.race_failed")).toBe(false);
+    const flew = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "fly", delta: { x: -1, y: 0, z: 0 } } }, 8),
+      ada.sessionToken,
+    );
+    expect(flew.result).toMatchObject({ accepted: true });
+    world.advanceTick();
+    expect(world.bodies.get(ada.identityId)).toEqual({ x: 31, y: 22, z: 4 });
+    expect(world.log.events().some((event) => event.type === "probe.flew")).toBe(true);
+    const blocked = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "race", end: { x: 40, y: 22, z: 4 } } }, 9),
+      ada.sessionToken,
+    );
+    expect(blocked.result).toMatchObject({ accepted: true });
+    world.advanceTick();
+    expect(world.bodies.get(ada.identityId)).toEqual({ x: 31, y: 22, z: 4 });
+    expect(world.log.events().some((event) => event.type === "act.race_failed")).toBe(true);
+    const stepped = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 10),
+      ada.sessionToken,
+    );
+    expect(stepped.result).toMatchObject({ accepted: true });
+    world.advanceTick();
+    expect(world.bodies.get(ada.identityId)).toEqual({ x: 32, y: 22, z: 4 });
+  });
+
   it("rejects an unknown precondition instead of treating it as true", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");
