@@ -1302,17 +1302,16 @@ function foldPoseFor(id, now) {
     return base;
   }
   if (pose.mode === "build") {
-    const swing = Math.sin(u * Math.PI * 3) * gate(u, 0.08, 0.88);
-    base.y = -0.08 * Math.abs(swing);
-    base.pitch = 0.42 * swing;
-    base.z += 0.12 * Math.abs(swing);
+    const hold = gate(u, 0.1, 0.85);
+    base.y = 0.1 + hold * 0.1;
+    base.pitch = -0.28 * hold;
     return base;
   }
   if (pose.mode === "loot") {
-    const pop = gate(u, 0.1, 0.58);
-    base.y = pop * 0.48;
-    base.yaw += pop * 0.7;
-    base.roll = Math.sin(u * 12) * pop * 0.18;
+    const cut = gate(u, 0.08, 0.48);
+    const hop = gate(u, 0.52, 0.9);
+    base.y = 0.08 - cut * 0.05 + hop * 0.36;
+    base.pitch = -0.4 * cut;
     return base;
   }
   return base;
@@ -1467,14 +1466,18 @@ function spawnFoldShot(from, to, fromId, toId, kind, now) {
   const bite = kind === "bite";
   const rocket = kind === "rocket";
   const blast = kind === "blast";
-  const color = new THREE.Color(bite ? 0xff3a6a : rocket ? 0xff7a28 : blast ? 0x7af0ff : 0xc4e8ff);
-  const hot = new THREE.Color(bite ? 0xffc078 : rocket ? 0xffe08a : 0xf4fff8);
+  const weld = kind === "weld";
+  const mine = kind === "mine";
+  const color = new THREE.Color(
+    bite ? 0xff3a6a : rocket ? 0xff7a28 : blast ? 0x7af0ff : weld ? 0xffb45a : mine ? 0x3ef0d4 : 0xc4e8ff,
+  );
+  const hot = new THREE.Color(bite ? 0xffc078 : rocket ? 0xffe08a : weld ? 0xffe08a : mine ? 0xe8fff8 : 0xf4fff8);
   const length = Math.max(0.35, from.distanceTo(to));
   const mid = from.clone().lerp(to, 0.5);
   const group = new THREE.Group();
   group.position.copy(mid);
   group.lookAt(to);
-  const fat = bite ? 0.28 : blast ? 0.2 : rocket ? 0.1 : 0.11;
+  const fat = bite ? 0.28 : blast ? 0.2 : weld ? 0.09 : mine ? 0.08 : rocket ? 0.1 : 0.11;
   const bloom = new THREE.Mesh(
     new THREE.CylinderGeometry(fat * 2.4, fat * 1.6, rocket ? Math.min(1.1, length * 0.22) : length, 12, 1, true),
     glowIdle(color, rocket ? 0.4 : 0.28),
@@ -1507,7 +1510,7 @@ function spawnFoldShot(from, to, fromId, toId, kind, now) {
     toId,
     kind,
     born: now,
-    duration: rocket ? 820 : bite ? 980 : blast ? 640 : 720,
+    duration: rocket ? 820 : bite ? 980 : blast ? 640 : weld ? 1400 : mine ? 980 : 720,
     boom: rocket || blast,
     track: !rocket,
     length,
@@ -1805,6 +1808,10 @@ function tickPops(now) {
   for (let i = pops.length - 1; i >= 0; i -= 1) {
     const pop = pops[i];
     const u = (now - pop.born) / pop.duration;
+    if (u < 0) {
+      pop.sprite.material.opacity = 0;
+      continue;
+    }
     if (u >= 1) {
       scene.remove(pop.sprite);
       pop.sprite.material.map?.dispose();
@@ -1815,6 +1822,19 @@ function tickPops(now) {
     pop.sprite.position.y = pop.startY + u * 1.15;
     pop.sprite.material.opacity = u < 0.15 ? u / 0.15 : Math.max(0, 1 - (u - 0.15) / 0.85);
   }
+}
+
+function fireWorkBeam(actor, at, kind, now) {
+  const fromAt = occupantCell(actor);
+  const toAt = at ?? fromAt;
+  if (fromAt === null || toAt === null) {
+    return false;
+  }
+  const from = shotMuzzle(actor, cell(fromAt));
+  const to = cell(toAt);
+  to.y += kind === "mine" ? 0.12 : 0.42;
+  spawnFoldShot(from, to, actor, "", kind, now);
+  return true;
 }
 
 function noteFoldWork(item, now) {
@@ -1838,8 +1858,10 @@ function noteFoldWork(item, now) {
         : typeof payload.kind === "string" && payload.kind.length > 0
           ? payload.kind
           : "loot";
-    setFoldPose(actor, "loot", now, { duration: 1100 });
-    popGain(actor, `+1 ${loot}`, now);
+    const at = occupantCell(actor);
+    fireWorkBeam(actor, at, "mine", now);
+    setFoldPose(actor, "loot", now, { at, duration: 1100 });
+    popGain(actor, `+1 ${loot}`, now + 520);
     return;
   }
   const made = typeof payload.type === "string" ? payload.type : typeof payload.kind === "string" ? payload.kind : "";
@@ -1861,6 +1883,7 @@ function noteFoldWork(item, now) {
   while (recentWork.length > 32) {
     recentWork.shift();
   }
+  fireWorkBeam(actor, at, "weld", now);
   setFoldPose(actor, "build", now, { at, duration: 1600 });
 }
 
@@ -2032,8 +2055,9 @@ function tickShots(now) {
       shot.bloom.scale.y = stretch;
       shot.core.scale.y = stretch;
     }
+    const work = shot.kind === "weld" || shot.kind === "mine";
     const travel = shot.kind === "rocket" ? u * u * (3 - 2 * u) : 1 - (1 - u) * (1 - u);
-    const at = shot.from.clone().lerp(shot.to, Math.min(1, travel));
+    const at = work ? shot.to : shot.from.clone().lerp(shot.to, Math.min(1, travel));
     shot.bolt.position.copy(at);
     if (shot.kind === "rocket") {
       shot.group.position.copy(at);
@@ -2043,9 +2067,12 @@ function tickShots(now) {
         puffJet(at, shot.from.clone().sub(shot.to).normalize(), now, 2);
       }
     }
-    const fade = Math.max(0, 1 - u * 0.55);
-    shot.core.material.opacity = fade * 0.95;
-    shot.bloom.material.opacity = fade * (shot.kind === "rocket" ? 0.4 : 0.28);
+    if (work && !reduced && u * 8 - Math.floor(u * 8) < 0.22) {
+      puffJet(shot.to, Y_UP, now, 2);
+    }
+    const pulse = work ? 0.55 + Math.sin(now * 0.04) * 0.35 : Math.max(0, 1 - u * 0.55);
+    shot.core.material.opacity = pulse * 0.95;
+    shot.bloom.material.opacity = pulse * (shot.kind === "rocket" ? 0.4 : work ? 0.42 : 0.28);
   }
 }
 
