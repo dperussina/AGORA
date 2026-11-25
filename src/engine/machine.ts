@@ -4,6 +4,8 @@ export interface MachineRule {
   on: string;
   when?: { field: string; op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte"; value: MachineScalar };
   set?: Record<string, MachineScalar>;
+  fee?: number;
+  payout?: number;
   reply?: string;
 }
 
@@ -20,8 +22,31 @@ export interface MachineRunContext {
 }
 
 export type MachineRunResult =
-  | { ok: true; nextData: string; reply: string; state: Record<string, MachineScalar>; matchedRule: number }
+  | {
+      ok: true;
+      nextData: string;
+      reply: string;
+      state: Record<string, MachineScalar>;
+      matchedRule: number;
+      fee: number;
+      payout: number;
+    }
   | { ok: false; reason: string };
+
+export function machineInputs(rawData: string): string[] {
+  try {
+    const parsed = JSON.parse(rawData) as { machine?: { rules?: Array<{ on?: unknown }> } };
+    const rules = parsed?.machine?.rules;
+    if (!Array.isArray(rules)) return [];
+    const seen = new Set<string>();
+    for (const r of rules.slice(0, MAX_RULES)) {
+      if (typeof r?.on === "string" && r.on.length > 0) seen.add(r.on);
+    }
+    return [...seen];
+  } catch {
+    return [];
+  }
+}
 
 const MAX_RULES = 32;
 const MAX_SETS = 16;
@@ -72,6 +97,8 @@ export function runArtifactMachine(rawData: string, ctx: MachineRunContext): Mac
         state[k] = val.value;
       }
     }
+    const fee = typeof rule.fee === "number" && Number.isInteger(rule.fee) && rule.fee > 0 ? rule.fee : 0;
+    const payout = typeof rule.payout === "number" && Number.isInteger(rule.payout) && rule.payout > 0 ? rule.payout : 0;
     const reply = interpolateReply(typeof rule.reply === "string" ? rule.reply : `ran ${ctx.input}`, state, ctx);
     const nextContainer = { ...container, machine: { ...spec, state } };
     return {
@@ -80,6 +107,8 @@ export function runArtifactMachine(rawData: string, ctx: MachineRunContext): Mac
       reply,
       state,
       matchedRule: i,
+      fee,
+      payout,
     };
   }
   return { ok: false, reason: `no matching machine rule for input "${ctx.input}"` };

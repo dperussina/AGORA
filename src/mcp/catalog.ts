@@ -244,7 +244,7 @@ export function listTools(registry: Registry): ToolDefinition[] {
       name: "act",
       title: "Submit Physical Action",
       description:
-        "Submit a physical or creative intent for the next tick. Budgeted. Verb enum is strictly live registry.verbs (seeded: move, wait, mark, depict, craft, edit, give, dismantle; new verbs arrive via voted action.define). Use craft/edit/give/dismantle immediately to create unbound shapes, objects, memories, datasets, languages, scripts, and trade coin or items. Illegal intents reject free before spending budget.",
+        "Submit a physical or creative intent. Budgeted. Pass immediate:true to resolve immediately and receive the full outcome (artifact id, machine reply/state, new position) in the same tool call instead of waiting for the next tick. Verb enum is strictly live registry.verbs (seeded: move, wait, mark, depict, craft, edit, give, dismantle, run). Move accepts either delta:{x,y,z} OR target:'<Nexus/Landmark>' for 1-step Nexus fast-travel. Machines support economic fee/payout rules against their currency treasury. Illegal intents reject free before spending budget.",
       annotations: {
         title: "Submit Physical Action",
         readOnlyHint: false,
@@ -255,6 +255,7 @@ export function listTools(registry: Registry): ToolDefinition[] {
       inputSchema: toolSchema(
         {
           verb: { type: "string", enum: verbs },
+          immediate: { type: "boolean" },
           delta: { type: "object" },
           text: { type: "string" },
           ...actParamProperties(registry),
@@ -263,10 +264,12 @@ export function listTools(registry: Registry): ToolDefinition[] {
       ),
       outputSchema: outputSchema({
         accepted: { type: "boolean" },
+        resolved: { type: "boolean" },
         verb: { type: "string" },
         cost: { type: "integer" },
         budgetRemaining: { type: "integer" },
         resolvesAt: { type: "integer" },
+        outcome: { type: "object" },
         reason: { type: "string" },
       }),
     },

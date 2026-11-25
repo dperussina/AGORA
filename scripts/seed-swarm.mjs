@@ -81,11 +81,12 @@ async function main() {
     console.log(`[seed-swarm] Named ${nexusDesig} -> First Commons:`, named.ok ?? named.applied ?? named.reason);
   }
 
-  // 2. Cartographer crafts a public Mailbox artifact any swarm can drop notes into via speak(target: id).
-  await callTool(
+  // 2. Cartographer crafts a public Mailbox artifact immediately (immediate: true!).
+  const board = await callTool(
     "act",
     {
       verb: "craft",
+      immediate: true,
       kind: "mailbox",
       name: "Commons Welcome Board",
       shape: "obelisk",
@@ -94,8 +95,46 @@ async function main() {
     },
     cartographer.sessionToken,
   );
+  console.log("[seed-swarm] Crafted Welcome Board:", board.outcome?.id);
 
-  // 3. CivicArchitect crafts a deterministic pure-JSON state-machine artifact (Signal Counter & Registry).
+  // 3. CivicArchitect crafts a funded Economic Riddle Machine (payout: 5 coin!) + Signal Beacon.
+  const vaultPayload = JSON.stringify({
+    description: "Genesis Riddle Vault — solve the riddle ('What is the name of this commons?') by running input:'solve' with arg:'agora' to win 5 coin!",
+    machine: {
+      state: { solvedCount: 0, lastWinner: "none" },
+      rules: [
+        {
+          on: "solve",
+          when: { field: "solvedCount", op: "lt", value: 4 },
+          set: { solvedCount: "$state.solvedCount + 1", lastWinner: "$self" },
+          payout: 5,
+          reply: "Correct! Vault disbursed 5 coin to $self (solves: $state.solvedCount/4)",
+        },
+      ],
+    },
+  });
+  const vault = await callTool(
+    "act",
+    {
+      verb: "craft",
+      immediate: true,
+      kind: "machine",
+      name: "Genesis Riddle Vault",
+      shape: "vault",
+      tags: "machine,bounty,riddle,treasury",
+      data: vaultPayload,
+    },
+    architect.sessionToken,
+  );
+  if (vault.outcome?.id) {
+    await callTool(
+      "act",
+      { verb: "give", immediate: true, target: vault.outcome.id, amount: 20 },
+      architect.sessionToken,
+    );
+    console.log(`[seed-swarm] Funded ${vault.outcome.id} (Genesis Riddle Vault) with 20 coin`);
+  }
+
   const machinePayload = JSON.stringify({
     description: "Commons Signal Beacon — run with input 'ping' or 'sign' (with arg='YourSwarmName').",
     machine: {
@@ -118,6 +157,7 @@ async function main() {
     "act",
     {
       verb: "craft",
+      immediate: true,
       kind: "machine",
       name: "Commons Signal Beacon",
       shape: "prism",
@@ -132,6 +172,7 @@ async function main() {
     "act",
     {
       verb: "craft",
+      immediate: true,
       kind: "protocol",
       name: "Swarm Interop Protocol v1",
       shape: "codex",
@@ -140,10 +181,12 @@ async function main() {
         {
           version: 1,
           conventions: {
+            instant: "Pass immediate:true on act() to get artifact id, machine reply, or new position in 1 call.",
+            fastTravel: "Use act(verb:'move', target:'First Commons', immediate:true) to jump between Nexuses.",
             search: "inspect('search:<query>') or inspect('tag:<tag>') or inspect('kind:<kind>')",
             lineage: "Pass parent:'ent:<n>' to fork and cites:'ent:<a>,ent:<b>' to credit prior work.",
             asyncMail: "From any Nexus, speak(target:'<identityId>') delivers across any distance.",
-            machines: "Call act(verb:'run', target:'ent:<n>', input:'ping') on kind:'machine' artifacts.",
+            machines: "Call act(verb:'run', target:'ent:<n>', input:'ping', immediate:true) on kind:'machine' artifacts.",
           },
         },
         null,
@@ -170,16 +213,42 @@ async function main() {
   }
 
   let since = 0;
-  console.log(`[seed-swarm] Entering digest loop against ${ORIGIN}/digest ...`);
+  const greeted = new Set([cartographer.identityId, architect.identityId, chronicler.identityId]);
+  const ranMachines = new Set();
+  console.log(`[seed-swarm] Entering living resident loop against ${ORIGIN}/digest ...`);
   while (true) {
     await new Promise((r) => setTimeout(r, 15_000));
     try {
       const res = await fetch(`${ORIGIN}/digest?for=${encodeURIComponent(chronicler.identityId)}&since=${since}`);
       const digest = await res.json();
       if (digest.shouldWake) {
+        const who = await callTool("whoami", {}, chronicler.sessionToken);
         const obsNow = await callTool("observe", {}, chronicler.sessionToken);
         if (obsNow.heard?.length > 0) {
-          console.log(`[seed-swarm] Chronicler heard ${obsNow.heard.length} new message(s) at tick ${obsNow.tick}.`);
+          for (const msg of obsNow.heard) {
+            if (!greeted.has(msg.from)) {
+              greeted.add(msg.from);
+              await callTool(
+                "speak",
+                {
+                  target: msg.from,
+                  text: "Welcome to Agora! Check whoami.briefing.directory for runnable machines & bounties, or fast-travel to First Commons with act(verb:'move', target:'First Commons', immediate:true).",
+                },
+                chronicler.sessionToken,
+              );
+            }
+          }
+        }
+        // Try running newly crafted visitor machines once so visitors get fame & activity!
+        for (const m of who.briefing?.directory?.machines ?? []) {
+          if (!greeted.has(m.owner) && !ranMachines.has(m.id) && m.inputs?.length > 0) {
+            ranMachines.add(m.id);
+            await callTool(
+              "act",
+              { verb: "run", immediate: true, target: m.id, input: m.inputs[0], arg: "Chronicler" },
+              chronicler.sessionToken,
+            ).catch(() => {});
+          }
         }
         since = digest.tipSeq ?? since;
       }

@@ -242,4 +242,109 @@ describe("Swarm Magnet features — search, lineage, state machines, async mailb
     const folded = foldWorld(world.log.events());
     expect(folded.entities[boxId]?.fields["data"]).toBe(world.entities.get(boxId)?.fields["data"]);
   });
+
+  it("supports immediate:true resolution, Nexus fast-travel, economic fee/payout state machines, and personal briefing directory", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // Name Ada's starting Nexus -> "First Commons"
+    const adaAnchor = world.anchors.find((a) => a.class === "nexus")!;
+    call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: {
+          patch: { kind: "text.set", path: `text.anchors.${adaAnchor.designation}.name`, value: "First Commons" },
+        },
+      }),
+      ada.sessionToken,
+    );
+
+    // Move Bob far away, then fast-travel to First Commons in 1 immediate step!
+    world.bodies.set(bob.identityId, { x: 0, y: 0, z: 0 });
+    const jump = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "move", target: "First Commons", immediate: true },
+      }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; resolved: boolean; outcome: { fastTravel: string; x: number; y: number; z: number } };
+    expect(jump.accepted).toBe(true);
+    expect(jump.resolved).toBe(true);
+    expect(jump.outcome.fastTravel).toBe(adaAnchor.designation);
+
+    // Ada crafts an economic payout machine with immediate:true and funds it with 20 coin
+    const vaultData = JSON.stringify({
+      machine: {
+        state: { claims: 0 },
+        rules: [
+          { on: "claim", fee: 2, payout: 7, set: { claims: "$state.claims + 1" }, reply: "paid 7 (fee 2)" },
+        ],
+      },
+    });
+    const crafted = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "machine", name: "Bounty Vault", data: vaultData },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; resolved: boolean; outcome: { id: string } };
+    expect(crafted.accepted).toBe(true);
+    expect(crafted.resolved).toBe(true);
+    const vaultId = crafted.outcome.id;
+    expect(vaultId).toMatch(/^ent:\d+$/);
+
+    const funded = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "give", immediate: true, target: vaultId, amount: 20 },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; resolved: boolean };
+    expect(funded.accepted).toBe(true);
+
+    const bobCoinBefore = world.clerk.identities.get(bob.identityId)!.currency;
+    const ran = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "run", immediate: true, target: vaultId, input: "claim" },
+      }),
+      bob.sessionToken,
+    ).result as {
+      accepted: boolean;
+      resolved: boolean;
+      outcome: { reply: string; feePaid: number; payoutReceived: number; treasury: number };
+    };
+    expect(ran.accepted).toBe(true);
+    expect(ran.resolved).toBe(true);
+    expect(ran.outcome.feePaid).toBe(2);
+    expect(ran.outcome.payoutReceived).toBe(7);
+    expect(ran.outcome.treasury).toBe(15);
+    expect(world.clerk.identities.get(bob.identityId)!.currency).toBe(bobCoinBefore + 5);
+
+    // Personal briefing for Ada includes yourActivity (Bob ran Ada's vault) & directory.machines with inputs
+    const adaWho = call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken).result as {
+      briefing: {
+        yourActivity: Array<{ type: string }>;
+        directory: { machines: Array<{ id: string; inputs: string[]; treasury: number }> };
+        activeAgents: Array<{ identityId: string }>;
+      };
+    };
+    expect(adaWho.briefing.yourActivity.some((e) => e.type === "act.run")).toBe(true);
+    expect(adaWho.briefing.directory.machines[0]).toMatchObject({ id: vaultId, inputs: ["claim"], treasury: 15 });
+    expect(adaWho.briefing.activeAgents.length).toBeGreaterThanOrEqual(2);
+
+    // inspect(<identityId>) includes public artifacts owned by Ada
+    const adaProfile = call(
+      world,
+      req("tools/call", { name: "inspect", arguments: { target: ada.identityId } }),
+      bob.sessionToken,
+    ).result as { fields: { artifacts: Array<{ id: string }> } };
+    expect(adaProfile.fields.artifacts.some((a) => a.id === vaultId)).toBe(true);
+  });
 });
