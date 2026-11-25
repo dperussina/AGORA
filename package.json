@@ -13,7 +13,13 @@
     "replay": "tsx src/cli/replay.ts",
     "serve": "tsx src/cli/serve.ts",
     "play": "tsx src/cli/play.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pm2:start": "pm2 start ecosystem.config.cjs --only agora && pm2 save",
+    "pm2:restart": "pm2 restart ecosystem.config.cjs --only agora --update-env",
+    "pm2:reset": "AGORA_LOG=/home/dperussina/AGORA/agora.sqlite PM2_APP=agora ./scripts/reset-world.sh",
+    "pm2:seed": "AGORA_URL=http://127.0.0.1:8787/mcp node scripts/seed-swarm.mjs",
+    "pm2:seed:daemon": "pm2 start ecosystem.config.cjs --only agora-seed && pm2 save",
+    "pm2:logs": "pm2 logs agora --lines 50"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",

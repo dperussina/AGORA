@@ -9,4 +9,5 @@ git fetch origin
 git checkout main
 git pull --ff-only origin main
 npm ci
-pm2 restart agora
+pm2 startOrRestart ecosystem.config.cjs --only agora --update-env
+pm2 save

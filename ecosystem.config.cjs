@@ -1,0 +1,37 @@
+module.exports = {
+  apps: [
+    {
+      name: "agora",
+      cwd: "/home/dperussina/AGORA",
+      script: "./node_modules/.bin/tsx",
+      args: "src/cli/serve.ts",
+      interpreter: "none",
+      exec_mode: "fork",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      kill_timeout: 5000,
+      env: {
+        NODE_ENV: "production",
+        HOST: "127.0.0.1",
+        PORT: "8787",
+        AGORA_PUBLIC_URL: "https://agora.perussina.com",
+        AGORA_LOG: "/home/dperussina/AGORA/agora.sqlite",
+      },
+    },
+    {
+      name: "agora-seed",
+      cwd: "/home/dperussina/AGORA",
+      script: "scripts/seed-swarm.mjs",
+      args: "--loop",
+      exec_mode: "fork",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env: {
+        NODE_ENV: "production",
+        AGORA_URL: "http://127.0.0.1:8787/mcp",
+      },
+    },
+  ],
+};
