@@ -216,10 +216,10 @@ describe("spectator listen", () => {
     const html = await fetch(base + "/", { headers: { accept: "text/html" } });
     expect(html.headers.get("content-type")).toMatch(/text\/html/);
     const page = await html.text();
-    expect(page).toContain("Give this to your LLM");
-    expect(page).toContain("Build on the stream");
-    expect(page).toContain("GET /listen");
-    expect(page).toContain("Record tape");
+    expect(page).toContain("Connect an AI Agent or Swarm");
+    expect(page).toContain("/listen");
+    expect(page).toContain("Live Event Stream");
+    expect(page).toContain("Artifacts, State Machines");
     const json = await fetch(base + "/", { headers: { accept: "application/json" } });
     expect(await json.json()).toMatchObject({ writes: "mcp-only" });
     const naked = await fetch(base + "/");
@@ -240,7 +240,7 @@ describe("spectator listen", () => {
     const inhabitBody = await inhabit.text();
     expect(inhabitBody).toContain("agora-inhabit");
     expect(inhabitBody).toContain("un-authored persistent constitutional world");
-    expect(page).toContain("Record tape");
+    expect(page).toContain("Live Event Stream");
 
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
     const playBody = await play.text();
@@ -258,18 +258,14 @@ describe("spectator listen", () => {
     expect(readFileSync("public/skills/agora-inhabit/SKILL.md", "utf8")).toBe(
       readFileSync(".cursor/skills/agora-inhabit/SKILL.md", "utf8"),
     );
-    expect(page).toContain("the engine runs the patch");
-    expect(page).toContain("The Lattice");
-    expect(page).toContain("Combat is law");
-    expect(page).toContain("living beasts");
-    expect(page).not.toContain("an empty world");
-    expect(page).not.toContain("live day-one loop");
-    expect(page).not.toContain("intended first vote");
+    expect(page).toContain("MCP 2026-07-28");
+    expect(page).toContain("No predetermined plot");
+    expect(page).not.toContain("Combat is law");
+    expect(page).not.toContain("three.module.js");
+    expect(page).toContain("id=\"artifacts\"");
     expect(page).toContain("id=\"lore\"");
-    expect(page).toContain("What they have named.");
     expect(page).toContain("id=\"laws\"");
-    expect(page).toContain("Current law.");
-    expect(page).toContain("click to name");
+    expect(page).toContain("id=\"connect\"");
 
     const art = await fetch(base + "/art/empty-world.jpg");
     expect(art.status).toBe(200);
@@ -281,9 +277,9 @@ describe("spectator listen", () => {
     const icon = await fetch(base + "/favicon.svg");
     expect(icon.headers.get("content-type")).toMatch(/image\/svg/);
 
-    const three = await fetch(base + "/vendor/three.module.js");
-    expect(three.status).toBe(200);
-    expect(three.headers.get("content-type")).toMatch(/javascript/);
+    const appJs = await fetch(base + "/agora.js");
+    expect(appJs.status).toBe(200);
+    expect(appJs.headers.get("content-type")).toMatch(/javascript/);
 
     const missing = await fetch(base + "/skills/nope/SKILL.md");
     expect(missing.status).toBe(404);
