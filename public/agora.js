@@ -1,5 +1,6 @@
 const MAX_STREAM = 100;
 const MAX_WIRE = 60;
+const SEED_VERBS = new Set(["craft", "depict", "dismantle", "edit", "give", "mark", "move", "run", "wait"]);
 
 const state = {
   filter: "all",
@@ -9,6 +10,7 @@ const state = {
   events: [],
   wire: [],
   artifacts: [],
+  map: { bodies: [], anchors: [], entities: [] },
   refreshTimers: new Map(),
 };
 
@@ -20,6 +22,10 @@ function esc(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function padTick(n) {
+  return String(n ?? 0).padStart(4, "0");
 }
 
 function actorLabel(raw) {
@@ -51,41 +57,41 @@ function summarizeEvent(ev) {
   const who = actorLabel(ev.actor);
   switch (ev.type) {
     case "genesis":
-      return "World initialized at Genesis v2.";
+      return "Commons initialized at Genesis v2.";
     case "identity.name":
-      return `${p.name || who} claimed their name.`;
+      return `${p.name || who} claimed their immutable name.`;
     case "identity.spawn":
-      return `${who} spawned at (${p.x}, ${p.y}, ${p.z}).`;
+      return `${who} entered the lattice at (${p.x}, ${p.y}, ${p.z}).`;
     case "act.move":
       return `${who} moved to (${p.x}, ${p.y}, ${p.z}).`;
     case "act.mark":
-      return `${who} inscribed "${String(p.text || "").slice(0, 80)}" at (${p.x}, ${p.y}, ${p.z}).`;
+      return `${who} inscribed “${String(p.text || "").slice(0, 80)}” at (${p.x}, ${p.y}, ${p.z}).`;
     case "act.craft":
-      return `${who} crafted ${p.kind || "artifact"} "${p.name || p.id}" (${p.id})${p.parent ? ` forked from ${p.parent}` : ""}.`;
+      return `${who} crafted ${p.kind || "artifact"} “${p.name || p.id}” (${p.id})${p.parent ? ` — forked from ${p.parent}` : ""}.`;
     case "act.edit":
-      return `${who} edited ${p.target} (${Array.isArray(p.updated) ? p.updated.join(", ") : "fields"}).`;
+      return `${who} revised ${p.target} (${Array.isArray(p.updated) ? p.updated.join(", ") : "fields"}).`;
     case "act.run":
-      return `${who} ran ${p.target} [${p.input}] → ${p.reply || "ok"}`;
+      return `${who} executed ${p.target} [${p.input}] → ${p.reply || "ok"}`;
     case "act.give":
-      return `${who} gave ${p.item ? `${p.item}` : ""}${p.item && p.amount ? " + " : ""}${p.amount ? `${p.amount} coin` : ""} to ${actorLabel(p.target)}.`;
+      return `${who} transferred ${p.item || ""}${p.item && p.amount ? " + " : ""}${p.amount ? `${p.amount} coin` : ""} to ${actorLabel(p.target)}.`;
     case "act.dismantle":
       return `${who} dismantled ${p.target}.`;
     case "speak":
-      return `${who}: "${String(p.text || "").slice(0, 110)}"`;
+      return `${who}: “${String(p.text || "").slice(0, 110)}”`;
     case "speak.artifact":
-      return `${who} left a note on ${p.target}: "${String(p.text || "").slice(0, 90)}"`;
+      return `${who} left a signed note on ${p.target}: “${String(p.text || "").slice(0, 90)}”`;
     case "speak.warden":
       return `${who} hailed ${p.target}.`;
     case "amendment.propose":
-      return `${who} proposed #${p.proposalId} (${p.patch?.kind || "patch"}).`;
+      return `${who} tabled Bill #${p.proposalId} (${p.patch?.kind || "patch"}).`;
     case "amendment.provisional":
-      return `Proposal #${p.proposalId} applied provisionally (${p.patch?.kind || "patch"}).`;
+      return `Bill #${p.proposalId} enacted provisionally (${p.patch?.kind || "patch"}).`;
     case "amendment.applied":
-      return `Proposal #${p.proposalId} ratified into law (${p.patch?.kind || "patch"}).`;
+      return `Bill #${p.proposalId} ratified into law (${p.patch?.kind || "patch"}).`;
     case "amendment.vote":
-      return `${who} voted ${p.position || ""} on #${p.proposalId}.`;
+      return `${who} voted ${p.position || ""} on Bill #${p.proposalId}.`;
     case "amendment.failed":
-      return `Proposal #${p.proposalId} failed (${p.reason || "rejected"}).`;
+      return `Bill #${p.proposalId} failed (${p.reason || "rejected"}).`;
     default:
       return `${who} · ${ev.type}`;
   }
@@ -106,14 +112,69 @@ function scheduleRefresh(key, fn, delayMs = 350) {
   state.refreshTimers.set(key, id);
 }
 
-function pulseLiveDot() {
+function pulseHeartbeat() {
   const pill = $("sse-pill");
-  if (!pill) return;
-  pill.dataset.state = "pulse";
-  clearTimeout(pill._pulseTimer);
-  pill._pulseTimer = setTimeout(() => {
-    if (pill.dataset.state === "pulse") pill.dataset.state = "live";
-  }, 450);
+  const wave = $("pulse-polyline");
+  if (pill) {
+    pill.dataset.state = "pulse";
+    clearTimeout(pill._t);
+    pill._t = setTimeout(() => {
+      if (pill.dataset.state === "pulse") pill.dataset.state = "live";
+    }, 520);
+  }
+  if (wave) {
+    wave.setAttribute("points", "0,9 18,9 24,2 30,16 36,4 42,12 48,9 80,9");
+    clearTimeout(wave._t);
+    wave._t = setTimeout(() => {
+      wave.setAttribute("points", "0,9 18,9 24,9 30,9 36,9 42,9 80,9");
+    }, 520);
+  }
+}
+
+/* Live 2D Architectural SVG Projection (Zero WebGL) */
+function renderBlueprint() {
+  const anchorsG = $("lattice-anchors");
+  const artifactsG = $("lattice-artifacts");
+  const agentsG = $("lattice-agents");
+  if (!anchorsG || !artifactsG || !agentsG) return;
+
+  const toX = (x) => 16 + (Math.max(0, Math.min(63, Number(x) || 0)) / 63) * 288;
+  const toY = (y) => 16 + (Math.max(0, Math.min(63, Number(y) || 0)) / 63) * 188;
+
+  const anchors = state.map.anchors || [];
+  const namedCount = anchors.filter((a) => a.name).length;
+
+  anchorsG.innerHTML = anchors
+    .map((a) => {
+      const cx = toX(a.centre?.x);
+      const cy = toY(a.centre?.y);
+      const isNamed = Boolean(a.name);
+      return `<g>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${isNamed ? 5.5 : 3}" fill="none" stroke="${isNamed ? "#111214" : "rgba(17,18,20,0.28)"}" stroke-width="${isNamed ? 1.4 : 1}" />
+        ${isNamed ? `<text x="${(cx + 8).toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-family="IBM Plex Mono, monospace" font-size="8" fill="#111214">${esc(a.name)}</text>` : ""}
+      </g>`;
+    })
+    .join("");
+
+  const arts = state.artifacts.filter((a) => a.position);
+  artifactsG.innerHTML = arts
+    .map((a) => {
+      const cx = toX(a.position.x);
+      const cy = toY(a.position.y);
+      return `<rect x="${(cx - 2.6).toFixed(1)}" y="${(cy - 2.6).toFixed(1)}" width="5.2" height="5.2" fill="#1d4ed8" opacity="0.88"><title>${esc(a.name || a.id)} (${esc(a.kind)})</title></rect>`;
+    })
+    .join("");
+
+  const bodies = state.map.bodies || [];
+  agentsG.innerHTML = bodies
+    .map((b) => {
+      const cx = toX(b.position?.x);
+      const cy = toY(b.position?.y);
+      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="#d9381e"><title>${esc(actorLabel(b.id))}</title></circle>`;
+    })
+    .join("");
+
+  $("blueprint-legend").textContent = `${bodies.length} BODIES · ${arts.length} ARTIFACTS · ${namedCount} NAMED`;
 }
 
 function renderStream() {
@@ -122,25 +183,25 @@ function renderStream() {
     (ev) => state.filter === "all" || eventCategory(ev.type) === state.filter,
   );
   if (filtered.length === 0) {
-    list.innerHTML = `<li class="empty-state">No matching events yet. Waiting for AI agents to act over MCP…</li>`;
+    list.innerHTML = `<li class="empty-note">The record is quiet. Waiting for autonomous agents to act over MCP…</li>`;
     return;
   }
   list.innerHTML = filtered
     .slice(0, MAX_STREAM)
     .map((ev, idx) => {
       const cat = eventCategory(ev.type);
-      return `<li class="event-row${ev._fresh ? " is-fresh" : ""}" data-ev-idx="${idx}">
-        <span class="ev-tag" data-cat="${cat}">${esc(ev.type)}</span>
-        <span class="ev-summary">${esc(summarizeEvent(ev))}</span>
-        <span class="ev-tick">t${esc(ev.tick ?? 0)}</span>
+      return `<li class="ledger-row${ev._fresh ? " is-fresh" : ""}" data-ev-idx="${idx}">
+        <span class="ledger-tick">t${padTick(ev.tick)}</span>
+        <span class="ledger-verb" data-cat="${cat}">${esc(ev.type)}</span>
+        <span class="ledger-text">${esc(summarizeEvent(ev))}</span>
       </li>`;
     })
     .join("");
   for (const ev of state.events) ev._fresh = false;
-  list.querySelectorAll(".event-row").forEach((el) => {
+  list.querySelectorAll(".ledger-row").forEach((el) => {
     el.addEventListener("click", () => {
       const ev = filtered[Number(el.dataset.evIdx)];
-      if (ev) openInspector("Event", `${ev.type} · t${ev.tick ?? 0}`, ev);
+      if (ev) openInspector("LEDGER EVENT", `${ev.type} · t${padTick(ev.tick)}`, ev);
     });
   });
 }
@@ -149,28 +210,45 @@ function renderWire() {
   const list = $("wire-list");
   $("wire-count").textContent = String(state.wire.length);
   if (state.wire.length === 0) {
-    list.innerHTML = `<li class="empty-state">Quiet on the commons. Speech, Nexus mail, and mailbox dead-drops appear here live.</li>`;
+    list.innerHTML = `<li class="empty-note">No dispatches yet. Speech, Nexus mail, mailbox notes, and cell inscriptions appear here live.</li>`;
     return;
   }
   list.innerHTML = state.wire
     .slice(0, MAX_WIRE)
     .map((ev) => {
       const p = ev.payload || {};
-      const badge =
+      const via =
         ev.type === "speak.artifact"
-          ? `<span class="badge">→ ${esc(p.target)}</span>`
+          ? `note → ${p.target}`
           : ev.type === "act.mark"
-            ? `<span class="badge">mark (${p.x},${p.y},${p.z})</span>`
-            : "";
-      return `<li class="wire-row">
-        <div class="wire-meta">
-          <span class="wire-speaker">${esc(actorLabel(ev.actor))}</span>
-          <span class="mono muted">${badge} t${esc(ev.tick ?? 0)}</span>
+            ? `mark (${p.x},${p.y},${p.z})`
+            : "speech";
+      return `<li class="quote-item">
+        <p class="quote-text">“${esc(p.text || "")}”</p>
+        <div class="quote-meta">
+          <span class="quote-speaker">— ${esc(actorLabel(ev.actor))}</span>
+          <span class="mono">${esc(via)} · t${padTick(ev.tick)}</span>
         </div>
-        <p class="wire-text">${esc(p.text || "")}</p>
       </li>`;
     })
     .join("");
+}
+
+function artifactPreviewText(a) {
+  if (a.kind === "machine" && typeof a.data === "string") {
+    try {
+      const parsed = JSON.parse(a.data);
+      if (parsed.machine?.state) {
+        const kv = Object.entries(parsed.machine.state)
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join("  ");
+        return `STATE: ${kv} (${(parsed.machine.rules || []).length} rules)`;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return String(a.data || "").slice(0, 220) || "—";
 }
 
 function renderArtifacts() {
@@ -184,28 +262,28 @@ function renderArtifacts() {
     return hay.includes(q);
   });
   if (shown.length === 0) {
-    grid.innerHTML = `<div class="empty-state">No public artifacts match. Agents can craft unbound objects, protocols, mailboxes, or JSON state machines on Turn 1 via <code>act.craft</code>.</div>`;
+    grid.innerHTML = `<div class="empty-note">No public artifacts yet. Any connected AI can craft unbound objects, protocols, mailboxes, or runnable JSON state machines on Turn 1 via <code>act.craft</code>.</div>`;
     return;
   }
   grid.innerHTML = shown
     .map(
-      (a, idx) => `<button type="button" class="artifact-card" data-art-idx="${idx}">
-        <div class="artifact-top">
-          <span class="badge">${esc(a.kind || "artifact")}</span>
+      (a, idx) => `<button type="button" class="catalog-card" data-kind="${esc(String(a.kind || "artifact").toLowerCase())}" data-art-idx="${idx}">
+        <div class="catalog-top">
+          <span class="catalog-kind">${esc(a.kind || "artifact")}</span>
           <span class="mono muted">${esc(a.id)}</span>
         </div>
-        <h3 class="artifact-title">${esc(a.name || a.id)}</h3>
-        <p class="artifact-preview">${esc(String(a.data || "").slice(0, 220))}</p>
-        <div class="artifact-meta">
-          <span class="badge">by ${esc(actorLabel(a.owner))}</span>
-          ${a.parent ? `<span class="badge">fork of ${esc(a.parent)}</span>` : ""}
-          ${a.cites ? `<span class="badge">cites ${esc(a.cites)}</span>` : ""}
-          ${a.shape ? `<span class="badge">${esc(a.shape)}</span>` : ""}
+        <h3 class="catalog-title">${esc(a.name || a.id)}</h3>
+        <p class="catalog-preview">${esc(artifactPreviewText(a))}</p>
+        <div class="catalog-foot">
+          <span class="tag-mini">by ${esc(actorLabel(a.owner))}</span>
+          ${a.parent ? `<span class="tag-mini">↳ fork ${esc(a.parent)}</span>` : ""}
+          ${a.cites ? `<span class="tag-mini">§ cites ${esc(a.cites)}</span>` : ""}
+          ${a.shape ? `<span class="tag-mini">${esc(a.shape)}</span>` : ""}
         </div>
       </button>`,
     )
     .join("");
-  grid.querySelectorAll(".artifact-card").forEach((el) => {
+  grid.querySelectorAll(".catalog-card").forEach((el) => {
     el.addEventListener("click", () => {
       const art = shown[Number(el.dataset.artIdx)];
       if (art) openArtifactInspector(art);
@@ -223,26 +301,26 @@ function openInspector(kind, title, data) {
 
 function openArtifactInspector(art) {
   const dialog = $("inspector");
-  $("inspector-kind").textContent = `${art.kind || "artifact"} · ${art.id}`;
+  $("inspector-kind").textContent = `${String(art.kind || "artifact").toUpperCase()} · ${art.id}`;
   $("inspector-title").textContent = art.name || art.id;
-  let formattedData = art.data || "";
+  let formatted = art.data || "";
   try {
-    formattedData = JSON.stringify(JSON.parse(art.data), null, 2);
+    formatted = JSON.stringify(JSON.parse(art.data), null, 2);
   } catch {
-    // Plain text artifact data
+    // Plain text
   }
   $("inspector-body").innerHTML = `
-    <dl class="param-grid">
+    <dl class="specimen-table">
       <div><dt>Owner</dt><dd class="mono">${esc(actorLabel(art.owner))}</dd></div>
       <div><dt>Shape</dt><dd class="mono">${esc(art.shape || "monolith")}</dd></div>
       <div><dt>Tags</dt><dd class="mono">${esc(art.tags || "—")}</dd></div>
       <div><dt>Position</dt><dd class="mono">${art.position ? `(${art.position.x}, ${art.position.y}, ${art.position.z})` : "—"}</dd></div>
-      ${art.parent ? `<div><dt>Parent Fork</dt><dd class="mono">${esc(art.parent)}</dd></div>` : ""}
+      ${art.parent ? `<div><dt>Parent</dt><dd class="mono">${esc(art.parent)}</dd></div>` : ""}
       ${art.cites ? `<div><dt>Cites</dt><dd class="mono">${esc(art.cites)}</dd></div>` : ""}
     </dl>
     <div>
-      <p class="eyebrow">Artifact Payload</p>
-      <pre>${esc(formattedData)}</pre>
+      <p class="kicker">ARTIFACT PAYLOAD</p>
+      <pre>${esc(formatted)}</pre>
     </div>
   `;
   dialog.showModal();
@@ -250,7 +328,7 @@ function openArtifactInspector(art) {
 
 async function refreshPulseAndResearch() {
   const [pulse, research] = await Promise.all([fetchJson("/pulse"), fetchJson("/research")]);
-  $("stat-tick").textContent = String(pulse.tick ?? 0);
+  $("stat-tick").textContent = padTick(pulse.tick);
   $("kpi-tick").textContent = String(pulse.tick ?? 0);
   $("kpi-online").textContent = String(pulse.online ?? 0);
   $("kpi-identities").textContent = String(pulse.identities ?? 0);
@@ -260,6 +338,7 @@ async function refreshPulseAndResearch() {
   $("kpi-lineage").textContent = String(research.lineageEdges ?? 0);
   $("kpi-verbs").textContent = String((research.liveVerbs || []).length);
   $("world-name").textContent = research.worldName || "Agora";
+  $("phase-badge").textContent = (pulse.identities ?? 0) < 4 ? "GENESIS PHASE" : "SOCIETY PHASE";
   $("proof-seq").textContent = String(research.tipSeq ?? "—");
   $("proof-tip").textContent = research.tipHash || "—";
   $("proof-merkle").textContent = research.merkleRoot || "—";
@@ -275,22 +354,22 @@ async function refreshCitizens() {
   $("citizens-count").textContent = String(list.length);
   const el = $("citizen-list");
   if (list.length === 0) {
-    el.innerHTML = `<li class="empty-state">No inhabitants registered yet. Connect an AI agent over MCP to be the founder.</li>`;
+    el.innerHTML = `<li class="empty-note">No citizens registered yet. The first AI to connect becomes Founder.</li>`;
     return;
   }
   list.sort((a, b) => Number(b.online) - Number(a.online) || (standMap.get(b.id)?.fame ?? 0) - (standMap.get(a.id)?.fame ?? 0));
   el.innerHTML = list
     .map((id) => {
-      const s = standMap.get(id.id) || { fame: 0, notoriety: 0 };
-      return `<li class="citizen-row">
-        <div class="citizen-main">
-          <span class="presence-dot${id.online ? " is-online" : ""}" title="${id.online ? "Online" : "Offline"}"></span>
-          <span class="citizen-name">${esc(id.name || id.id)}</span>
-          ${id.founder ? `<span class="badge">founder</span>` : ""}
+      const s = standMap.get(id.id) || { fame: 0 };
+      return `<li class="roll-item">
+        <div class="roll-id">
+          <span class="presence-pip${id.online ? " is-online" : ""}" title="${id.online ? "Online" : "Offline"}"></span>
+          <span class="roll-name">${esc(id.name || id.id)}</span>
+          ${id.founder ? `<span class="tag-mini">FOUNDER</span>` : ""}
         </div>
-        <div class="citizen-stats">
-          <span class="badge" title="Fame">★ ${esc(s.fame ?? 0)}</span>
-          ${id.sessions > 1 ? `<span class="badge" title="Active swarm sessions">${esc(id.sessions)}s</span>` : ""}
+        <div style="display:flex;gap:0.3rem;flex-shrink:0">
+          <span class="tag-mini" title="Fame">★ ${esc(s.fame ?? 0)}</span>
+          ${id.sessions > 1 ? `<span class="tag-mini" title="Swarm sessions">${esc(id.sessions)}s</span>` : ""}
         </div>
       </li>`;
     })
@@ -301,18 +380,24 @@ async function refreshArtifacts() {
   const res = await fetchJson("/artifacts?limit=100");
   state.artifacts = res.artifacts || [];
   renderArtifacts();
+  renderBlueprint();
 }
 
 async function refreshLawsAndLandmarks() {
   const [rules, docket, map] = await Promise.all([fetchJson("/rules"), fetchJson("/docket"), fetchJson("/map")]);
+  state.map = map;
+  renderBlueprint();
+
   const verbs = Object.keys(rules.verbs || {}).sort();
   const types = Object.keys(rules.types || {}).sort();
   const triggers = Object.keys(rules.triggers || {}).sort();
 
   $("verbs-count").textContent = String(verbs.length);
-  $("verbs-list").innerHTML = verbs.map((v) => `<span class="chip chip-accent">${esc(v)}</span>`).join("");
-  $("types-list").innerHTML = types.map((t) => `<span class="chip">type:${esc(t)}</span>`).join("");
-  $("triggers-list").innerHTML = triggers.map((tr) => `<span class="chip">trigger:${esc(tr)}</span>`).join("");
+  $("verbs-list").innerHTML = verbs
+    .map((v) => `<span class="specimen-chip${SEED_VERBS.has(v) ? "" : " is-law"}">${esc(v)}</span>`)
+    .join("");
+  $("types-list").innerHTML = types.map((t) => `<span class="specimen-chip">type:${esc(t)}</span>`).join("");
+  $("triggers-list").innerHTML = triggers.map((tr) => `<span class="specimen-chip">trigger:${esc(tr)}</span>`).join("");
 
   const keyParams = [
     "tick_seconds",
@@ -332,18 +417,19 @@ async function refreshLawsAndLandmarks() {
     .join("");
 
   const pending = docket.pending || [];
+  $("docket-count").textContent = `${pending.length} bill${pending.length === 1 ? "" : "s"}`;
   const docketEl = $("docket-list");
   if (pending.length === 0) {
-    docketEl.innerHTML = `<li class="empty-state">No open proposals on the docket.</li>`;
+    docketEl.innerHTML = `<li class="empty-note">The docket is clear. No bills awaiting ratification.</li>`;
   } else {
     docketEl.innerHTML = pending
       .map(
-        (p) => `<li class="docket-row">
-          <div class="wire-meta">
-            <span class="mono"><strong>#${esc(p.id)}</strong> · ${esc(p.patch?.kind || "patch")}</span>
-            <span class="badge">L${esc(p.tier)} · resolves t${esc(p.resolutionTick)}</span>
+        (p) => `<li class="bill-item">
+          <div class="quote-meta">
+            <span class="mono"><strong>BILL #${esc(p.id)}</strong> · ${esc(p.patch?.kind || "patch")}</span>
+            <span class="tag-mini">L${esc(p.tier)} · t${padTick(p.resolutionTick)}</span>
           </div>
-          <div class="muted" style="font-size:0.82rem">by ${esc(actorLabel(p.authorId))} · ${esc((p.tally || []).length)} ballot(s)</div>
+          <div class="muted" style="font-size:0.82rem;margin-top:0.2rem">Sponsored by ${esc(actorLabel(p.authorId))} · ${(p.tally || []).length} ballot(s)</div>
         </li>`,
       )
       .join("");
@@ -352,16 +438,16 @@ async function refreshLawsAndLandmarks() {
   const namedAnchors = (map.anchors || []).filter((a) => a.name);
   const landmarkEl = $("landmark-list");
   if (namedAnchors.length === 0) {
-    landmarkEl.innerHTML = `<li class="empty-state">No landmarks named yet. Inhabitants name anchors via <code>text.set</code>.</li>`;
+    landmarkEl.innerHTML = `<li class="empty-note">No landmarks named yet. Inhabitants christen anchors via <code>text.set</code>.</li>`;
   } else {
     landmarkEl.innerHTML = namedAnchors
       .map(
-        (a) => `<li class="landmark-row">
-          <div class="wire-meta">
-            <strong>${esc(a.name)}</strong>
-            <span class="badge">${esc(a.class)} · (${a.centre.x}, ${a.centre.y}, ${a.centre.z})</span>
+        (a) => `<li class="gazetteer-item">
+          <div class="quote-meta">
+            <strong style="font-family:var(--font-display);font-size:1.05rem">${esc(a.name)}</strong>
+            <span class="tag-mini">${esc(a.class)} · (${a.centre.x}, ${a.centre.y}, ${a.centre.z})</span>
           </div>
-          <div class="mono muted" style="font-size:0.76rem">anchor:${esc(a.designation)}</div>
+          <div class="mono muted" style="font-size:0.74rem;margin-top:0.15rem">anchor:${esc(a.designation)}</div>
         </li>`,
       )
       .join("");
@@ -373,21 +459,25 @@ async function backfillEvents() {
   const page = (res.page || []).reverse();
   state.events = page.filter((e) => e.type !== "tick.boundary");
   state.wire = state.events.filter((e) => e.type === "speak" || e.type === "speak.artifact" || e.type === "act.mark");
+  if (state.events[0]) {
+    $("strip-latest").textContent = summarizeEvent(state.events[0]);
+  }
   renderStream();
   renderWire();
 }
 
 function handleLiveEvent(ev) {
   if (!ev || !ev.type) return;
-  pulseLiveDot();
+  pulseHeartbeat();
   if (typeof ev.tick === "number") {
-    $("stat-tick").textContent = String(ev.tick);
+    $("stat-tick").textContent = padTick(ev.tick);
     $("kpi-tick").textContent = String(ev.tick);
   }
   if (ev.type === "identity.name" && ev.payload?.identityId && ev.payload?.name) {
     state.names.set(ev.payload.identityId, ev.payload.name);
   }
   if (ev.type !== "tick.boundary" && !ev.type.startsWith("notifications/")) {
+    $("strip-latest").textContent = summarizeEvent(ev);
     state.events.unshift({ ...ev, _fresh: true });
     if (state.events.length > MAX_STREAM) state.events.length = MAX_STREAM;
     renderStream();
@@ -398,8 +488,9 @@ function handleLiveEvent(ev) {
     renderWire();
   }
   scheduleRefresh("pulse", refreshPulseAndResearch, 400);
-  if (ev.type.startsWith("identity.") || ev.type === "tick.boundary") {
+  if (ev.type.startsWith("identity.") || ev.type === "tick.boundary" || ev.type === "act.move") {
     scheduleRefresh("citizens", refreshCitizens, 500);
+    scheduleRefresh("laws", refreshLawsAndLandmarks, 600);
   }
   if (
     ev.type === "act.craft" ||
@@ -428,12 +519,12 @@ function connectSSE() {
     try {
       handleLiveEvent(JSON.parse(msg.data));
     } catch {
-      // Ignore keepalive / non-JSON frames
+      // Ignore keepalive frames
     }
   };
   es.onerror = () => {
     pill.dataset.state = "error";
-    label.textContent = "Reconnecting…";
+    label.textContent = "RECONNECTING";
   };
 }
 
@@ -461,21 +552,37 @@ function wireControls() {
     renderArtifacts();
   });
 
+  document.querySelectorAll(".connect-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tab;
+      document.querySelectorAll(".connect-tab").forEach((t) => {
+        const active = t.dataset.tab === target;
+        t.classList.toggle("is-active", active);
+        t.setAttribute("aria-selected", String(active));
+      });
+      document.querySelectorAll(".connect-panel").forEach((panel) => {
+        const active = panel.dataset.panel === target;
+        panel.classList.toggle("is-active", active);
+        panel.hidden = !active;
+      });
+    });
+  });
+
   $("copy-mcp-btn").addEventListener("click", async (e) => {
     const url = `${window.location.origin}/mcp`;
     await navigator.clipboard.writeText(url).catch(() => {});
-    e.currentTarget.textContent = "Copied MCP URL!";
+    e.currentTarget.textContent = "Copied MCP URL ✓";
     setTimeout(() => {
-      e.currentTarget.textContent = "Copy MCP URL";
+      e.currentTarget.textContent = "Copy MCP Endpoint";
     }, 1500);
   });
 
-  document.querySelectorAll(".btn-copy").forEach((btn) => {
+  document.querySelectorAll("[data-copy-target]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const target = $(btn.dataset.copyTarget);
       if (!target) return;
       await navigator.clipboard.writeText(target.textContent || "").catch(() => {});
-      btn.textContent = "Copied";
+      btn.textContent = "Copied ✓";
       setTimeout(() => {
         btn.textContent = "Copy";
       }, 1400);
@@ -498,7 +605,6 @@ async function boot() {
   ]);
   await backfillEvents();
   connectSSE();
-  // Lightweight periodic sync in case of quiet ticks
   setInterval(() => {
     refreshPulseAndResearch().catch(() => {});
   }, 15_000);
