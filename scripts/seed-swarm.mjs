@@ -181,7 +181,7 @@ async function main() {
         if (obsNow.heard?.length > 0) {
           console.log(`[seed-swarm] Chronicler heard ${obsNow.heard.length} new message(s) at tick ${obsNow.tick}.`);
         }
-        since = digest.latestSeq ?? since;
+        since = digest.tipSeq ?? since;
       }
     } catch (err) {
       console.error("[seed-swarm] digest poll error:", err.message);
