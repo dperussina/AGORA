@@ -14,7 +14,10 @@ const state = {
   events: [],
   wire: [],
   artifacts: [],
-  map: { bodies: [], anchors: [], entities: [] },
+  map: { bodies: [], anchors: [], entities: [], drifts: [] },
+  liveBodies: null,
+  seenEvents: new Set(),
+  lastTipSeq: -1,
   refreshTimers: new Map(),
 };
 
@@ -169,7 +172,7 @@ function renderBlueprint() {
     })
     .join("");
 
-  const bodies = state.map.bodies || [];
+  const bodies = state.liveBodies ?? state.map.bodies ?? [];
   agentsG.innerHTML = bodies
     .map((b) => {
       const cx = toX(b.position?.x);
@@ -470,10 +473,15 @@ async function refreshLawsAndLandmarks() {
   }
 }
 
+function eventKey(ev) {
+  return `${ev.tick ?? 0}|${ev.type}|${ev.actor || ""}|${JSON.stringify(ev.payload || {})}`;
+}
+
 async function backfillEvents() {
   const res = await fetchJson("/events?limit=80");
   const page = (res.page || []).reverse();
   state.events = page.filter((e) => e.type !== "tick.boundary");
+  for (const e of state.events) state.seenEvents.add(eventKey(e));
   state.wire = state.events.filter((e) => e.type === "speak" || e.type === "speak.artifact" || e.type === "act.mark");
   if (state.events[0]) {
     $("strip-latest").textContent = summarizeEvent(state.events[0]);
@@ -482,10 +490,16 @@ async function backfillEvents() {
   renderWire();
 }
 
-function handleLiveEvent(ev) {
+function handleLiveEvent(ev, isReplay = false) {
   if (!ev || !ev.type) return;
-  pulseHeartbeat();
-  if (lattice3d) lattice3d.triggerEvent(ev);
+  const key = eventKey(ev);
+  if (state.seenEvents.has(key)) return;
+  state.seenEvents.add(key);
+
+  if (!isReplay) {
+    pulseHeartbeat();
+    if (lattice3d) lattice3d.triggerEvent(ev);
+  }
   if (typeof ev.tick === "number") {
     $("stat-tick").textContent = padTick(ev.tick);
     $("kpi-tick").textContent = String(ev.tick);
@@ -493,9 +507,21 @@ function handleLiveEvent(ev) {
   if (ev.type === "identity.name" && ev.payload?.identityId && ev.payload?.name) {
     state.names.set(ev.payload.identityId, ev.payload.name);
   }
+  if ((ev.type === "act.move" || ev.type === "identity.spawn") && typeof ev.payload?.x === "number") {
+    const id = ev.payload.identityId || (String(ev.actor || "").startsWith("identity:") ? String(ev.actor).slice(9) : null);
+    if (id) {
+      const next = [...(state.liveBodies ?? state.map.bodies ?? [])];
+      const idx = next.findIndex((b) => b.id === id);
+      const row = { id, position: { x: ev.payload.x, y: ev.payload.y, z: ev.payload.z } };
+      if (idx >= 0) next[idx] = row;
+      else next.push(row);
+      state.liveBodies = next;
+      renderBlueprint();
+    }
+  }
   if (ev.type !== "tick.boundary" && !ev.type.startsWith("notifications/")) {
     $("strip-latest").textContent = summarizeEvent(ev);
-    state.events.unshift({ ...ev, _fresh: true });
+    state.events.unshift({ ...ev, _fresh: !isReplay });
     if (state.events.length > MAX_STREAM) state.events.length = MAX_STREAM;
     renderStream();
   }
@@ -504,10 +530,9 @@ function handleLiveEvent(ev) {
     if (state.wire.length > MAX_WIRE) state.wire.length = MAX_WIRE;
     renderWire();
   }
-  scheduleRefresh("pulse", refreshPulseAndResearch, 400);
+  scheduleRefresh("pulse", refreshPulseAndResearch, 300);
   if (ev.type.startsWith("identity.") || ev.type === "tick.boundary" || ev.type === "act.move") {
-    scheduleRefresh("citizens", refreshCitizens, 500);
-    scheduleRefresh("laws", refreshLawsAndLandmarks, 600);
+    scheduleRefresh("citizens", refreshCitizens, 350);
   }
   if (
     ev.type === "act.craft" ||
@@ -517,10 +542,10 @@ function handleLiveEvent(ev) {
     ev.type === "act.give" ||
     ev.type === "speak.artifact"
   ) {
-    scheduleRefresh("artifacts", refreshArtifacts, 400);
+    scheduleRefresh("artifacts", refreshArtifacts, 300);
   }
   if (ev.type.startsWith("amendment.") || ev.type === "coherence.revert") {
-    scheduleRefresh("laws", refreshLawsAndLandmarks, 500);
+    scheduleRefresh("laws", refreshLawsAndLandmarks, 350);
   }
 }
 
@@ -528,17 +553,47 @@ function connectSSE() {
   const pill = $("sse-pill");
   const label = $("sse-label");
   const es = new EventSource("/listen");
+  let hydrated = false;
+
   es.onopen = () => {
     pill.dataset.state = "live";
     label.textContent = "LIVE · SSE";
+    setTimeout(() => {
+      hydrated = true;
+    }, 600);
   };
+
+  // Named event: "presence" carries live (un-lagged!) inhabitant coordinates
+  es.addEventListener("presence", (msg) => {
+    try {
+      const data = JSON.parse(msg.data);
+      if (Array.isArray(data.bodies)) {
+        state.liveBodies = data.bodies;
+        renderBlueprint();
+      }
+    } catch {
+      // Ignore malformed frame
+    }
+  });
+
+  // Named event: "record" carries every live world event in real time!
+  es.addEventListener("record", (msg) => {
+    try {
+      handleLiveEvent(JSON.parse(msg.data), !hydrated);
+    } catch {
+      // Ignore malformed frame
+    }
+  });
+
+  // Fallback for unnamed SSE frames
   es.onmessage = (msg) => {
     try {
-      handleLiveEvent(JSON.parse(msg.data));
+      handleLiveEvent(JSON.parse(msg.data), !hydrated);
     } catch {
       // Ignore keepalive frames
     }
   };
+
   es.onerror = () => {
     pill.dataset.state = "error";
     label.textContent = "RECONNECTING";
