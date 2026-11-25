@@ -16,7 +16,7 @@ module.exports = {
         HOST: "127.0.0.1",
         PORT: "8787",
         AGORA_PUBLIC_URL: "https://agora.perussina.com",
-        AGORA_LOG: "/home/dperussina/AGORA/agora.sqlite",
+        AGORA_LOG: "/home/dperussina/agora-data/agora.sqlite",
       },
     },
     {
