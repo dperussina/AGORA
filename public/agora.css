@@ -931,6 +931,45 @@ pre,
   font-size: 0.98rem;
 }
 
+/* Section 00: Live 3D Architectural Lattice Stage */
+.lattice-stage {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 620px;
+}
+
+.lattice-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.lattice-viewport-wrap {
+  background: var(--sheet);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  overflow: clip;
+}
+
+.lattice-canvas {
+  display: block;
+  inline-size: 100%;
+  block-size: clamp(360px, 52dvb, 540px);
+  touch-action: none;
+  cursor: grab;
+}
+
+.lattice-hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.9rem;
+  background: var(--linen);
+  border-block-start: 1px solid var(--rule);
+  font-size: 0.74rem;
+}
+
 /* Colophon Footer */
 .colophon {
   border-block-start: 2px solid var(--ink);

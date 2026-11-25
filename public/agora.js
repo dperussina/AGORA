@@ -1,6 +1,10 @@
+import { Lattice3D } from "/lattice3d.js";
+
 const MAX_STREAM = 100;
 const MAX_WIRE = 60;
 const SEED_VERBS = new Set(["craft", "depict", "dismantle", "edit", "give", "mark", "move", "run", "wait"]);
+
+let lattice3d = null;
 
 const state = {
   filter: "all",
@@ -175,6 +179,18 @@ function renderBlueprint() {
     .join("");
 
   $("blueprint-legend").textContent = `${bodies.length} BODIES · ${arts.length} ARTIFACTS · ${namedCount} NAMED`;
+  const countsEl = $("lattice-counts");
+  if (countsEl) {
+    countsEl.textContent = `${bodies.length} AGENTS · ${arts.length} ARTIFACTS · ${(state.map.drifts || []).length} DRIFTS`;
+  }
+  if (lattice3d) {
+    lattice3d.setWorldData({
+      anchors,
+      bodies,
+      artifacts: state.artifacts,
+      drifts: state.map.drifts || [],
+    });
+  }
 }
 
 function renderStream() {
@@ -469,6 +485,7 @@ async function backfillEvents() {
 function handleLiveEvent(ev) {
   if (!ev || !ev.type) return;
   pulseHeartbeat();
+  if (lattice3d) lattice3d.triggerEvent(ev);
   if (typeof ev.tick === "number") {
     $("stat-tick").textContent = padTick(ev.tick);
     $("kpi-tick").textContent = String(ev.tick);
@@ -593,6 +610,45 @@ function wireControls() {
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog) dialog.close();
   });
+
+  // 3D Architectural Lattice Controls
+  const canvas = $("lattice-canvas");
+  if (canvas) {
+    const hoverEl = $("lattice-hover");
+    const defaultHint = "Drag to orbit · Scroll to zoom · Click any inhabitant, artifact, or landmark to inspect";
+    lattice3d = new Lattice3D(canvas, {
+      actorLabel,
+      onHover: (hit) => {
+        if (hoverEl) hoverEl.textContent = hit ? hit.label : defaultHint;
+      },
+      onSelect: (hit) => {
+        if (hit.kind === "artifact") openArtifactInspector(hit.data);
+        else if (hit.kind === "agent") openInspector("INHABITANT", hit.data.name || hit.data.id, hit.data);
+        else if (hit.kind === "anchor") openInspector("NAMED LANDMARK", hit.data.name || hit.data.designation, hit.data);
+      },
+    });
+
+    document.querySelectorAll("[data-cam]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-cam]").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        lattice3d.setPreset(btn.dataset.cam);
+      });
+    });
+
+    $("toggle-lineage")?.addEventListener("click", (e) => {
+      lattice3d.showLineage = !lattice3d.showLineage;
+      e.currentTarget.classList.toggle("is-active", lattice3d.showLineage);
+    });
+
+    $("toggle-labels")?.addEventListener("click", (e) => {
+      lattice3d.showLabels = !lattice3d.showLabels;
+      e.currentTarget.classList.toggle("is-active", lattice3d.showLabels);
+    });
+
+    $("cam-zoom-in")?.addEventListener("click", () => lattice3d.zoomBy(1.18));
+    $("cam-zoom-out")?.addEventListener("click", () => lattice3d.zoomBy(0.84));
+  }
 }
 
 async function boot() {

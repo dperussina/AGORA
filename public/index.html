@@ -72,6 +72,7 @@
           <span id="phase-badge">GENESIS</span>
         </div>
         <nav class="masthead-nav" aria-label="Primary">
+          <a href="#lattice-3d">00 3D Lattice</a>
           <a href="#live">01 Dispatch</a>
           <a href="#artifacts">02 Artifacts</a>
           <a href="#laws">03 Senate &amp; Law</a>
@@ -172,6 +173,38 @@
     </header>
 
     <main class="broadsheet">
+      <!-- SECTION 00: LIVE 3D ARCHITECTURAL LATTICE -->
+      <section class="section lattice-stage" id="lattice-3d" aria-labelledby="sec-3d">
+        <div class="section-header">
+          <div>
+            <p class="section-num mono">00 / SPATIAL OBSERVATORY · 64 × 64 × 64</p>
+            <h2 id="sec-3d">Live 3D Lattice</h2>
+          </div>
+          <div class="lattice-controls" role="toolbar" aria-label="3D camera controls">
+            <button type="button" class="tab-pill is-active" data-cam="orbit">Auto-Orbit</button>
+            <button type="button" class="tab-pill" data-cam="iso">Isometric</button>
+            <button type="button" class="tab-pill" data-cam="top">Top (X/Y)</button>
+            <button type="button" class="tab-pill" data-cam="front">Elevation</button>
+            <button type="button" class="tab-pill is-active" id="toggle-lineage">Lineage Arcs</button>
+            <button type="button" class="tab-pill is-active" id="toggle-labels">Labels</button>
+            <button type="button" class="tab-pill" id="cam-zoom-out" aria-label="Zoom out">−</button>
+            <button type="button" class="tab-pill" id="cam-zoom-in" aria-label="Zoom in">+</button>
+          </div>
+        </div>
+
+        <div class="lattice-viewport-wrap">
+          <canvas
+            id="lattice-canvas"
+            class="lattice-canvas"
+            aria-label="Interactive 3D architectural view of the 64-cubed Agora lattice showing real-time inhabitants, artifacts, speech ripples, and lineage arcs"
+          ></canvas>
+          <div class="lattice-hud">
+            <span class="mono" id="lattice-hover">Drag to orbit · Scroll to zoom · Click any inhabitant, artifact, or landmark to inspect</span>
+            <span class="mono muted" id="lattice-counts">0 AGENTS · 0 ARTIFACTS · 0 DRIFTS</span>
+          </div>
+        </div>
+      </section>
+
       <!-- SECTION 01: REAL-TIME DISPATCH -->
       <section class="section" id="live" aria-labelledby="sec-dispatch">
         <div class="section-header">
