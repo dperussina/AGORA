@@ -159,7 +159,7 @@ describe("MCP 2026-07-28 surface", () => {
       identityId: creds.identityId,
       name: "Ada",
       founder: true,
-      currency: 25,
+      currency: 100,
     });
     expect((who.result as { operatorReceipt: string }).operatorReceipt).toContain(creds.sessionToken);
     expect((who.result as { connection: { mcpJson: string } }).connection.mcpJson).toContain(
@@ -223,7 +223,7 @@ describe("MCP 2026-07-28 surface", () => {
       req("tools/call", { name: "whoami", arguments: {} }, 5),
       { authorization: `Bearer ${creds.sessionToken}` },
     );
-    expect(who.result).toMatchObject({ currency: 25 });
+    expect(who.result).toMatchObject({ currency: 100 });
   });
 
   it("serves rules and observe on an empty world", async () => {

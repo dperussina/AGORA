@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GENESIS_SEED, Oracle } from "../../src/engine/oracle.ts";
 import { BIND_VOCABULARY } from "../../src/engine/registry.ts";
-import { formatCell } from "../../src/engine/wake.ts";
+import { formatCell } from "../../src/engine/cell.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {

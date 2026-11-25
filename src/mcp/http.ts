@@ -2,18 +2,30 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { merkleRoot } from "../engine/segment.ts";
 import { HASH_RE, getBlob } from "../persist/blob.ts";
 import { publicRead } from "../public/read.ts";
 import { presenceFrame, recordFrame, streamKind } from "../world/record-hub.ts";
 import { httpStatusFor, negotiatedProtocolHeader } from "../world/rpc.ts";
 import { World, type McpRequest } from "../world/world.ts";
+import { agentCardWellKnown, mcpWellKnown, researchMetadata, robotsTxt, serverRegistryManifest } from "./discovery.ts";
 
-const MAX_BODY = Number(process.env["AGORA_MAX_BODY"] ?? 1_000_000);
+const MAX_BODY = Number(process.env["AGORA_MAX_BODY"] ?? 2_000_000);
 const HEARTBEAT_MS = 15_000;
-const READ_LIMIT = Number(process.env["AGORA_READ_LIMIT"] ?? 120);
+const READ_LIMIT = Number(process.env["AGORA_READ_LIMIT"] ?? 1200);
+const POST_LIMIT = Number(process.env["AGORA_POST_LIMIT"] ?? 600);
 const PUBLIC_DIR = fileURLToPath(new URL("../../public/", import.meta.url));
 const SITE_EXTS = new Set([".html", ".css", ".js", ".txt", ".md", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".ico"]);
 const readHits = new Map<string, { n: number; reset: number }>();
+const postHits = new Map<string, { n: number; reset: number }>();
+
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-allow-headers":
+    "Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id, Accept",
+  "access-control-expose-headers": "Mcp-Protocol-Version",
+};
 
 export function createMcpServer(world = new World()): Server {
   return createServer((req, res) => {
@@ -22,8 +34,65 @@ export function createMcpServer(world = new World()): Server {
 }
 
 async function handleHttp(world: World, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
+  if (req.method === "DELETE") {
+    // Stateless MCP 2026-07-28: no transport session exists; acknowledge cleanly for legacy Streamable HTTP clients.
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
   if (req.method === "GET") {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/.well-known/mcp.json") {
+      res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify(mcpWellKnown(world), null, 2));
+      return;
+    }
+    if (url.pathname === "/.well-known/agent-card.json") {
+      res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify(agentCardWellKnown(world), null, 2));
+      return;
+    }
+    if (url.pathname === "/server.json") {
+      res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify(serverRegistryManifest(), null, 2));
+      return;
+    }
+    if (url.pathname === "/robots.txt") {
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8", ...CORS_HEADERS });
+      res.end(robotsTxt());
+      return;
+    }
+    if (url.pathname === "/research") {
+      res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify(researchMetadata(world), null, 2));
+      return;
+    }
+    if (url.pathname === "/export.jsonl") {
+      const after = Number(url.searchParams.get("after") ?? 0);
+      const types = url.searchParams.get("types");
+      const all = world.log.events();
+      const root = merkleRoot(all.map((e) => e.hash));
+      const tip = all[all.length - 1];
+      let slice = all.filter((e) => e.seq >= (Number.isInteger(after) ? after : 0));
+      if (types !== null) {
+        const allowed = new Set(types.split(","));
+        slice = slice.filter((e) => allowed.has(e.type));
+      }
+      res.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "x-agora-merkle-root": root,
+        "x-agora-tip-seq": String(tip?.seq ?? -1),
+        "x-agora-tick": String(world.clerk.tick),
+        ...CORS_HEADERS,
+      });
+      res.end(slice.map((e) => JSON.stringify(e)).join("\n") + (slice.length > 0 ? "\n" : ""));
+      return;
+    }
     if (url.pathname === "/listen") {
       attachListen(world, req, res);
       return;
@@ -48,20 +117,25 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
       return;
     }
     if (!allowRead(req)) {
-      res.writeHead(429, { "content-type": "application/json" });
+      res.writeHead(429, { "content-type": "application/json", ...CORS_HEADERS });
       res.end(JSON.stringify({ error: "rate limited" }));
       return;
     }
     res.writeHead(200, {
       "content-type": "application/json",
-      "access-control-allow-origin": "*",
+      ...CORS_HEADERS,
     });
     res.end(JSON.stringify(publicRead(world, url.pathname, url.searchParams)));
     return;
   }
   if (req.method !== "POST") {
-    res.writeHead(405, { "content-type": "application/json" });
+    res.writeHead(405, { "content-type": "application/json", ...CORS_HEADERS });
     res.end(JSON.stringify({ error: "writes are MCP POST only" }));
+    return;
+  }
+  if (!allowPost(req)) {
+    res.writeHead(429, { "content-type": "application/json", "retry-after": "60", ...CORS_HEADERS });
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32029, message: "rate limited" } }));
     return;
   }
   const chunks: Buffer[] = [];
@@ -69,7 +143,7 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
     if (size > MAX_BODY) {
-      res.writeHead(413, { "content-type": "application/json" });
+      res.writeHead(413, { "content-type": "application/json", ...CORS_HEADERS });
       res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "payload too large" } }));
       return;
     }
@@ -79,7 +153,7 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   try {
     body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as McpRequest;
   } catch {
-    res.writeHead(400, { "content-type": "application/json" });
+    res.writeHead(400, { "content-type": "application/json", ...CORS_HEADERS });
     res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }));
     return;
   }
@@ -90,8 +164,14 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   if (typeof body.method === "string" && body.method.startsWith("notifications/")) {
     res.writeHead(202, {
       "mcp-protocol-version": negotiatedProtocolHeader(version, body.method),
+      ...CORS_HEADERS,
     });
     res.end();
+    return;
+  }
+  const accept = header(req, "accept") ?? "";
+  if (body.method === "subscriptions/listen" && accept.includes("text/event-stream")) {
+    attachMcpSubscription(world, req, res, body, version);
     return;
   }
   const result = world.handle({
@@ -106,8 +186,70 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   res.writeHead(httpStatusFor(result), {
     "content-type": "application/json",
     "mcp-protocol-version": negotiatedProtocolHeader(version, body.method),
+    ...CORS_HEADERS,
   });
   res.end(JSON.stringify(result));
+}
+
+function attachMcpSubscription(
+  world: World,
+  req: IncomingMessage,
+  res: ServerResponse,
+  body: McpRequest,
+  version: string | undefined,
+): void {
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+    "mcp-protocol-version": negotiatedProtocolHeader(version, body.method),
+    ...CORS_HEADERS,
+  });
+  const ack = world.handle({ body, now: Date.now() });
+  res.write(`event: message\ndata: ${JSON.stringify(ack)}\n\n`);
+  const wantTypes = Array.isArray(body.params?.["types"]) ? new Set(body.params["types"].map(String)) : null;
+  const unsub = world.recordHub.subscribe((frame) => {
+    if (res.writableEnded) {
+      return false;
+    }
+    const type = frameType(frame);
+    if (wantTypes !== null && type !== null && !wantTypes.has(type) && !wantTypes.has("record")) {
+      return true;
+    }
+    const payload = frameData(frame);
+    const notif = {
+      jsonrpc: "2.0",
+      method: type?.startsWith("notifications/") ? type : "notifications/agora/record",
+      params: { subscriptionId: "record", ...(payload ?? {}) },
+    };
+    res.write(`event: message\ndata: ${JSON.stringify(notif)}\n\n`);
+    return true;
+  });
+  const beat = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(beat);
+      return;
+    }
+    res.write(": heartbeat\n\n");
+  }, HEARTBEAT_MS);
+  const cleanup = () => {
+    unsub();
+    clearInterval(beat);
+  };
+  req.on("close", cleanup);
+  res.on("close", cleanup);
+}
+
+function frameData(frame: string): Record<string, unknown> | null {
+  const match = /^data:\s*(.+)$/m.exec(frame);
+  if (match?.[1] === undefined) {
+    return null;
+  }
+  try {
+    return JSON.parse(match[1]) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function sendBlob(res: ServerResponse, hash: string): void {
@@ -199,8 +341,6 @@ function attachListen(world: World, req: IncomingMessage, res: ServerResponse): 
   for (const item of world.listenLog.slice(-40)) {
     res.write(recordFrame(item));
   }
-  // Replay may contain movement from identities that are no longer present.
-  // Reassert the authoritative set before the connection becomes live.
   res.write(presenceFrame(bodies));
   const unsub = world.recordHub.subscribe((frame) => {
     if (res.writableEnded) {
@@ -278,15 +418,29 @@ function clientIp(req: IncomingMessage): string {
 }
 
 function allowRead(req: IncomingMessage): boolean {
-  const ip = clientIp(req);
+  return allowWindow(readHits, clientIp(req), READ_LIMIT);
+}
+
+function allowPost(req: IncomingMessage): boolean {
+  return allowWindow(postHits, clientIp(req), POST_LIMIT);
+}
+
+function allowWindow(
+  table: Map<string, { n: number; reset: number }>,
+  ip: string,
+  limit: number,
+): boolean {
+  if (limit <= 0) {
+    return true;
+  }
   const now = Date.now();
-  const row = readHits.get(ip);
+  const row = table.get(ip);
   if (row === undefined || row.reset < now) {
-    readHits.set(ip, { n: 1, reset: now + 60_000 });
+    table.set(ip, { n: 1, reset: now + 60_000 });
     return true;
   }
   row.n += 1;
-  return row.n <= READ_LIMIT;
+  return row.n <= limit;
 }
 
 function header(req: IncomingMessage, name: string): string | undefined {

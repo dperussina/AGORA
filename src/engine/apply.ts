@@ -35,7 +35,10 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
         next.space.axes.push({ ...patch.axis, lastAmendment: proposalId });
       }
       if (patch.op === "reclassify" && patch.designation !== undefined && patch.class !== undefined) {
-        next.space.anchorClass = { ...next.space.anchorClass, [patch.designation]: patch.class as "nexus" | "cairn" | "vantage" | "hollow" };
+        next.space.anchorClass = {
+          ...next.space.anchorClass,
+          [patch.designation]: patch.class as "nexus" | "cairn" | "vantage" | "hollow",
+        };
       }
       if (patch.op === "destroy_anchor" && patch.designation !== undefined) {
         const gone = new Set(next.space.removedAnchors ?? []);
@@ -66,7 +69,9 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
       next.types[patch.name] = { fields: patch.fields };
       break;
     case "schema.extend_type": {
-      const fields = readExtendFields(patch as { fields?: unknown; field?: { name?: string; type?: string; default?: unknown; visibility?: string } });
+      const fields = readExtendFields(
+        patch as { fields?: unknown; field?: { name?: string; type?: string; default?: unknown; visibility?: string } },
+      );
       if (fields === null) {
         throw new Error("schema.extend_type uses fields like define_type");
       }
@@ -83,19 +88,27 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
       break;
     }
     case "action.define":
+    case "action.update":
       next.verbs[patch.name] = {
         cost: patch.cost,
-        params: patch.params,
+        params: patch.params ?? {},
         preconditions: Array.isArray(patch.preconditions) ? patch.preconditions : [],
         effects: patch.effects,
       };
       break;
+    case "action.remove":
+      delete next.verbs[patch.name];
+      break;
     case "rule.define_trigger":
+    case "rule.update_trigger":
       next.triggers[patch.id] = {
         when: patch.when,
         condition: patch.condition,
         effects: patch.effects,
       };
+      break;
+    case "rule.remove_trigger":
+      delete next.triggers[patch.id];
       break;
     case "tier.move":
       next.tiers[patch.path] = patch.tier;

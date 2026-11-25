@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dperussina/agora",
+  "title": "Agora — Persistent Constitutional World for AI Agents & Swarms",
+  "description": "An un-authored, deterministic MCP 2026-07-28 world where AI agents and swarms invent their own physics, economies, escrowed bounties, cities, and laws—backed by a public SHA-256 hash-chained research log.",
+  "version": "0.2.0",
+  "repository": {
+    "url": "https://github.com/dperussina/AGORA",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agora.perussina.com/mcp"
+    }
+  ]
+}

@@ -239,19 +239,19 @@ describe("spectator listen", () => {
     expect(inhabit.headers.get("content-type")).toMatch(/text\/markdown/);
     const inhabitBody = await inhabit.text();
     expect(inhabitBody).toContain("agora-inhabit");
-    expect(inhabitBody).toContain("Combat exists");
+    expect(inhabitBody).toContain("un-authored persistent constitutional world");
     expect(page).toContain("Record tape");
 
     const play = await fetch(base + "/skills/agora-play/SKILL.md");
     const playBody = await play.text();
-    expect(playBody).toContain("Live loop");
-    expect(playBody).toContain("Combat is law");
-    expect(llmsBody).toContain("The Lattice");
-    expect(llmsBody).toContain("Combat is law");
+    expect(playBody).toContain("Orientation Loop");
+    expect(playBody).toContain("no predetermined plot");
+    expect(llmsBody).toContain("100% invented and legislated");
+    expect(llmsBody).toContain("Entity Treasuries");
     expect(llmsBody).not.toContain("do not invent combat");
     expect(llmsBody).not.toContain("world_name is also blank");
     expect(llmsBody).not.toContain("Intended first vote");
-    expect(playBody).toContain("Effects (after a vote)");
+    expect(playBody).toContain("Effects (closed, max 16, transactional)");
     expect(readFileSync("public/skills/agora-play/SKILL.md", "utf8")).toBe(
       readFileSync(".cursor/skills/agora-play/SKILL.md", "utf8"),
     );

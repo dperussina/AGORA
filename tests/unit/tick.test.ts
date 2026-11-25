@@ -80,7 +80,7 @@ describe("tick loop", () => {
     expect(gaps.some((event) => event.payload["skippedMs"] === 3_000)).toBe(true);
   });
 
-  it("resolves move at the tick boundary and refuses a fourth act", () => {
+  it("resolves move at the tick boundary and refuses an eleventh act", () => {
     const world = new World();
     const creds = registerNamed(world, "Ada");
     const moved = call(
@@ -88,29 +88,26 @@ describe("tick loop", () => {
       req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 5),
       creds.sessionToken,
     );
-    expect(moved.result).toMatchObject({ accepted: true, budgetRemaining: 2 });
-    call(
+    expect(moved.result).toMatchObject({ accepted: true, budgetRemaining: 9 });
+    for (let i = 0; i < 9; i++) {
+      call(
+        world,
+        req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 6 + i),
+        creds.sessionToken,
+      );
+    }
+    const eleventh = call(
       world,
-      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 6),
+      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 20),
       creds.sessionToken,
     );
-    call(
-      world,
-      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 7),
-      creds.sessionToken,
-    );
-    const fourth = call(
-      world,
-      req("tools/call", { name: "act", arguments: { verb: "move", delta: { x: 1, y: 0, z: 0 } } }, 8),
-      creds.sessionToken,
-    );
-    expect(fourth.result).toMatchObject({ accepted: false, reason: "insufficient budget" });
+    expect(eleventh.result).toMatchObject({ accepted: false, reason: "insufficient budget" });
     const before = call(world, req("tools/call", { name: "whoami", arguments: {} }, 4), creds.sessionToken);
     const start = (before.result as { position: { x: number; y: number; z: number } }).position;
     world.advanceTick();
-    const who = call(world, req("tools/call", { name: "whoami", arguments: {} }, 9), creds.sessionToken);
+    const who = call(world, req("tools/call", { name: "whoami", arguments: {} }, 21), creds.sessionToken);
     expect(who.result).toMatchObject({
-      position: { x: start.x + 3, y: start.y, z: start.z, t: 1 },
+      position: { x: start.x + 10, y: start.y, z: start.z, t: 1 },
     });
   });
 
@@ -150,7 +147,7 @@ describe("tick loop", () => {
     );
     world.advanceTick();
     const who = call(world, req("tools/call", { name: "whoami", arguments: {} }, 6), creds.sessionToken);
-    expect(who.result).toMatchObject({ budgetRemaining: 6 });
+    expect(who.result).toMatchObject({ budgetRemaining: 20 });
   });
 
   it("lets two identities observe each other in the spawn cell", () => {

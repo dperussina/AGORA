@@ -63,7 +63,7 @@ describe("npc and quest guard", () => {
     expect(TOOL_NAMES).not.toContain("create");
     expect(TOOL_NAMES).not.toContain("quest");
     const types = Object.keys(seedRegistry().types).sort();
-    expect(types).toEqual(["agent", "anchor", "drift", "mark", "warden"]);
+    expect(types).toEqual(["agent", "anchor", "artifact", "drift", "mark", "warden"]);
     const catalog = `${TOOL_NAMES.join(" ")} ${types.join(" ")}`;
     for (const word of FORBIDDEN) {
       expect(catalog.split(/\s+/)).not.toContain(word);

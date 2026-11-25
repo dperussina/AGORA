@@ -25,7 +25,7 @@ describe("adversarial amendment harness", () => {
         cost: 1,
         params: {},
         preconditions: [],
-        effects: Array.from({ length: 17 }, () => ({ effect: "emit", args: ["x"] })),
+        effects: Array.from({ length: 33 }, () => ({ effect: "emit", args: ["x"] })),
       },
     ];
     for (const patch of attacks) {

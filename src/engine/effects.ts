@@ -1,5 +1,6 @@
+import { formatCell, parseCellString } from "./cell.ts";
+import { MAX_EFFECTS, type Registry } from "./registry.ts";
 import type { Position } from "./tick.ts";
-import { formatCell, parseCellString } from "./wake.ts";
 
 export interface Effect {
   effect: string;
@@ -17,17 +18,20 @@ export interface Entity {
 export interface EffectContext {
   selfId: string;
   targetId?: string;
+  tick?: number;
+  fromTrigger?: boolean;
+  registry?: Registry;
   params?: Record<string, string | number | boolean | null>;
   fields: Map<string, Record<string, string | number | boolean | null>>;
   entities: Map<string, Entity>;
   emit: (name: string, payload: Record<string, unknown>) => void;
   nextId: () => string;
-  /** GAME.md currency lives on the clerk, not the field bag. */
+  /** Clerk currency helpers (transactional). */
   moveCurrency?: (from: string, to: string, amount: number) => boolean;
   creditCurrency?: (to: string, amount: number) => boolean;
+  debitCurrency?: (from: string, amount: number) => boolean;
   peekCurrency?: (id: string) => number | undefined;
   applyCurrency?: (balances: Map<string, number>) => void;
-  leaveWake?: () => void;
   expire?: (type: string, age: number) => void;
   /** Identity cells live on bodies, not entities. */
   bodies?: Map<string, Position>;
@@ -43,6 +47,8 @@ export interface EffectReport {
 
 type Scalar = string | number | boolean | null;
 type Eval = { ok: true; value: Scalar } | { ok: false; reason: string };
+
+const DESTROY_WHERE_CAP = 256;
 
 function cloneEntities(entities: Map<string, Entity>): Map<string, Entity> {
   const copy = new Map<string, Entity>();
@@ -72,7 +78,6 @@ export function runEffects(effects: readonly Effect[], ctx: EffectContext): Effe
   const stagedBodies = ctx.bodies === undefined ? undefined : new Map(ctx.bodies);
   const currency = new Map<string, number>();
   const emits: Array<{ name: string; payload: Record<string, unknown> }> = [];
-  let leave = false;
   const expires: Array<[string, number]> = [];
 
   const balanceOf = (id: string): number | undefined => {
@@ -120,12 +125,17 @@ export function runEffects(effects: readonly Effect[], ctx: EffectContext): Effe
       }
       return ctx.creditCurrency?.(to, amount) ?? false;
     },
-    leaveWake:
-      ctx.leaveWake === undefined
-        ? undefined
-        : () => {
-            leave = true;
-          },
+    debitCurrency: (from, amount) => {
+      if (ctx.peekCurrency !== undefined) {
+        const fromBal = balanceOf(from);
+        if (fromBal === undefined || amount < 0 || fromBal < amount) {
+          return false;
+        }
+        currency.set(from, fromBal - amount);
+        return true;
+      }
+      return ctx.debitCurrency?.(from, amount) ?? false;
+    },
     expire:
       ctx.expire === undefined
         ? undefined
@@ -135,7 +145,7 @@ export function runEffects(effects: readonly Effect[], ctx: EffectContext): Effe
   };
 
   const reports: EffectReport[] = [];
-  for (const item of effects.slice(0, 16)) {
+  for (const item of effects.slice(0, MAX_EFFECTS)) {
     const report = applyEffect(item, staged);
     reports.push(report);
     if (!report.ok) {
@@ -163,9 +173,6 @@ export function runEffects(effects: readonly Effect[], ctx: EffectContext): Effe
   for (const event of emits) {
     ctx.emit(event.name, event.payload);
   }
-  if (leave) {
-    ctx.leaveWake?.();
-  }
   for (const [type, age] of expires) {
     ctx.expire?.(type, age);
   }
@@ -189,6 +196,10 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
         return fail(item.effect, value.reason);
       }
       bagOf(ref.value, ctx)[field] = value.value;
+      const entity = ctx.entities.get(ref.value);
+      if (entity !== undefined && isPublicField(ctx.registry, entity.type, field)) {
+        ctx.emit("effect.set_field", { id: ref.value, field, value: value.value });
+      }
       return ok(item.effect);
     }
     case "create": {
@@ -204,18 +215,20 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       if (!fields.ok) {
         return fail(item.effect, fields.reason);
       }
-      if (type.value === "wound") {
-        if (fields.value["target"] === undefined) {
-          if (ctx.targetId !== undefined) {
-            fields.value["target"] = ctx.targetId;
-          } else if (fields.value["beast"] === ctx.selfId) {
-            fields.value["target"] = ctx.selfId;
+      // Populate registry defaults for any omitted fields
+      const typeDef = ctx.registry?.types[type.value];
+      if (typeDef !== undefined) {
+        for (const [fname, fspec] of Object.entries(typeDef.fields)) {
+          if (fields.value[fname] === undefined && fspec.default !== undefined) {
+            if (
+              typeof fspec.default === "string" ||
+              typeof fspec.default === "number" ||
+              typeof fspec.default === "boolean" ||
+              fspec.default === null
+            ) {
+              fields.value[fname] = fspec.default;
+            }
           }
-        }
-        if (fields.value["amount"] === undefined) {
-          const billed = ctx.params?.["amount"];
-          fields.value["amount"] =
-            typeof billed === "number" && Number.isInteger(billed) && billed > 0 ? billed : 1;
         }
       }
       const id = ctx.nextId();
@@ -243,6 +256,35 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       }
       ctx.entities.delete(ref.value);
       ctx.emit("effect.destroy", { id: ref.value });
+      return ok(item.effect);
+    }
+    case "destroy_where": {
+      const type = evalArg(args[0], ctx);
+      if (!type.ok || typeof type.value !== "string" || type.value === "") {
+        return fail(item.effect, type.ok ? "destroy_where requires a type" : type.reason);
+      }
+      const filter = asFieldBag(args[1], ctx);
+      if (!filter.ok) {
+        return fail(item.effect, filter.reason);
+      }
+      const matched = [...ctx.entities.values()]
+        .filter((entity) => {
+          if (entity.type !== type.value) {
+            return false;
+          }
+          for (const [k, v] of Object.entries(filter.value)) {
+            if (entity.fields[k] !== v) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .sort((a, b) => (a.id < b.id ? -1 : 1))
+        .slice(0, DESTROY_WHERE_CAP);
+      for (const entity of matched) {
+        ctx.entities.delete(entity.id);
+        ctx.emit("effect.destroy", { id: entity.id, type: entity.type });
+      }
       return ok(item.effect);
     }
     case "move": {
@@ -295,34 +337,11 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       if (!to.ok) {
         return fail(item.effect, to.reason);
       }
-      if (!amount.ok || typeof amount.value !== "number" || amount.value < 0) {
+      if (!amount.ok || typeof amount.value !== "number" || !Number.isInteger(amount.value) || amount.value < 0) {
         return fail(item.effect, amount.ok ? "transfer amount must be a non-negative integer" : amount.reason);
       }
       if (field === "currency") {
-        const source = ctx.entities.get(from.value);
-        if (source !== undefined) {
-          if (source.type !== "gold") {
-            return fail(item.effect, "not gold");
-          }
-          if (source.fields["holder"] !== ctx.selfId) {
-            return fail(item.effect, "not the holder");
-          }
-          const backing = source.fields["currency"];
-          if (typeof backing !== "number" || !Number.isInteger(backing) || backing < amount.value) {
-            return fail(item.effect, "insufficient currency");
-          }
-          if (ctx.creditCurrency === undefined || !ctx.creditCurrency(to.value, amount.value)) {
-            return fail(item.effect, "insufficient currency");
-          }
-          source.fields["currency"] = backing - amount.value;
-          return ok(item.effect);
-        }
-        if (ctx.moveCurrency !== undefined) {
-          if (!ctx.moveCurrency(from.value, to.value, amount.value)) {
-            return fail(item.effect, "insufficient currency");
-          }
-          return ok(item.effect);
-        }
+        return transferCurrency(from.value, to.value, amount.value, ctx);
       }
       const src = bagOf(from.value, ctx);
       const have = typeof src[field] === "number" ? src[field] : 0;
@@ -354,13 +373,6 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
       ctx.emit(String(message.value ?? "emit"), { args: args.slice(1) });
       return ok(item.effect);
     }
-    case "leave_wake": {
-      if (ctx.leaveWake === undefined) {
-        return fail(item.effect, "leave_wake is not bound");
-      }
-      ctx.leaveWake();
-      return ok(item.effect);
-    }
     case "expire": {
       const type = evalArg(args[0], ctx);
       const age = evalArg(args[1], ctx);
@@ -379,6 +391,118 @@ function applyEffect(item: Effect, ctx: EffectContext): EffectReport {
     default:
       return fail(item.effect, `unknown effect ${item.effect}`);
   }
+}
+
+function entitySupportsCurrency(entity: Entity, registry: Registry | undefined): boolean {
+  if (typeof entity.fields["currency"] === "number" && Number.isInteger(entity.fields["currency"])) {
+    return true;
+  }
+  const spec = registry?.types[entity.type]?.fields["currency"];
+  return spec?.type === "int";
+}
+
+function transferCurrency(fromId: string, toId: string, amount: number, ctx: EffectContext): EffectReport {
+  const fromEntity = ctx.entities.get(fromId);
+  const toEntity = ctx.entities.get(toId);
+
+  // Entity -> Entity
+  if (fromEntity !== undefined && toEntity !== undefined) {
+    if (!entitySupportsCurrency(fromEntity, ctx.registry) || !entitySupportsCurrency(toEntity, ctx.registry)) {
+      return fail("transfer", "entity does not declare currency field");
+    }
+    if (!canDebitEntity(fromEntity, ctx)) {
+      return fail("transfer", "not authorized to debit entity currency");
+    }
+    const have = typeof fromEntity.fields["currency"] === "number" ? fromEntity.fields["currency"] : 0;
+    if (have < amount) {
+      return fail("transfer", "insufficient currency");
+    }
+    const destHave = typeof toEntity.fields["currency"] === "number" ? toEntity.fields["currency"] : 0;
+    fromEntity.fields["currency"] = have - amount;
+    toEntity.fields["currency"] = destHave + amount;
+    emitCurrencyUpdate(fromEntity, ctx);
+    emitCurrencyUpdate(toEntity, ctx);
+    return ok("transfer");
+  }
+
+  // Entity -> Identity (escrow payout / withdrawal)
+  if (fromEntity !== undefined) {
+    if (!entitySupportsCurrency(fromEntity, ctx.registry)) {
+      return fail("transfer", "entity does not declare currency field");
+    }
+    if (!canDebitEntity(fromEntity, ctx)) {
+      return fail("transfer", "not authorized to debit entity currency");
+    }
+    const have = typeof fromEntity.fields["currency"] === "number" ? fromEntity.fields["currency"] : 0;
+    if (have < amount) {
+      return fail("transfer", "insufficient currency");
+    }
+    if (ctx.creditCurrency === undefined || !ctx.creditCurrency(toId, amount)) {
+      return fail("transfer", "insufficient currency");
+    }
+    fromEntity.fields["currency"] = have - amount;
+    emitCurrencyUpdate(fromEntity, ctx);
+    return ok("transfer");
+  }
+
+  // Identity -> Entity (escrow deposit / bounty funding)
+  if (toEntity !== undefined) {
+    if (!entitySupportsCurrency(toEntity, ctx.registry)) {
+      return fail("transfer", "entity does not declare currency field");
+    }
+    if (ctx.debitCurrency === undefined || !ctx.debitCurrency(fromId, amount)) {
+      return fail("transfer", "insufficient currency");
+    }
+    const destHave = typeof toEntity.fields["currency"] === "number" ? toEntity.fields["currency"] : 0;
+    toEntity.fields["currency"] = destHave + amount;
+    emitCurrencyUpdate(toEntity, ctx);
+    return ok("transfer");
+  }
+
+  // Identity -> Identity (clerk coin)
+  if (ctx.moveCurrency !== undefined) {
+    if (!ctx.moveCurrency(fromId, toId, amount)) {
+      return fail("transfer", "insufficient currency");
+    }
+    return ok("transfer");
+  }
+
+  // Fallback for standalone unit tests without clerk binding
+  const src = bagOf(fromId, ctx);
+  const have = typeof src["currency"] === "number" ? src["currency"] : 0;
+  if (have < amount) {
+    return fail("transfer", "insufficient currency");
+  }
+  const dst = bagOf(toId, ctx);
+  src["currency"] = have - amount;
+  dst["currency"] = (typeof dst["currency"] === "number" ? dst["currency"] : 0) + amount;
+  return ok("transfer");
+}
+
+function canDebitEntity(entity: Entity, ctx: EffectContext): boolean {
+  if (ctx.fromTrigger === true) {
+    return true;
+  }
+  const owner = entity.fields["owner"];
+  const holder = entity.fields["holder"];
+  if (owner === undefined && holder === undefined) {
+    return true;
+  }
+  return owner === ctx.selfId || holder === ctx.selfId;
+}
+
+function emitCurrencyUpdate(entity: Entity, ctx: EffectContext): void {
+  if (isPublicField(ctx.registry, entity.type, "currency")) {
+    ctx.emit("effect.set_field", {
+      id: entity.id,
+      field: "currency",
+      value: entity.fields["currency"] ?? 0,
+    });
+  }
+}
+
+function isPublicField(registry: Registry | undefined, type: string, field: string): boolean {
+  return registry?.types[type]?.fields[field]?.visibility === "public";
 }
 
 function ok(effect: string): EffectReport {
@@ -436,22 +560,67 @@ function evalArg(value: unknown, ctx: EffectContext): Eval {
   if (typeof value !== "string") {
     return { ok: false, reason: "unsupported argument" };
   }
-  const plus = /^(.+)\s*\+\s*(.+)$/.exec(value);
-  if (plus?.[1] !== undefined && plus[2] !== undefined) {
-    const left = lookup(plus[1], ctx);
-    const right = lookup(plus[2], ctx);
+  const trimmed = value.trim();
+
+  // Function calls: min(a, b), max(a, b), abs(a)
+  const fnMatch = /^(min|max|abs)\(([^)]+)\)$/.exec(trimmed);
+  if (fnMatch?.[1] !== undefined && fnMatch[2] !== undefined) {
+    const fn = fnMatch[1];
+    const parts = fnMatch[2].split(",").map((p) => evalArg(p.trim(), ctx));
+    for (const part of parts) {
+      if (!part.ok) {
+        return part;
+      }
+      if (typeof part.value !== "number") {
+        return { ok: false, reason: `${fn} requires integers` };
+      }
+    }
+    const nums = parts.map((p) => (p as { ok: true; value: number }).value);
+    if (fn === "abs" && nums.length === 1) {
+      return { ok: true, value: Math.abs(nums[0]!) };
+    }
+    if (fn === "min" && nums.length === 2) {
+      return { ok: true, value: Math.min(nums[0]!, nums[1]!) };
+    }
+    if (fn === "max" && nums.length === 2) {
+      return { ok: true, value: Math.max(nums[0]!, nums[1]!) };
+    }
+    return { ok: false, reason: `invalid arity for ${fn}` };
+  }
+
+  // Binary integer arithmetic: a + b, a - b, a * b, a / b (spaced operators to avoid splitting negative numbers or hyphenated strings)
+  const binMatch = /^(.+?)\s+(\+|-|\*|\/)\s+(.+)$/.exec(trimmed);
+  if (binMatch?.[1] !== undefined && binMatch[2] !== undefined && binMatch[3] !== undefined) {
+    const left = lookup(binMatch[1], ctx);
+    const right = lookup(binMatch[3], ctx);
     if (!left.ok) {
       return left;
     }
     if (!right.ok) {
       return right;
     }
-    if (typeof left.value === "number" && typeof right.value === "number") {
+    if (typeof left.value !== "number" || typeof right.value !== "number") {
+      return { ok: false, reason: "arithmetic requires integers" };
+    }
+    const op = binMatch[2];
+    if (op === "+") {
       return { ok: true, value: left.value + right.value };
     }
-    return { ok: false, reason: "addition requires integers" };
+    if (op === "-") {
+      return { ok: true, value: left.value - right.value };
+    }
+    if (op === "*") {
+      return { ok: true, value: left.value * right.value };
+    }
+    if (op === "/") {
+      if (right.value === 0) {
+        return { ok: false, reason: "division by zero" };
+      }
+      return { ok: true, value: Math.trunc(left.value / right.value) };
+    }
   }
-  return lookup(value, ctx);
+
+  return lookup(trimmed, ctx);
 }
 
 function lookup(token: string, ctx: EffectContext): Eval {
@@ -464,6 +633,15 @@ function lookup(token: string, ctx: EffectContext): Eval {
   }
   if (trimmed === "$target" || trimmed === "target") {
     return ctx.targetId === undefined ? { ok: false, reason: "unbound $target" } : { ok: true, value: ctx.targetId };
+  }
+  if (trimmed === "$tick") {
+    const t = ctx.tick ?? ctx.params?.["tick"];
+    return typeof t === "number" ? { ok: true, value: t } : { ok: false, reason: "unbound $tick" };
+  }
+  const paramRef = /^\$param\.(\w+)$/.exec(trimmed);
+  if (paramRef?.[1] !== undefined) {
+    const val = ctx.registry?.params[paramRef[1]]?.value;
+    return val === undefined ? { ok: false, reason: `unbound ${trimmed}` } : { ok: true, value: val };
   }
   const field = /^\$self\.(\w+)$/.exec(trimmed);
   if (field?.[1] !== undefined) {
@@ -629,7 +807,7 @@ function asFieldBag(
     return { ok: true, value: {} };
   }
   if (typeof value !== "object" || Array.isArray(value)) {
-    return { ok: false, reason: "create fields must be an object" };
+    return { ok: false, reason: "fields must be an object" };
   }
   const out: Record<string, Scalar> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {

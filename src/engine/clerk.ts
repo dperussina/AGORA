@@ -33,7 +33,7 @@ export interface Proposal {
 
 export type ProposeResult =
   | { ok: true; proposalId: number; tier: 1 | 2; resolutionTick: number }
-  | { ok: false; code: string; reason: string };
+  | { ok: false; code: string; reason: string; hint?: string; example?: Record<string, unknown> };
 
 export class Clerk {
   tick = 0;
@@ -49,7 +49,7 @@ export class Clerk {
     nextId: number;
     identities: Identity[];
     proposals: Proposal[];
-    applied: Array<{ id: number; patch: import("./validate.ts").Patch }>;
+    applied: Array<{ id: number; patch: Patch }>;
     resolved: Proposal[];
   }): void {
     this.tick = dump.tick;
@@ -66,7 +66,7 @@ export class Clerk {
     this.resolved.push(...dump.resolved);
   }
 
-  addIdentity(id: string, currency = 25, ticksPresent = 0): Identity {
+  addIdentity(id: string, currency = 100, ticksPresent = 0): Identity {
     const identity: Identity = { id, currency, ticksPresent, ticksAbsent: 0 };
     this.identities.set(id, identity);
     return identity;
@@ -79,14 +79,20 @@ export class Clerk {
     }
     const validation = validatePatch(this.registry, patch);
     if (!validation.ok) {
-      return { ok: false, code: validation.code, reason: validation.reason };
+      return {
+        ok: false,
+        code: validation.code,
+        reason: validation.reason,
+        ...(validation.hint === undefined ? {} : { hint: validation.hint }),
+        ...(validation.example === undefined ? {} : { example: validation.example }),
+      };
     }
     const cost = opts?.waiveCost === true ? 0 : (this.registry.params["proposal_cost"]?.value ?? 10);
     if (author.currency < cost) {
-      return { ok: false, code: "currency", reason: "insufficient currency" };
+      return { ok: false, code: "currency", reason: `insufficient currency (need ${cost}, have ${author.currency})` };
     }
     author.currency -= cost;
-    const cooling = this.registry.params["cooling_ticks_l1"]?.value ?? 10;
+    const cooling = this.registry.params["cooling_ticks_l1"]?.value ?? 8;
     const resolutionTick = this.tick + (validation.tier === 1 ? cooling : 1);
     const proposal: Proposal = {
       id: this.nextId,

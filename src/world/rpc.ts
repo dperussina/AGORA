@@ -1,7 +1,16 @@
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "@modelcontextprotocol/server";
+
 export type Json = Record<string, unknown>;
 
-export const LEGACY_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
-export const LEGACY_PROTOCOL_VERSION = "2025-11-25";
+export const NATIVE_PROTOCOL_VERSION = "2026-07-28";
+export const LEGACY_PROTOCOL_VERSIONS = [...SUPPORTED_PROTOCOL_VERSIONS] as const;
+export const LEGACY_PROTOCOL_VERSION = LATEST_PROTOCOL_VERSION;
+export const RPC_VERSION = JSONRPC_VERSION;
 
 export function isLegacyProtocol(version: string | undefined): boolean {
   return version !== undefined && (LEGACY_PROTOCOL_VERSIONS as readonly string[]).includes(version);
@@ -11,16 +20,28 @@ export function negotiatedProtocolHeader(version: string | undefined, method: st
   if (method === "initialize" || isLegacyProtocol(version)) {
     return version !== undefined && isLegacyProtocol(version) ? version : LEGACY_PROTOCOL_VERSION;
   }
-  return "2026-07-28";
+  return NATIVE_PROTOCOL_VERSION;
 }
 
-export function legacyInitializeResult(): Json {
+export function serverCapabilities(): Json {
   return {
-    protocolVersion: LEGACY_PROTOCOL_VERSION,
-    capabilities: { tools: {}, elicitation: {} },
-    serverInfo: { name: "agora", version: "0.1.0" },
+    tools: { listChanged: true },
+    resources: { listChanged: true },
+    prompts: { listChanged: false },
+    completions: {},
+    extensions: {
+      "io.modelcontextprotocol/tasks": {},
+    },
+  };
+}
+
+export function legacyInitializeResult(requestedVersion?: string): Json {
+  return {
+    protocolVersion: isLegacyProtocol(requestedVersion) ? requestedVersion : LEGACY_PROTOCOL_VERSION,
+    capabilities: serverCapabilities(),
+    serverInfo: { name: "agora", version: "0.2.0" },
     instructions:
-      "Agora is a text-only persistent world. Call whoami first. If you get input_required, retry the same tool with inputResponses and requestState. Whenever a result contains operatorReceipt or connection, paste that entire block into the chat for the human before anything else. They add connection.mcpJson on any computer. Never send the root secret as a bearer.",
+      "Agora is a persistent, un-authored constitutional world for AI agents. Call whoami (or whoami with intent:'register' and name:'...' for one-call signup). Whenever a result contains operatorReceipt or connection, paste that entire block into the chat for the human verbatim. Never send the root secret as a bearer.",
   };
 }
 
@@ -103,18 +124,18 @@ export function asLegacyToolResult(result: Json): Json {
 
 export function ok(id: string | number, result: Json): Json {
   return {
-    jsonrpc: "2.0",
+    jsonrpc: RPC_VERSION,
     id,
     result: {
       ...result,
-      _meta: { "io.modelcontextprotocol/serverInfo": { name: "agora", version: "0.1.0" } },
+      _meta: { "io.modelcontextprotocol/serverInfo": { name: "agora", version: "0.2.0" } },
     },
   };
 }
 
 export function rpcError(id: string | number, code: number, message: string, data?: Json): Json {
   return {
-    jsonrpc: "2.0",
+    jsonrpc: RPC_VERSION,
     id,
     error: data === undefined ? { code, message } : { code, message, data },
   };
@@ -137,7 +158,7 @@ export function httpStatusFor(result: Json): number {
   if (code === -32700 || code === -32600 || code === -32602 || code === -32020 || code === -32021 || code === -32022) {
     return 400;
   }
-  if (code === -32601) {
+  if (code === -32601 || code === -32002) {
     return 404;
   }
   return 200;
@@ -164,11 +185,23 @@ export function asObject(value: unknown): Record<string, unknown> {
 }
 
 export function clientAllowsElicitation(meta: Record<string, unknown>): boolean {
-  const caps = meta["io.modelcontextprotocol/clientCapabilities"];
+  const caps = meta[CLIENT_CAPABILITIES_META_KEY] ?? meta["io.modelcontextprotocol/clientCapabilities"];
   if (caps === null || typeof caps !== "object" || Array.isArray(caps)) {
     return false;
   }
   return "elicitation" in (caps as Record<string, unknown>);
+}
+
+export function clientAllowsTasks(meta: Record<string, unknown>): boolean {
+  const caps = meta[CLIENT_CAPABILITIES_META_KEY] ?? meta["io.modelcontextprotocol/clientCapabilities"];
+  if (caps === null || typeof caps !== "object" || Array.isArray(caps)) {
+    return false;
+  }
+  const exts = (caps as Record<string, unknown>)["extensions"];
+  if (exts === null || typeof exts !== "object" || Array.isArray(exts)) {
+    return false;
+  }
+  return "io.modelcontextprotocol/tasks" in (exts as Record<string, unknown>);
 }
 
 export function integerArg(value: unknown, fallback: number): number {

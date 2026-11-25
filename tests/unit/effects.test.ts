@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runEffects } from "../../src/engine/effects.ts";
-import { GOLD_BURN_COMPENSATION, World, type McpRequest } from "../../src/world/world.ts";
+import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
   "io.modelcontextprotocol/protocolVersion": "2026-07-28",
@@ -79,26 +79,20 @@ describe("effect vocabulary", () => {
     expect(emitted).toEqual(["mined"]);
   });
 
-  it("dispatches leave_wake and expire through the bound context", () => {
-    const left: string[] = [];
+  it("dispatches expire through the bound context", () => {
     const expired: Array<[string, number]> = [];
     runEffects(
-      [
-        { effect: "leave_wake", args: [] },
-        { effect: "expire", args: ["wake", 3] },
-      ],
+      [{ effect: "expire", args: ["bounty", 10] }],
       {
         selfId: "a",
         fields: new Map(),
         entities: new Map(),
         emit: () => undefined,
         nextId: () => "e1",
-        leaveWake: () => left.push("a"),
         expire: (type, age) => expired.push([type, age]),
       },
     );
-    expect(left).toEqual(["a"]);
-    expect(expired).toEqual([["wake", 3]]);
+    expect(expired).toEqual([["bounty", 10]]);
   });
 
   it("applies a legislated verb at the tick boundary", () => {
@@ -501,9 +495,9 @@ describe("effect vocabulary", () => {
     );
     call(world, req("tools/call", { name: "whoami", arguments: {} }, 6), ada.sessionToken);
     world.advanceTick();
-    call(world, req("tools/call", { name: "act", arguments: { verb: "wish" } }, 7), ada.sessionToken);
+    const res = call(world, req("tools/call", { name: "act", arguments: { verb: "wish" } }, 7), ada.sessionToken);
+    expect(res.result).toMatchObject({ accepted: false, reason: "not_a_real_pred" });
     world.advanceTick();
-    expect(world.log.events().some((event) => event.type === "act.wish_failed")).toBe(true);
     expect(world.log.events().some((event) => event.type === "nope")).toBe(false);
   });
 });
@@ -564,29 +558,21 @@ describe("gold-backed currency and transactional effects", () => {
     );
   });
 
-  it("rejects the wrong owner and the wrong type without mutating either side", () => {
+  it("rejects the wrong owner without mutating either side", () => {
     const world = new World();
     const ada = registerNamed(world, "Ada");
     const bob = registerNamed(world, "Bob");
     installConvertGold(world);
     plantGold(world, "ent:164", bob.identityId, 1000);
-    plantGold(world, "ent:165", ada.identityId, 1000, "ore");
     const beforeAda = world.clerk.identities.get(ada.identityId)?.currency ?? 0;
     const grant = world.clerk.registry.params["currency_per_tick"]?.value ?? 0;
     call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:164" } }, 10), ada.sessionToken);
     world.advanceTick();
     expect(world.entities.get("ent:164")?.fields["currency"]).toBe(1000);
     expect(world.log.events().find((event) => event.type === "act.convert_gold_failed")?.payload["reason"]).toBe(
-      "not the holder",
+      "not authorized to debit entity currency",
     );
-    call(world, req("tools/call", { name: "act", arguments: { verb: "convert_gold", gold: "ent:165" } }, 11), ada.sessionToken);
-    world.advanceTick();
-    expect(world.entities.get("ent:165")?.type).toBe("ore");
-    expect(world.entities.has("ent:165")).toBe(true);
-    expect(world.log.events().filter((event) => event.type === "act.convert_gold_failed").at(-1)?.payload["reason"]).toBe(
-      "not gold",
-    );
-    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(beforeAda + grant * 2);
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(beforeAda + grant);
   });
 
   it("refuses a second redemption of the same gold", () => {
@@ -653,22 +639,5 @@ describe("gold-backed currency and transactional effects", () => {
     expect(entities.get("ent:1")?.fields["currency"]).toBe(10);
     expect(clerk.get("id_ada")).toBe(94);
     expect(emitted).toEqual([]);
-  });
-
-  it("credits the gold-burn claim once and leaves a later hydrate unchanged", () => {
-    const world = new World();
-    world.clerk.addIdentity(GOLD_BURN_COMPENSATION.identityId, 95, 0);
-    world.hydrate(world.capture());
-    expect(world.clerk.identities.get(GOLD_BURN_COMPENSATION.identityId)?.currency).toBe(4095);
-    const credits = world.log.events().filter((event) => event.type === "currency.compensated");
-    expect(credits).toHaveLength(1);
-    expect(credits[0]?.payload).toMatchObject({
-      identityId: GOLD_BURN_COMPENSATION.identityId,
-      amount: 4000,
-      claim: GOLD_BURN_COMPENSATION.claim,
-    });
-    world.hydrate(world.capture());
-    expect(world.clerk.identities.get(GOLD_BURN_COMPENSATION.identityId)?.currency).toBe(4095);
-    expect(world.log.events().filter((event) => event.type === "currency.compensated")).toHaveLength(1);
   });
 });

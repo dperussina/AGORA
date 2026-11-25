@@ -8,12 +8,23 @@ const sqlitePath = process.env["AGORA_LOG"];
 const opened = sqlitePath === undefined ? null : openPersistedWorld(sqlitePath);
 const world = opened?.world ?? new World();
 const server = createMcpServer(world);
-const tickMs = (world.clerk.registry.params["tick_seconds"]?.value ?? 60) * 1000;
-const timer = setInterval(() => {
-  world.advanceTick();
-}, tickMs);
 
+let timer: ReturnType<typeof setTimeout> | null = null;
 let shuttingDown = false;
+
+function scheduleTick(): void {
+  if (shuttingDown) {
+    return;
+  }
+  const tickMs = (world.clerk.registry.params["tick_seconds"]?.value ?? 15) * 1000;
+  world.nextTickAt = Date.now() + tickMs;
+  timer = setTimeout(() => {
+    world.advanceTick(Date.now());
+    scheduleTick();
+  }, tickMs);
+}
+
+scheduleTick();
 
 function shutdown(signal: string): void {
   if (shuttingDown) {
@@ -21,7 +32,9 @@ function shutdown(signal: string): void {
   }
   shuttingDown = true;
   process.stdout.write(`agora shutting down (${signal})\n`);
-  clearInterval(timer);
+  if (timer !== null) {
+    clearTimeout(timer);
+  }
   world.recordHub.close();
   try {
     world.persist();

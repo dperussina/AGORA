@@ -1,10 +1,10 @@
+import { parseCellString } from "../engine/cell.ts";
 import type { Entity } from "../engine/effects.ts";
 import { chebyshev } from "../engine/geography.ts";
 import { publicStanding } from "../engine/standing.ts";
 import { merkleRoot } from "../engine/segment.ts";
 import type { Position } from "../engine/tick.ts";
 import type { Event } from "../engine/types.ts";
-import { parseCellString } from "../engine/wake.ts";
 import { foldWorld } from "../engine/world-fold.ts";
 import type { World } from "../world/world.ts";
 
@@ -39,15 +39,31 @@ function entityCell(entity: Entity): Position | undefined {
   return parseCellString(raw) ?? undefined;
 }
 
-function mapEntity(entity: Entity) {
+function publicFieldsFor(world: World, entity: Entity): Record<string, string | number | boolean | null> {
+  const def = world.clerk.registry.types[entity.type]?.fields;
+  if (def === undefined) {
+    return {};
+  }
+  const out: Record<string, string | number | boolean | null> = {};
+  for (const [key, spec] of Object.entries(def)) {
+    if (spec.visibility === "public" && entity.fields[key] !== undefined) {
+      out[key] = entity.fields[key]!;
+    }
+  }
+  return out;
+}
+
+function mapEntity(world: World, entity: Entity) {
   const position = entityCell(entity);
   if (position === undefined) {
     return null;
   }
+  const pub = publicFieldsFor(world, entity);
   return {
     id: entity.id,
     type: entity.type,
     position,
+    ...(Object.keys(pub).length > 0 ? { fields: pub } : {}),
     ...(typeof entity.fields["name"] === "string" ? { name: entity.fields["name"] } : {}),
     ...(typeof entity.fields["kind"] === "string" ? { kind: entity.fields["kind"] } : {}),
     ...(typeof entity.fields["caption"] === "string" ? { caption: entity.fields["caption"] } : {}),
@@ -91,6 +107,38 @@ export function publicRead(
       events: events.length,
       weightSum: weights.reduce((sum, value) => sum + value, 0),
     };
+  }
+  if (path === "/artifacts") {
+    const kind = query.get("kind");
+    const tag = query.get("tag");
+    const owner = query.get("owner");
+    const limit = Math.min(200, Math.max(1, Number(query.get("limit") ?? 50)));
+    const items = [...world.entities.values()]
+      .filter((entity) => entity.type === "artifact" && entity.fields["visibility"] !== "private")
+      .filter((entity) => kind === null || entity.fields["kind"] === kind)
+      .filter((entity) => owner === null || entity.fields["owner"] === owner)
+      .filter((entity) => {
+        if (tag === null) {
+          return true;
+        }
+        const raw = typeof entity.fields["tags"] === "string" ? entity.fields["tags"] : "";
+        return raw.split(",").map((s) => s.trim().toLowerCase()).includes(tag.toLowerCase());
+      })
+      .sort((a, b) => (a.id < b.id ? 1 : -1))
+      .slice(0, limit)
+      .map((entity) => ({
+        id: entity.id,
+        position: entityCell(entity) ?? null,
+        kind: entity.fields["kind"] ?? null,
+        name: entity.fields["name"] ?? null,
+        shape: entity.fields["shape"] ?? null,
+        tags: entity.fields["tags"] ?? null,
+        data: entity.fields["data"] ?? null,
+        owner: entity.fields["owner"] ?? null,
+        currency: entity.fields["currency"] ?? 0,
+        createdBy: entity.createdBy ?? "derived",
+      }));
+    return { artifacts: items, total: items.length };
   }
   if (path === "/rules" || path === "/registry") {
     return {
@@ -190,7 +238,7 @@ export function publicRead(
         : [],
       entities: t === null
         ? [...world.entities.values()]
-            .map(mapEntity)
+            .map((entity) => mapEntity(world, entity))
             .filter((row): row is NonNullable<typeof row> => row !== null && (z === null || row.position.z === Number(z)))
         : [],
     };

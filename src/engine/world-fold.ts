@@ -1,11 +1,11 @@
 import { applyPatch, rebuildRegistry } from "./apply.ts";
+import { parseCellString } from "./cell.ts";
 import type { Entity } from "./effects.ts";
 import { fold, genesisState } from "./fold.ts";
 import { seedRegistry, type Registry } from "./registry.ts";
 import type { Event, FoldState } from "./types.ts";
 import type { Patch } from "./validate.ts";
 import type { Position } from "./tick.ts";
-import { parseCellString } from "./wake.ts";
 
 export interface WorldView {
   fold: FoldState;
@@ -45,21 +45,7 @@ export function foldWorld(events: readonly Event[]): WorldView {
     if (event.type === "identity.name" && typeof event.payload["identityId"] === "string" && typeof event.payload["name"] === "string") {
       names[event.payload["identityId"]] = event.payload["name"];
     }
-    if (event.type === "identity.spawn" && actor !== undefined) {
-      const x = event.payload["x"];
-      const y = event.payload["y"];
-      const z = event.payload["z"];
-      if (typeof x === "number" && typeof y === "number" && typeof z === "number") {
-        bodies[actor] = { x, y, z };
-      }
-    }
-    if (event.type === "body.died" && typeof event.payload["holder"] === "string") {
-      const dest = parseCellString(typeof event.payload["dest"] === "string" ? event.payload["dest"] : "");
-      if (dest !== null) {
-        bodies[event.payload["holder"]] = dest;
-      }
-    }
-    if ((event.type === "act.move" || event.type === "act.follow") && actor !== undefined) {
+    if ((event.type === "identity.spawn" || event.type === "act.move") && actor !== undefined) {
       const x = event.payload["x"];
       const y = event.payload["y"];
       const z = event.payload["z"];
@@ -107,23 +93,15 @@ export function foldWorld(events: readonly Event[]): WorldView {
         createdBy: prior?.createdBy ?? event.seq,
       };
     }
-    if (event.type === "wake.left" && typeof event.payload["id"] === "string") {
-      const id = event.payload["id"];
-      const position =
-        typeof event.payload["position"] === "string" ? parseCellString(event.payload["position"]) : undefined;
-      entities[id] = {
-        id,
-        type: "wake",
-        fields: {
-          kind: typeof event.payload["kind"] === "string" ? event.payload["kind"] : "",
-          position: typeof event.payload["position"] === "string" ? event.payload["position"] : "",
-          traveler: typeof event.payload["traveler"] === "string" ? event.payload["traveler"] : "",
-          tick: typeof event.payload["tick"] === "number" ? event.payload["tick"] : event.tick,
-        },
-        ...(position === null || position === undefined ? {} : { position }),
-        createdBy: event.seq,
-      };
-      entitySeq = Math.max(entitySeq, entityNumber(id));
+    if (event.type === "effect.set_field" && typeof event.payload["id"] === "string" && typeof event.payload["field"] === "string") {
+      const entity = entities[event.payload["id"]];
+      const val = event.payload["value"];
+      if (
+        entity !== undefined &&
+        (typeof val === "string" || typeof val === "number" || typeof val === "boolean" || val === null)
+      ) {
+        entity.fields[event.payload["field"]] = val;
+      }
     }
     if (event.type === "act.depict" && typeof event.payload["id"] === "string") {
       const id = event.payload["id"];
@@ -143,20 +121,8 @@ export function foldWorld(events: readonly Event[]): WorldView {
       };
       entitySeq = Math.max(entitySeq, entityNumber(id));
     }
-    if (
-      (event.type === "effect.destroy" || event.type === "wake.heeded" || event.type === "wake.followed") &&
-      typeof event.payload["id"] === "string"
-    ) {
+    if (event.type === "effect.destroy" && typeof event.payload["id"] === "string") {
       delete entities[event.payload["id"]];
-    }
-    if (event.type === "wake.followed" && actor !== undefined) {
-      const to = event.payload["to"];
-      if (to !== null && typeof to === "object" && !Array.isArray(to)) {
-        const row = to as { x?: unknown; y?: unknown; z?: unknown };
-        if (typeof row.x === "number" && typeof row.y === "number" && typeof row.z === "number") {
-          bodies[actor] = { x: row.x, y: row.y, z: row.z };
-        }
-      }
     }
     if (event.type === "act.mark" && actor !== undefined && typeof event.payload["text"] === "string") {
       const x = event.payload["x"];
@@ -229,7 +195,7 @@ export function occupancyAtTick(
     if (event.type === "identity.name" && typeof event.payload["identityId"] === "string" && typeof event.payload["name"] === "string") {
       names[event.payload["identityId"]] = event.payload["name"];
     }
-    if ((event.type === "identity.spawn" || event.type === "act.move" || event.type === "act.follow") && actor !== undefined) {
+    if ((event.type === "identity.spawn" || event.type === "act.move") && actor !== undefined) {
       const x = event.payload["x"];
       const y = event.payload["y"];
       const z = event.payload["z"];

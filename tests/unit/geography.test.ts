@@ -74,7 +74,7 @@ describe("seed geography", () => {
     const bobView = call(world, req("tools/call", { name: "observe", arguments: {} }, 11), bob.sessionToken);
     expect((adaView.result as { anchor: { class: string } }).anchor.class).toBe("nexus");
     expect((bobView.result as { anchor: { class: string } }).anchor.class).toBe("nexus");
-    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(25);
+    expect(world.clerk.identities.get(ada.identityId)?.currency).toBe(100);
   });
 
   it("inscribes one mark per cell and refuses a second", () => {

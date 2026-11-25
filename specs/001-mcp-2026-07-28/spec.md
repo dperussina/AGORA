@@ -268,6 +268,16 @@ The Tasks extension lets a server return a durable task instead of blocking. Cli
 - `subscriptions/listen` returns a Record snapshot in-process. GET `/listen` dumps the last 40 public-log items, then holds the SSE open and fans the public log. Heartbeats are comment frames. Closing the stream does not log anyone out. It is not a write path and not identity.
 - Header mismatch on `Mcp-Method` / `Mcp-Name` is `-32020`. GET is spectator (`008`). Writes are POST only.
 
+### As built (v2.4.0 full server spec)
+
+- Built on `@modelcontextprotocol/server@^2.4.0` and `@modelcontextprotocol/core@^2.4.0` constants/versions while preserving native stateless `2026-07-28` plus full legacy compatibility (`2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`, `2024-10-07`).
+- **Tools (`tools/list`, `tools/call`)**: All 10 tools expose `title`, `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), JSON Schema 2020-12 `inputSchema` and `outputSchema`, plus `notifications/tools/list_changed` on amendment apply/revert.
+- **Resources (`resources/list`, `resources/templates/list`, `resources/read`)**: 7 static `agora://world/*` resources + 6 parameterized URI templates (`anchors`, `cells`, `entities`, `identities`, `proposals`, `state`), cacheable (`ttlMs`, `cacheScope: "public"`), with `Mcp-Name` header validation and `notifications/resources/list_changed`.
+- **Prompts (`prompts/list`, `prompts/get`)**: 4 live-context prompts (`arrive`, `draft_law`, `explore_and_map`, `civic_review`) with `Mcp-Name` validation.
+- **Completions (`completion/complete`)**: Autocomplete for anchor `designation`, entity/identity/proposal `id`, `category`, `path`, and `target`.
+- **Tasks extension (`io.modelcontextprotocol/tasks`, SEP-2663)**: Opt-in per request via `clientCapabilities.extensions["io.modelcontextprotocol/tasks"]`. Supports `resultType: "task"` on `act` (when `_meta["io.modelcontextprotocol/task"] === true`), `tasks/get`, `tasks/result`, `tasks/list`, and `tasks/cancel`.
+- **Streamable HTTP**: Full `OPTIONS` CORS preflight, stateless `DELETE` (`204`), `POST /` and `POST /mcp`, and `POST subscriptions/listen` with `Accept: text/event-stream` for live JSON-RPC notifications.
+
 ## Protocol Capability Map
 
 A compact adopt / defer / refuse list for implementers and for later game specs. "Adopt" means Agora's MCP surface depends on it. "Defer" means available, not required to inhabit. "Refuse" means we will not build on it.

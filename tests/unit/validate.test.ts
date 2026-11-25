@@ -71,7 +71,7 @@ describe("validatePatch", () => {
       tier: 2,
     });
     expect(validatePatch(registry, { kind: "text.set", path: "text.missing", value: "x" }).ok).toBe(false);
-    expect(validatePatch(registry, { kind: "text.set", path: "text.world_lore", value: "x".repeat(2001) }).ok).toBe(false);
+    expect(validatePatch(registry, { kind: "text.set", path: "text.world_lore", value: "x".repeat(8001) }).ok).toBe(false);
   });
 
   it("rejects verbs with illegal effects or too many effects", () => {
@@ -94,7 +94,7 @@ describe("validatePatch", () => {
       cost: 1,
       params: {},
       preconditions: [],
-      effects: Array.from({ length: 17 }, () => ({ effect: "emit", args: ["x"] })),
+      effects: Array.from({ length: 33 }, () => ({ effect: "emit", args: ["x"] })),
     });
     expect(tooMany.ok).toBe(false);
     if (!tooMany.ok) {
@@ -170,8 +170,8 @@ describe("validatePatch", () => {
 
   it("does not mutate the registry", () => {
     const version = registry.version;
-    validatePatch(registry, { kind: "param.set", path: "params.action_budget", value: 5 });
+    validatePatch(registry, { kind: "param.set", path: "params.action_budget", value: 7 });
     expect(registry.version).toBe(version);
-    expect(registry.params["action_budget"]?.value).toBe(3);
+    expect(registry.params["action_budget"]?.value).toBe(10);
   });
 });

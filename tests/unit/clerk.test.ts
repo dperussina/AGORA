@@ -103,19 +103,19 @@ describe("clerk", () => {
     const budget = clerk.propose("a", {
       kind: "param.set",
       path: "params.action_budget",
-      value: 5,
+      value: 7,
     });
     if (!budget.ok) {
       throw new Error("expected propose to succeed");
     }
     clerk.vote("a", budget.proposalId, "for");
     clerk.vote("b", budget.proposalId, "for");
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 8; i++) {
       clerk.resolveTick();
     }
     const [done] = clerk.resolveTick();
     expect(done?.status).toBe("applied");
-    expect(clerk.registry.params.action_budget?.value).toBe(5);
+    expect(clerk.registry.params.action_budget?.value).toBe(7);
 
     const verb = clerk.propose("a", {
       kind: "action.define",
@@ -137,9 +137,9 @@ describe("clerk", () => {
 
   it("resolves at most amendments_per_tick and queues overflow", () => {
     const clerk = new Clerk();
-    clerk.addIdentity("a", 100, 100);
+    clerk.addIdentity("a", 200, 100);
     clerk.addIdentity("b", 25, 100);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 11; i++) {
       const result = clerk.propose("a", {
         kind: "text.set",
         path: "text.world_name",
@@ -152,7 +152,7 @@ describe("clerk", () => {
     }
     clerk.resolveTick();
     const first = clerk.resolveTick();
-    expect(first).toHaveLength(3);
+    expect(first).toHaveLength(10);
     expect(first.every((item) => item.status === "applied")).toBe(true);
     expect(clerk.docket()).toHaveLength(1);
     const second = clerk.resolveTick();

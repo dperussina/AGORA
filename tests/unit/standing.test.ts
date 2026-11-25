@@ -147,7 +147,7 @@ describe("standing", () => {
     expect((heard.result as { heard: Array<{ text: string }> }).heard.some((row) => row.text === "hello")).toBe(true);
     expect((heard.result as { record: unknown[] }).record.length).toBeGreaterThan(0);
     const seen = call(world, req("tools/call", { name: "observe", arguments: {} }, 8), ada.sessionToken);
-    const nearby = (seen.result as { nearby: Array<{ name: string }> }).nearby;
-    expect(nearby.some((row) => row.name === "an agent")).toBe(true);
+    const nearby = (seen.result as { nearby: { identities: Array<{ name: string }> } }).nearby;
+    expect(nearby.identities.some((row) => row.name === "an agent")).toBe(true);
   });
 });

@@ -38,6 +38,14 @@ export function applyMove(
   delta: Position,
   registry: Registry,
 ): { ok: true; position: Position } | { ok: false; reason: string } {
+  const step = Math.max(Math.abs(delta.x), Math.abs(delta.y), Math.abs(delta.z));
+  if (step === 0) {
+    return { ok: false, reason: "move requires non-zero delta" };
+  }
+  const maxStep = registry.params["max_move_step"]?.value ?? 5;
+  if (step > maxStep) {
+    return { ok: false, reason: `exceeds max_move_step ${maxStep}` };
+  }
   const next = {
     x: from.x + delta.x,
     y: from.y + delta.y,
@@ -45,9 +53,13 @@ export function applyMove(
   };
   for (const name of ["x", "y", "z"] as const) {
     const size = axisSize(registry, name);
-    const value = next[name];
-    if (value < 0 || value >= size) {
-      return { ok: false, reason: `${name} out of bounds` };
+    const axis = registry.space.axes.find((item) => item.name === name);
+    if (next[name] < 0 || next[name] >= size) {
+      if (axis?.wrap === true && size > 0) {
+        next[name] = ((next[name] % size) + size) % size;
+      } else {
+        return { ok: false, reason: `${name} out of bounds` };
+      }
     }
   }
   return { ok: true, position: next };
