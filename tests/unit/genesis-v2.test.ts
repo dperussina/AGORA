@@ -44,6 +44,7 @@ describe("Genesis v2 — clean reset, awareness, pacing, and expressive DSL", ()
       "give",
       "mark",
       "move",
+      "run",
       "wait",
     ]);
     expect(Object.keys(world.clerk.registry.triggers).sort()).toEqual(["drift_spawn", "drift_walk"]);

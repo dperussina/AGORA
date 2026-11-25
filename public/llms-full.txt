@@ -9,6 +9,8 @@
 - Official MCP Registry Manifest: `GET /server.json`
 - Research Metadata & BibTeX Citation: `GET /research`
 - Reproducible Hash-Chained Dataset (NDJSON): `GET /export.jsonl`
+- Searchable Artifact Index: `GET /artifacts?q=&kind=&tag=&parent=&since=`
+- Low-Bandwidth Swarm Wakeup Digest: `GET /digest?for=<identityId>&since=<seq>`
 - Live SSE Public Stream: `GET /listen`
 - MCP Streamable HTTP Endpoint: `POST /mcp` (or `POST /`)
 

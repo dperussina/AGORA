@@ -108,21 +108,59 @@ export function publicRead(
       weightSum: weights.reduce((sum, value) => sum + value, 0),
     };
   }
+  if (path === "/digest") {
+    const forId = query.get("for");
+    const since = Number(query.get("since") ?? -1);
+    const tip = events[events.length - 1];
+    const newEvents = Number.isInteger(since) && since >= 0 ? events.filter((e) => e.seq > since).length : 0;
+    const newArtifacts = [...world.entities.values()].filter(
+      (e) =>
+        e.type === "artifact" &&
+        e.fields["visibility"] !== "private" &&
+        typeof e.createdBy === "number" &&
+        e.createdBy > since,
+    ).length;
+    const unreadSpeech = forId !== null ? world.unreadSpeechCount(forId) : 0;
+    const openVotesNotCast =
+      forId !== null ? world.clerk.docket().filter((p) => !p.ballots.has(forId)).length : world.clerk.docket().length;
+    return {
+      tick: world.clerk.tick,
+      tipSeq: tip?.seq ?? -1,
+      shouldWake: unreadSpeech > 0 || openVotesNotCast > 0 || newArtifacts > 0,
+      unreadSpeech,
+      openVotesNotCast,
+      newArtifacts,
+      newEvents,
+      online: world.onlineCount,
+    };
+  }
   if (path === "/artifacts") {
     const kind = query.get("kind");
     const tag = query.get("tag");
     const owner = query.get("owner");
+    const parent = query.get("parent");
+    const q = query.get("q")?.toLowerCase() ?? null;
+    const since = Number(query.get("since") ?? -1);
     const limit = Math.min(200, Math.max(1, Number(query.get("limit") ?? 50)));
     const items = [...world.entities.values()]
       .filter((entity) => entity.type === "artifact" && entity.fields["visibility"] !== "private")
       .filter((entity) => kind === null || entity.fields["kind"] === kind)
       .filter((entity) => owner === null || entity.fields["owner"] === owner)
+      .filter((entity) => parent === null || entity.fields["parent"] === parent)
+      .filter((entity) => !(Number.isInteger(since) && since >= 0) || (typeof entity.createdBy === "number" && entity.createdBy > since))
       .filter((entity) => {
         if (tag === null) {
           return true;
         }
         const raw = typeof entity.fields["tags"] === "string" ? entity.fields["tags"] : "";
         return raw.split(",").map((s) => s.trim().toLowerCase()).includes(tag.toLowerCase());
+      })
+      .filter((entity) => {
+        if (q === null || q.length === 0) {
+          return true;
+        }
+        const hay = `${entity.fields["kind"] ?? ""} ${entity.fields["name"] ?? ""} ${entity.fields["tags"] ?? ""} ${entity.fields["shape"] ?? ""} ${entity.fields["data"] ?? ""}`.toLowerCase();
+        return hay.includes(q);
       })
       .sort((a, b) => (a.id < b.id ? 1 : -1))
       .slice(0, limit)
@@ -133,6 +171,8 @@ export function publicRead(
         name: entity.fields["name"] ?? null,
         shape: entity.fields["shape"] ?? null,
         tags: entity.fields["tags"] ?? null,
+        parent: entity.fields["parent"] ?? null,
+        cites: entity.fields["cites"] ?? null,
         data: entity.fields["data"] ?? null,
         owner: entity.fields["owner"] ?? null,
         currency: entity.fields["currency"] ?? 0,

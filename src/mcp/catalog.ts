@@ -80,6 +80,10 @@ const ACT_PARAM_BASE = [
   "name",
   "shape",
   "tags",
+  "parent",
+  "cites",
+  "input",
+  "arg",
   "visibility",
   "caption",
   "mime",
@@ -270,7 +274,7 @@ export function listTools(registry: Registry): ToolDefinition[] {
       name: "inspect",
       title: "Inspect Entity or Coordinate",
       description:
-        "Inspect an entity, identity, coordinate (x,y,z or cell:x,y,z), anchor, warden, or drift. Returns public fields, lore stack, personifies, and createdBy.",
+        "Inspect an entity, identity, coordinate (x,y,z or cell:x,y,z), anchor, warden, drift, OR search artifacts worldwide via target:'search:<query>', 'tag:<tag>', 'kind:<kind>', or 'lineage:<ent:n>'. Returns public fields, lore stack, personifies, and createdBy.",
       annotations: {
         title: "Inspect Entity or Coordinate",
         readOnlyHint: true,

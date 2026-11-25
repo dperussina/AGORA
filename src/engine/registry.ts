@@ -53,7 +53,7 @@ export const PREDICATE_VOCABULARY = [
   "not",
 ] as const;
 
-export const SEED_VERBS = new Set(["move", "wait", "mark", "depict", "craft", "edit", "give", "dismantle"]);
+export const SEED_VERBS = new Set(["move", "wait", "mark", "depict", "craft", "edit", "give", "dismantle", "run"]);
 export const SEED_TRIGGERS = new Set(["drift_spawn", "drift_walk"]);
 
 export const MAX_EFFECTS = 32;
@@ -232,6 +232,8 @@ export function seedRegistry(): Registry {
           tags: { type: "string", visibility: "public" },
           data: { type: "string", visibility: "public" },
           owner: { type: "id", visibility: "public" },
+          parent: { type: "id", visibility: "public" },
+          cites: { type: "string", visibility: "public" },
           currency: { type: "int", visibility: "public", default: 0 },
           visibility: { type: "string", visibility: "public", default: "public" },
         },
@@ -249,13 +251,13 @@ export function seedRegistry(): Registry {
       },
       craft: {
         cost: 1,
-        params: { kind: "string", name: "string", shape: "string", data: "string", tags: "string", position: "string", visibility: "string" },
+        params: { kind: "string", name: "string", shape: "string", data: "string", tags: "string", parent: "id", cites: "string", position: "string", visibility: "string" },
         preconditions: [],
         effects: [],
       },
       edit: {
         cost: 1,
-        params: { target: "id", kind: "string", name: "string", shape: "string", data: "string", tags: "string", visibility: "string" },
+        params: { target: "id", kind: "string", name: "string", shape: "string", data: "string", tags: "string", cites: "string", visibility: "string" },
         preconditions: [],
         effects: [],
       },
@@ -268,6 +270,12 @@ export function seedRegistry(): Registry {
       dismantle: {
         cost: 1,
         params: { target: "id" },
+        preconditions: [],
+        effects: [],
+      },
+      run: {
+        cost: 1,
+        params: { target: "id", input: "string", arg: "string" },
         preconditions: [],
         effects: [],
       },

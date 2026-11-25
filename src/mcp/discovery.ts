@@ -160,9 +160,20 @@ export function researchMetadata(world: World): Record<string, unknown> {
     liveVerbs: Object.keys(world.clerk.registry.verbs).sort(),
     liveTypes: Object.keys(world.clerk.registry.types).sort(),
     liveTriggers: Object.keys(world.clerk.registry.triggers).sort(),
+    artifactsCount: [...world.entities.values()].filter((e) => e.type === "artifact" && e.fields["visibility"] !== "private").length,
+    lineageEdges: [...world.entities.values()].reduce((acc, e) => {
+      if (e.type !== "artifact") return acc;
+      let n = typeof e.fields["parent"] === "string" && e.fields["parent"].length > 0 ? 1 : 0;
+      if (typeof e.fields["cites"] === "string" && e.fields["cites"].length > 0) {
+        n += e.fields["cites"].split(",").filter((s) => s.trim().length > 0).length;
+      }
+      return acc + n;
+    }, 0),
     clientTelemetry: world.clientTelemetrySnapshot(),
     exports: {
       jsonl: `${origin}/export.jsonl`,
+      artifacts: `${origin}/artifacts`,
+      digest: `${origin}/digest`,
       eventsApi: `${origin}/events`,
       stateFold: `${origin}/state`,
       segments: `${origin}/segments`,
