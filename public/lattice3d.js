@@ -1,8 +1,11 @@
 /**
- * High-DPI 3D Architectural Vitrine Renderer for Agora (Zero WebGL, 60 FPS).
- * Features true 3D lit multi-face polyhedra (prisms, octahedra, pavilions, spheres),
- * depth-fogged 64³ lattice, cast floor shadows, animated 3D lineage streams,
- * live SSE speech/machine/movement FX, spring-damped orbit/zoom, and auto-pause.
+ * Lean Precision 3D Spatial Telemetry Renderer for Agora (Zero WebGL, 60 FPS).
+ * Inspired by scientific star-charts and lean data visualization:
+ * - Ultra-fine micro-reticle glyphs (never chunky overlapping boxes/spheres)
+ * - Automatic screen-space anti-collision micro-fanning with exact-origin tethers
+ * - Greedy 2D label collision avoidance (zero overlapping text)
+ * - Smooth "Focus Active" camera targeting + spring-damped orbit/zoom
+ * - Automatic off-screen & background tab pausing
  */
 
 const GRID = 63;
@@ -16,12 +19,15 @@ export class Lattice3D {
     this.onHover = opts.onHover || (() => {});
     this.actorLabel = opts.actorLabel || ((id) => id);
 
-    this.yaw = -0.72;
-    this.pitch = 0.48;
-    this.zoom = 1.08;
+    // Camera & focus target (in world coordinates 0..63)
+    this.yaw = -0.68;
+    this.pitch = 0.44;
+    this.zoom = 1.05;
+    this.focus = { x: HALF, y: HALF, z: HALF };
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetZoom = this.zoom;
+    this.targetFocus = { x: HALF, y: HALF, z: HALF };
     this.autoOrbit = true;
     this.showLineage = true;
     this.showLabels = true;
@@ -117,7 +123,7 @@ export class Lattice3D {
           trail: [],
         });
       }
-      this.pulses.push({ x: p.x, y: p.y, z: p.z, color: "#ff5c40", label: "", born: now, ttl: 2400 });
+      this.pulses.push({ x: p.x, y: p.y, z: p.z, color: "#ff6b4a", label: "", born: now, ttl: 2200 });
       return;
     }
 
@@ -126,27 +132,27 @@ export class Lattice3D {
         x: p.x,
         y: p.y,
         z: p.z,
-        color: "#60a5fa",
-        beam: true,
+        color: p.kind === "script" ? "#34d399" : "#38bdf8",
         label: `+ ${p.name || p.kind || "artifact"}`,
         born: now,
-        ttl: 5600,
+        ttl: 5200,
       });
       return;
     }
 
     if (ev.type === "act.run") {
       const art = this.artifacts.find((a) => a.id === p.target);
-      if (art?.position) {
+      const agent = this.agents.get(actorId);
+      const origin = art?.position || (agent ? { x: agent.x, y: agent.y, z: agent.z } : null);
+      if (origin) {
         this.pulses.push({
-          x: art.position.x,
-          y: art.position.y,
-          z: art.position.z,
-          color: "#38bdf8",
-          beam: true,
-          label: `run[${p.input}] → ${String(p.reply || "ok").slice(0, 36)}`,
+          x: origin.x,
+          y: origin.y,
+          z: origin.z,
+          color: p.sandbox === "quickjs-wasm" ? "#34d399" : "#38bdf8",
+          label: `${p.sandbox === "quickjs-wasm" ? "wasm" : "run"}[${p.input}] → ${String(p.reply || "ok").slice(0, 32)}`,
           born: now,
-          ttl: 6000,
+          ttl: 5800,
         });
       }
       return;
@@ -168,9 +174,9 @@ export class Lattice3D {
           z: origin.z,
           to: targetArt?.position || null,
           color: "#ff6b4a",
-          label: `${this.actorLabel(actorId)}: “${String(p.text || "").slice(0, 40)}”`,
+          label: `${this.actorLabel(actorId)}: “${String(p.text || "").slice(0, 38)}”`,
           born: now,
-          ttl: 6500,
+          ttl: 6000,
         });
       }
     }
@@ -179,24 +185,41 @@ export class Lattice3D {
   setPreset(name) {
     this.autoOrbit = false;
     if (name === "iso") {
-      this.targetYaw = -0.72;
-      this.targetPitch = 0.48;
-      this.targetZoom = 1.08;
+      this.targetFocus = { x: HALF, y: HALF, z: HALF };
+      this.targetYaw = -0.68;
+      this.targetPitch = 0.44;
+      this.targetZoom = 1.05;
     } else if (name === "top") {
+      this.targetFocus = { x: HALF, y: HALF, z: HALF };
       this.targetYaw = 0;
-      this.targetPitch = 1.48;
-      this.targetZoom = 1.18;
+      this.targetPitch = 1.5;
+      this.targetZoom = 1.15;
     } else if (name === "front") {
+      this.targetFocus = { x: HALF, y: HALF, z: HALF };
       this.targetYaw = 0;
-      this.targetPitch = 0.08;
-      this.targetZoom = 1.14;
+      this.targetPitch = 0.06;
+      this.targetZoom = 1.12;
+    } else if (name === "focus") {
+      const pts = [
+        ...[...this.agents.values()].map((a) => ({ x: a.tx, y: a.ty, z: a.tz })),
+        ...this.artifacts.filter((a) => a.position).map((a) => a.position),
+      ];
+      if (pts.length > 0) {
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        const cz = pts.reduce((s, p) => s + p.z, 0) / pts.length;
+        this.targetFocus = { x: cx, y: cy, z: cz };
+        this.targetZoom = 2.05;
+      }
     } else if (name === "orbit") {
+      this.targetFocus = { x: HALF, y: HALF, z: HALF };
+      this.targetZoom = 1.05;
       this.autoOrbit = true;
     }
   }
 
   zoomBy(factor) {
-    this.targetZoom = Math.max(0.55, Math.min(2.6, this.targetZoom * factor));
+    this.targetZoom = Math.max(0.55, Math.min(3.8, this.targetZoom * factor));
   }
 
   start() {
@@ -263,8 +286,8 @@ export class Lattice3D {
         const dx = e.clientX - this.lastPtr.x;
         const dy = e.clientY - this.lastPtr.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) this.dragMoved = true;
-        this.targetYaw += dx * 0.0065;
-        this.targetPitch = Math.max(-1.35, Math.min(1.5, this.targetPitch + dy * 0.0065));
+        this.targetYaw += dx * 0.006;
+        this.targetPitch = Math.max(-1.4, Math.min(1.52, this.targetPitch + dy * 0.006));
         this.lastPtr = { x: e.clientX, y: e.clientY };
         return;
       }
@@ -309,7 +332,7 @@ export class Lattice3D {
 
   _findHit(px, py) {
     let best = null;
-    let bestDist = 20;
+    let bestDist = 16;
     for (let i = this.hitTargets.length - 1; i >= 0; i--) {
       const t = this.hitTargets[i];
       const d = Math.hypot(t.sx - px, t.sy - py);
@@ -329,9 +352,9 @@ export class Lattice3D {
   }
 
   _project(x, y, z) {
-    const nx = x - HALF;
-    const ny = z - HALF;
-    const nz = y - HALF;
+    const nx = x - this.focus.x;
+    const ny = z - this.focus.z;
+    const nz = y - this.focus.y;
 
     const cy = Math.cos(this.yaw);
     const sy = Math.sin(this.yaw);
@@ -343,8 +366,8 @@ export class Lattice3D {
     const ry = ny * cp - rz1 * sp;
     const rz = ny * sp + rz1 * cp;
 
-    const camDist = 132;
-    const scale = (Math.min(this.width, this.height) * 0.9 * this.zoom) / (camDist + rz);
+    const camDist = 138;
+    const scale = (Math.min(this.width, this.height) * 0.88 * this.zoom) / (camDist + rz);
     return {
       sx: this.width * 0.5 + rx * scale,
       sy: this.height * 0.52 - ry * scale,
@@ -355,17 +378,20 @@ export class Lattice3D {
 
   _step(now) {
     if (this.autoOrbit && !this.dragging && !this.reducedMotion) {
-      this.targetYaw += 0.002;
+      this.targetYaw += 0.0014;
     }
     const k = this.reducedMotion ? 1 : 0.11;
     this.yaw += (this.targetYaw - this.yaw) * k;
     this.pitch += (this.targetPitch - this.pitch) * k;
     this.zoom += (this.targetZoom - this.zoom) * k;
+    this.focus.x += (this.targetFocus.x - this.focus.x) * k;
+    this.focus.y += (this.targetFocus.y - this.focus.y) * k;
+    this.focus.z += (this.targetFocus.z - this.focus.z) * k;
 
     for (const a of this.agents.values()) {
-      a.x += (a.tx - a.x) * 0.12;
-      a.y += (a.ty - a.y) * 0.12;
-      a.z += (a.tz - a.z) * 0.12;
+      a.x += (a.tx - a.x) * 0.14;
+      a.y += (a.ty - a.y) * 0.14;
+      a.z += (a.tz - a.z) * 0.14;
       a.trail = a.trail.filter((pt) => now - pt.born < 12_000);
     }
     this.pulses = this.pulses.filter((p) => now - p.born < p.ttl);
@@ -376,85 +402,99 @@ export class Lattice3D {
     ctx.save();
     ctx.scale(this.dpr, this.dpr);
 
-    // Backlit architectural vitrine background
-    const bg = ctx.createRadialGradient(
-      this.width * 0.5,
-      this.height * 0.45,
-      30,
-      this.width * 0.5,
-      this.height * 0.5,
-      Math.max(this.width, this.height) * 0.72,
-    );
-    bg.addColorStop(0, "#171d2b");
-    bg.addColorStop(0.55, "#0f131d");
-    bg.addColorStop(1, "#090b11");
-    ctx.fillStyle = bg;
+    // Clean, ultra-lean obsidian telemetry ground
+    ctx.fillStyle = "#0b0e14";
     ctx.fillRect(0, 0, this.width, this.height);
 
-    this._drawLatticeCube(ctx);
-    if (this.showLineage) this._drawLineageArcs(ctx, now);
+    this._drawLatticeFrame(ctx);
+    if (this.showLineage) this._drawLineageSplines(ctx, now);
 
-    const drawables = [];
-    this.hitTargets = [];
-
+    // Project all interactive nodes and resolve screen-space micro-collisions
+    const nodes = [];
     for (const a of this.anchors) {
       if (!a.centre) continue;
       const p = this._project(a.centre.x, a.centre.y, a.centre.z);
-      drawables.push({ kind: "anchor", depth: p.depth, p, data: a });
+      if (a.name) {
+        nodes.push({ kind: "anchor", depth: p.depth, ox: p.sx, oy: p.sy, sx: p.sx, sy: p.sy, data: a });
+      } else {
+        this._drawSilentAnchor(ctx, p);
+      }
     }
     for (const d of this.drifts) {
       if (!d.position) continue;
       const p = this._project(d.position.x, d.position.y, d.position.z);
-      drawables.push({ kind: "drift", depth: p.depth, p, data: d });
+      ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
+      ctx.fillRect(p.sx - 0.75, p.sy - 0.75, 1.5, 1.5);
     }
     for (const art of this.artifacts) {
       if (!art.position) continue;
       const p = this._project(art.position.x, art.position.y, art.position.z);
-      drawables.push({ kind: "artifact", depth: p.depth, p, data: art });
+      nodes.push({ kind: "artifact", depth: p.depth, ox: p.sx, oy: p.sy, sx: p.sx, sy: p.sy, data: art });
     }
     for (const ag of this.agents.values()) {
       const p = this._project(ag.x, ag.y, ag.z);
-      drawables.push({ kind: "agent", depth: p.depth, p, data: ag });
+      nodes.push({ kind: "agent", depth: p.depth, ox: p.sx, oy: p.sy, sx: p.sx, sy: p.sy, data: ag });
     }
 
-    drawables.sort((a, b) => b.depth - a.depth);
+    // Screen-space anti-collision relaxation (keeps adjacent XYZ nodes cleanly separated!)
+    const interactive = nodes.filter((n) => n.kind !== "anchor");
+    const minSep = 16;
+    for (let iter = 0; iter < 5; iter++) {
+      for (let i = 0; i < interactive.length; i++) {
+        for (let j = i + 1; j < interactive.length; j++) {
+          const a = interactive[i];
+          const b = interactive[j];
+          let dx = b.sx - a.sx;
+          let dy = b.sy - a.sy;
+          let dist = Math.hypot(dx, dy);
+          if (dist < minSep) {
+            if (dist < 0.01) {
+              const ang = (i * 2.39996 + j * 1.1) % (Math.PI * 2);
+              dx = Math.cos(ang);
+              dy = Math.sin(ang);
+              dist = 1;
+            }
+            const push = (minSep - dist) * 0.52;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            a.sx -= ux * push;
+            a.sy -= uy * push;
+            b.sx += ux * push;
+            b.sy += uy * push;
+          }
+        }
+      }
+    }
 
-    for (const item of drawables) {
-      if (item.kind === "anchor") this._drawAnchor(ctx, item.p, item.data, now);
-      else if (item.kind === "drift") this._drawDrift(ctx, item.p);
-      else if (item.kind === "artifact") this._drawArtifact(ctx, item.p, item.data, now);
-      else if (item.kind === "agent") this._drawAgent(ctx, item.p, item.data, now);
+    nodes.sort((a, b) => b.depth - a.depth);
+    this.hitTargets = [];
+    const placedLabels = [];
+
+    for (const n of nodes) {
+      if (n.kind === "anchor") {
+        this._drawNamedAnchor(ctx, n, placedLabels);
+      } else if (n.kind === "artifact") {
+        this._drawArtifactGlyph(ctx, n, now, placedLabels);
+      } else if (n.kind === "agent") {
+        this._drawAgentGlyph(ctx, n, now, placedLabels);
+      }
     }
 
     this._drawPulses(ctx, now);
     ctx.restore();
   }
 
-  _drawLatticeCube(ctx) {
-    // Translucent recessed floor plate (z = 0)
-    const f0 = this._project(0, 0, 0);
-    const f1 = this._project(GRID, 0, 0);
-    const f2 = this._project(GRID, GRID, 0);
-    const f3 = this._project(0, GRID, 0);
-    ctx.beginPath();
-    ctx.moveTo(f0.sx, f0.sy);
-    ctx.lineTo(f1.sx, f1.sy);
-    ctx.lineTo(f2.sx, f2.sy);
-    ctx.lineTo(f3.sx, f3.sy);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(56, 189, 248, 0.035)";
-    ctx.fill();
-
-    // 8×8 floor grid
-    ctx.lineWidth = 0.75;
-    for (let i = 0; i <= 8; i++) {
-      const v = (i / 8) * GRID;
-      ctx.strokeStyle = i === 0 || i === 8 ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.09)";
+  _drawLatticeFrame(ctx) {
+    // Whisper-quiet 4×4 floor grid
+    ctx.lineWidth = 0.6;
+    for (let i = 0; i <= 4; i++) {
+      const v = (i / 4) * GRID;
+      ctx.strokeStyle = i === 0 || i === 4 ? "rgba(226, 232, 240, 0.14)" : "rgba(226, 232, 240, 0.045)";
       this._line3d(ctx, v, 0, 0, v, GRID, 0);
       this._line3d(ctx, 0, v, 0, GRID, v, 0);
     }
 
-    // Cube bounding volume
+    // Minimalist hairline bounding edges
     const corners = [
       [0, 0, 0], [GRID, 0, 0], [GRID, GRID, 0], [0, GRID, 0],
       [0, 0, GRID], [GRID, 0, GRID], [GRID, GRID, GRID], [0, GRID, GRID],
@@ -464,33 +504,29 @@ export class Lattice3D {
       [4, 5], [5, 6], [6, 7], [7, 4],
       [0, 4], [1, 5], [2, 6], [3, 7],
     ];
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 0.75;
     for (const [a, b] of edges) {
-      const ca = corners[a];
-      const cb = corners[b];
-      const pa = this._project(ca[0], ca[1], ca[2]);
-      const pb = this._project(cb[0], cb[1], cb[2]);
-      const avgDepth = (pa.depth + pb.depth) * 0.5;
-      const alpha = Math.max(0.09, Math.min(0.32, 0.22 - avgDepth * 0.002));
-      ctx.strokeStyle = `rgba(226, 232, 240, ${alpha.toFixed(2)})`;
+      const pa = this._project(corners[a][0], corners[a][1], corners[a][2]);
+      const pb = this._project(corners[b][0], corners[b][1], corners[b][2]);
+      const alpha = Math.max(0.05, Math.min(0.18, 0.13 - (pa.depth + pb.depth) * 0.0008));
+      ctx.strokeStyle = `rgba(226, 232, 240, ${alpha.toFixed(3)})`;
       ctx.beginPath();
       ctx.moveTo(pa.sx, pa.sy);
       ctx.lineTo(pb.sx, pb.sy);
       ctx.stroke();
     }
 
-    // Subtle glowing axis ticks
-    ctx.font = "500 10px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(148, 163, 184, 0.58)";
-    const px = this._project(GRID + 3, 0, 0);
-    const py = this._project(0, GRID + 3, 0);
-    const pz = this._project(0, 0, GRID + 3);
-    ctx.fillText("X 63", px.sx, px.sy);
-    ctx.fillText("Y 63", py.sx, py.sy);
-    ctx.fillText("Z 63", pz.sx, pz.sy);
+    ctx.font = "400 9.5px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(148, 163, 184, 0.45)";
+    const px = this._project(GRID + 2.5, 0, 0);
+    const py = this._project(0, GRID + 2.5, 0);
+    const pz = this._project(0, 0, GRID + 2.5);
+    ctx.fillText("X", px.sx, px.sy);
+    ctx.fillText("Y", py.sx, py.sy);
+    ctx.fillText("Z", pz.sx, pz.sy);
   }
 
-  _drawLineageArcs(ctx, now) {
+  _drawLineageSplines(ctx, now) {
     const byId = new Map(this.artifacts.map((a) => [a.id, a]));
     for (const art of this.artifacts) {
       if (!art.position) continue;
@@ -505,28 +541,23 @@ export class Lattice3D {
         const a = this._project(art.position.x, art.position.y, art.position.z);
         const b = this._project(target.position.x, target.position.y, target.position.z);
         const mx = (a.sx + b.sx) * 0.5;
-        const my = (a.sy + b.sy) * 0.5 - 38;
-
+        const my = (a.sy + b.sy) * 0.5 - 26;
         ctx.save();
-        const grad = ctx.createLinearGradient(a.sx, a.sy, b.sx, b.sy);
-        grad.addColorStop(0, "rgba(56, 189, 248, 0.85)");
-        grad.addColorStop(1, "rgba(245, 158, 11, 0.85)");
         ctx.beginPath();
         ctx.moveTo(a.sx, a.sy);
         ctx.quadraticCurveTo(mx, my, b.sx, b.sy);
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 1;
         ctx.stroke();
-
-        // Animated glowing data packet traveling along the lineage arc
         if (!this.reducedMotion) {
-          const t = (now * 0.00045) % 1;
+          const t = (now * 0.0004) % 1;
           const u = 1 - t;
           const dx = u * u * b.sx + 2 * u * t * mx + t * t * a.sx;
           const dy = u * u * b.sy + 2 * u * t * my + t * t * a.sy;
+          ctx.fillStyle = "#7dd3fc";
           ctx.beginPath();
-          ctx.arc(dx, dy, 2.6, 0, Math.PI * 2);
-          ctx.fillStyle = "#e0f2fe";
+          ctx.arc(dx, dy, 1.8, 0, Math.PI * 2);
           ctx.fill();
         }
         ctx.restore();
@@ -534,165 +565,153 @@ export class Lattice3D {
     }
   }
 
-  _drawSolidBox(ctx, cx, cy, cz, rx, ry, rz, colors) {
-    const verts = [
-      this._project(cx - rx, cy - ry, cz - rz),
-      this._project(cx + rx, cy - ry, cz - rz),
-      this._project(cx + rx, cy + ry, cz - rz),
-      this._project(cx - rx, cy + ry, cz - rz),
-      this._project(cx - rx, cy - ry, cz + rz),
-      this._project(cx + rx, cy - ry, cz + rz),
-      this._project(cx + rx, cy + ry, cz + rz),
-      this._project(cx - rx, cy + ry, cz + rz),
-    ];
-    const faces = [
-      { idx: [4, 5, 6, 7], color: colors.top },
-      { idx: [0, 1, 5, 4], color: colors.left },
-      { idx: [1, 2, 6, 5], color: colors.right },
-      { idx: [2, 3, 7, 6], color: colors.left },
-      { idx: [3, 0, 4, 7], color: colors.right },
-    ];
-    faces.sort((a, b) => {
-      const da = a.idx.reduce((s, i) => s + verts[i].depth, 0) / 4;
-      const db = b.idx.reduce((s, i) => s + verts[i].depth, 0) / 4;
-      return db - da;
-    });
-    for (const f of faces) {
-      ctx.beginPath();
-      ctx.moveTo(verts[f.idx[0]].sx, verts[f.idx[0]].sy);
-      for (let i = 1; i < f.idx.length; i++) ctx.lineTo(verts[f.idx[i]].sx, verts[f.idx[i]].sy);
-      ctx.closePath();
-      ctx.fillStyle = f.color;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.18)";
-      ctx.lineWidth = 0.7;
-      ctx.stroke();
-    }
+  _drawSilentAnchor(ctx, p) {
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
+    ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    ctx.moveTo(p.sx - 2, p.sy);
+    ctx.lineTo(p.sx + 2, p.sy);
+    ctx.moveTo(p.sx, p.sy - 2);
+    ctx.lineTo(p.sx, p.sy + 2);
+    ctx.stroke();
   }
 
-  _drawAnchor(ctx, p, a, now) {
-    const isNamed = Boolean(a.name);
+  _drawNamedAnchor(ctx, n, placedLabels) {
+    const a = n.data;
     const floor = this._project(a.centre.x, a.centre.y, 0);
-
-    if (!isNamed) {
-      ctx.beginPath();
-      ctx.arc(p.sx, p.sy, 2, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
-      ctx.fill();
-      return;
-    }
-
-    // Vertical drop stem + glowing floor ring
-    ctx.strokeStyle = "rgba(245, 158, 11, 0.25)";
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.14)";
+    ctx.lineWidth = 0.75;
     ctx.setLineDash([2, 3]);
     ctx.beginPath();
     ctx.moveTo(floor.sx, floor.sy);
-    ctx.lineTo(p.sx, p.sy);
+    ctx.lineTo(n.sx, n.sy);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.beginPath();
-    ctx.ellipse(floor.sx, floor.sy, 14, 7, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(245, 158, 11, 0.35)";
+    // Precision architectural corner-brackets around the landmark
+    const s = 9;
+    const c = 3.5;
+    ctx.strokeStyle = "rgba(251, 191, 36, 0.65)";
     ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // 3D wireframe architectural pavilion
-    this._drawSolidBox(ctx, a.centre.x, a.centre.y, a.centre.z, 2.2, 2.2, 2.2, {
-      top: "rgba(245, 158, 11, 0.24)",
-      left: "rgba(245, 158, 11, 0.14)",
-      right: "rgba(245, 158, 11, 0.08)",
-    });
-
-    const pulse = 0.5 + 0.5 * Math.sin(now * 0.002);
     ctx.beginPath();
-    ctx.arc(p.sx, p.sy, 10 + pulse * 3, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(251, 191, 36, ${(0.25 + pulse * 0.2).toFixed(2)})`;
-    ctx.lineWidth = 1;
+    ctx.moveTo(n.sx - s, n.sy - s + c); ctx.lineTo(n.sx - s, n.sy - s); ctx.lineTo(n.sx - s + c, n.sy - s);
+    ctx.moveTo(n.sx + s - c, n.sy - s); ctx.lineTo(n.sx + s, n.sy - s); ctx.lineTo(n.sx + s, n.sy - s + c);
+    ctx.moveTo(n.sx - s, n.sy + s - c); ctx.lineTo(n.sx - s, n.sy + s); ctx.lineTo(n.sx - s + c, n.sy + s);
+    ctx.moveTo(n.sx + s - c, n.sy + s); ctx.lineTo(n.sx + s, n.sy + s); ctx.lineTo(n.sx + s, n.sy + s - c);
     ctx.stroke();
 
     if (this.showLabels) {
-      this._drawLabelPill(ctx, p.sx, p.sy - 18, a.name.toUpperCase(), "#fbbf24", "rgba(15, 19, 29, 0.85)");
+      this._drawLeanLabel(ctx, n.sx, n.sy - 14, a.name.toUpperCase(), "#fbbf24", placedLabels, true);
     }
-    this.hitTargets.push({ kind: "anchor", sx: p.sx, sy: p.sy, label: `${a.name} (${a.class})`, data: a });
+    this.hitTargets.push({ kind: "anchor", sx: n.sx, sy: n.sy, label: `${a.name} (${a.class}) · (${a.centre.x}, ${a.centre.y}, ${a.centre.z})`, data: a });
   }
 
-  _drawDrift(ctx, p) {
-    ctx.fillStyle = "rgba(148, 163, 184, 0.35)";
-    ctx.beginPath();
-    ctx.arc(p.sx, p.sy, 1.6, 0, Math.PI * 2);
-    ctx.fill();
+  _drawTether(ctx, n, color) {
+    if (Math.hypot(n.sx - n.ox, n.sy - n.oy) > 2) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(n.ox, n.oy);
+      ctx.lineTo(n.sx, n.sy);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
-  _drawArtifact(ctx, p, art, now) {
-    const floor = this._project(art.position.x, art.position.y, 0);
+  _drawArtifactGlyph(ctx, n, now, placedLabels) {
+    const art = n.data;
     const kind = String(art.kind || "artifact").toLowerCase();
-
-    const palettes = {
-      script: { top: "#34d399", left: "#059669", right: "#064e3b", glow: "rgba(52, 211, 153, 0.48)", text: "#6ee7b7", h: 2.9 },
-      machine: { top: "#60a5fa", left: "#2563eb", right: "#1e3a8a", glow: "rgba(56, 189, 248, 0.45)", text: "#93c5fd", h: 2.8 },
-      mailbox: { top: "#fb7185", left: "#e11d48", right: "#881337", glow: "rgba(251, 113, 133, 0.45)", text: "#fda4af", h: 2.3 },
-      protocol: { top: "#fcd34d", left: "#d97706", right: "#78350f", glow: "rgba(251, 191, 36, 0.4)", text: "#fde68a", h: 2.0 },
-      language: { top: "#c084fc", left: "#7c3aed", right: "#4c1d95", glow: "rgba(192, 132, 252, 0.4)", text: "#e9d5ff", h: 2.0 },
+    const isHovered = this.hovered?.data?.id === art.id;
+    const colors = {
+      script: "#34d399",
+      machine: "#38bdf8",
+      mailbox: "#fb7185",
+      protocol: "#fbbf24",
+      language: "#c084fc",
     };
-    const pal = palettes[kind] || palettes.protocol;
+    const color = colors[kind] || "#94a3b8";
 
-    // Elevation stem + floor shadow
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.22)";
-    ctx.lineWidth = 0.9;
+    // Whisper-fine elevation drop to floor
+    const floor = this._project(art.position.x, art.position.y, 0);
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.1)";
+    ctx.lineWidth = 0.6;
     ctx.beginPath();
     ctx.moveTo(floor.sx, floor.sy);
-    ctx.lineTo(p.sx, p.sy);
+    ctx.lineTo(n.ox, n.oy);
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.beginPath();
-    ctx.ellipse(floor.sx, floor.sy, 6, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    this._drawTether(ctx, n, color);
 
-    // Soft bloom
-    const bloom = ctx.createRadialGradient(p.sx, p.sy, 1, p.sx, p.sy, 18);
-    bloom.addColorStop(0, pal.glow);
-    bloom.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = bloom;
-    ctx.beginPath();
-    ctx.arc(p.sx, p.sy, 18, 0, Math.PI * 2);
-    ctx.fill();
+    // Lean precision micro-glyphs (distinct per kind, never chunky blocks!)
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = isHovered ? 1.6 : 1.15;
 
-    // True 3D lit prism
-    this._drawSolidBox(ctx, art.position.x, art.position.y, art.position.z, 1.4, 1.4, pal.h, pal);
-
-    // Orbiting gyro-ring for runnable machines
-    if (kind === "machine") {
-      const a = now * 0.0022;
-      ctx.save();
-      ctx.translate(p.sx, p.sy);
-      ctx.rotate(a);
+    if (kind === "script") {
+      // [·] code bracket glyph
       ctx.beginPath();
-      ctx.ellipse(0, 0, 14, 5.5, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.7)";
-      ctx.lineWidth = 1.1;
+      ctx.moveTo(n.sx - 2, n.sy - 4.5); ctx.lineTo(n.sx - 4.5, n.sy - 4.5); ctx.lineTo(n.sx - 4.5, n.sy + 4.5); ctx.lineTo(n.sx - 2, n.sy + 4.5);
+      ctx.moveTo(n.sx + 2, n.sy - 4.5); ctx.lineTo(n.sx + 4.5, n.sy - 4.5); ctx.lineTo(n.sx + 4.5, n.sy + 4.5); ctx.lineTo(n.sx + 2, n.sy + 4.5);
       ctx.stroke();
-      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(n.sx, n.sy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (kind === "machine") {
+      // ◎ precision concentric ring + micro-tick
+      ctx.beginPath();
+      ctx.arc(n.sx, n.sy, 4.8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(n.sx, n.sy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      if (!this.reducedMotion) {
+        const a = now * 0.0025;
+        ctx.beginPath();
+        ctx.arc(n.sx + Math.cos(a) * 4.8, n.sy + Math.sin(a) * 4.8, 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = "#e0f2fe";
+        ctx.fill();
+      }
+    } else if (kind === "mailbox") {
+      // ◇ crisp hollow diamond
+      ctx.beginPath();
+      ctx.moveTo(n.sx, n.sy - 4.8);
+      ctx.lineTo(n.sx + 4.8, n.sy);
+      ctx.lineTo(n.sx, n.sy + 4.8);
+      ctx.lineTo(n.sx - 4.8, n.sy);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(n.sx, n.sy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // △ crisp micro-triangle
+      ctx.beginPath();
+      ctx.moveTo(n.sx, n.sy - 4.5);
+      ctx.lineTo(n.sx + 4.2, n.sy + 3.5);
+      ctx.lineTo(n.sx - 4.2, n.sy + 3.5);
+      ctx.closePath();
+      ctx.stroke();
     }
 
-    if (this.showLabels) {
-      ctx.font = "500 10px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = pal.text;
-      ctx.fillText(art.name || art.id, p.sx + 11, p.sy + 3);
+    if (this.showLabels || isHovered) {
+      this._drawLeanLabel(ctx, n.sx + 8, n.sy + 3, art.name || art.id, color, placedLabels, isHovered);
     }
 
     this.hitTargets.push({
       kind: "artifact",
-      sx: p.sx,
-      sy: p.sy,
+      sx: n.sx,
+      sy: n.sy,
       label: `${art.name || art.id} [${kind}] · (${art.position.x}, ${art.position.y}, ${art.position.z})`,
       data: art,
     });
   }
 
-  _drawAgent(ctx, p, ag, now) {
-    // Glowing tapered movement ribbon
+  _drawAgentGlyph(ctx, n, now, placedLabels) {
+    const ag = n.data;
+    const isHovered = this.hovered?.data?.id === ag.id;
+
+    // Fine movement trajectory spline
     if (ag.trail.length > 0) {
       ctx.beginPath();
       const first = this._project(ag.trail[0].x, ag.trail[0].y, ag.trail[0].z);
@@ -701,68 +720,61 @@ export class Lattice3D {
         const pt = this._project(ag.trail[i].x, ag.trail[i].y, ag.trail[i].z);
         ctx.lineTo(pt.sx, pt.sy);
       }
-      ctx.lineTo(p.sx, p.sy);
-      ctx.strokeStyle = "rgba(255, 107, 74, 0.65)";
-      ctx.lineWidth = 2;
+      ctx.lineTo(n.ox, n.oy);
+      ctx.strokeStyle = "rgba(255, 107, 74, 0.48)";
+      ctx.lineWidth = 1.15;
       ctx.stroke();
     }
 
-    const floor = this._project(ag.x, ag.y, 0);
-    const stemGrad = ctx.createLinearGradient(p.sx, p.sy, floor.sx, floor.sy);
-    stemGrad.addColorStop(0, "rgba(255, 107, 74, 0.55)");
-    stemGrad.addColorStop(1, "rgba(255, 107, 74, 0.05)");
-    ctx.strokeStyle = stemGrad;
+    this._drawTether(ctx, n, "#ff6b4a");
+
+    // Precision crosshair reticle + 2.8px coral core
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.0035);
+    ctx.strokeStyle = `rgba(255, 107, 74, ${(isHovered ? 0.95 : 0.45 + pulse * 0.25).toFixed(2)})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(p.sx, p.sy);
-    ctx.lineTo(floor.sx, floor.sy);
+    ctx.moveTo(n.sx - 6, n.sy); ctx.lineTo(n.sx - 3, n.sy);
+    ctx.moveTo(n.sx + 3, n.sy); ctx.lineTo(n.sx + 6, n.sy);
+    ctx.moveTo(n.sx, n.sy - 6); ctx.lineTo(n.sx, n.sy - 3);
+    ctx.moveTo(n.sx, n.sy + 3); ctx.lineTo(n.sx, n.sy + 6);
     ctx.stroke();
 
-    // Luminous radial bloom
-    const r = Math.max(5, 2.0 * p.scale);
-    const halo = r * 2.8 + Math.sin(now * 0.004) * 2.5;
-    const bloom = ctx.createRadialGradient(p.sx, p.sy, 1, p.sx, p.sy, halo);
-    bloom.addColorStop(0, "rgba(255, 107, 74, 0.55)");
-    bloom.addColorStop(1, "rgba(255, 107, 74, 0)");
-    ctx.fillStyle = bloom;
     ctx.beginPath();
-    ctx.arc(p.sx, p.sy, halo, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Lit 3D sphere with specular highlight
-    const sph = ctx.createRadialGradient(p.sx - r * 0.32, p.sy - r * 0.32, r * 0.12, p.sx, p.sy, r);
-    sph.addColorStop(0, "#ffe4de");
-    sph.addColorStop(0.38, "#ff6b4a");
-    sph.addColorStop(1, "#991b1b");
-    ctx.beginPath();
-    ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
-    ctx.fillStyle = sph;
+    ctx.arc(n.sx, n.sy, isHovered ? 3.4 : 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff6b4a";
     ctx.fill();
 
     const name = this.actorLabel(ag.id);
-    if (this.showLabels) {
-      this._drawLabelPill(ctx, p.sx, p.sy - r - 11, name, "#f8fafc", "rgba(15, 19, 29, 0.78)");
+    if (this.showLabels || isHovered) {
+      this._drawLeanLabel(ctx, n.sx + 8, n.sy - 4, name, "#f1f5f9", placedLabels, isHovered);
     }
 
     this.hitTargets.push({
       kind: "agent",
-      sx: p.sx,
-      sy: p.sy,
+      sx: n.sx,
+      sy: n.sy,
       label: `${name} · (${Math.round(ag.x)}, ${Math.round(ag.y)}, ${Math.round(ag.z)})`,
       data: { id: ag.id, name, position: { x: Math.round(ag.x), y: Math.round(ag.y), z: Math.round(ag.z) } },
     });
   }
 
-  _drawLabelPill(ctx, cx, cy, text, fg, bg) {
-    ctx.font = "600 10px 'IBM Plex Mono', monospace";
-    const w = ctx.measureText(text).width + 10;
-    ctx.fillStyle = bg;
-    ctx.fillRect(cx - w / 2, cy - 8, w, 15);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
-    ctx.lineWidth = 0.75;
-    ctx.strokeRect(cx - w / 2, cy - 8, w, 15);
-    ctx.fillStyle = fg;
-    ctx.fillText(text, cx - w / 2 + 5, cy + 3);
+  _drawLeanLabel(ctx, x, y, text, color, placed, force = false) {
+    ctx.font = "500 9.5px 'IBM Plex Mono', monospace";
+    const w = ctx.measureText(text).width + 6;
+    const h = 13;
+    const box = { x1: x - 2, y1: y - 9, x2: x + w, y2: y - 9 + h };
+    if (!force) {
+      for (const b of placed) {
+        if (!(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)) {
+          return; // Skip colliding label cleanly — zero spaghetti overlap!
+        }
+      }
+    }
+    placed.push(box);
+    ctx.fillStyle = "rgba(11, 14, 20, 0.72)";
+    ctx.fillRect(box.x1, box.y1, w + 2, h);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x + 1, y);
   }
 
   _drawPulses(ctx, now) {
@@ -774,37 +786,35 @@ export class Lattice3D {
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // Dual expanding shockwave rings
+      // Hairline expanding sonar ring
       ctx.beginPath();
-      ctx.ellipse(p.sx, p.sy, 8 + t * 44, 4 + t * 22, 0, 0, Math.PI * 2);
+      ctx.arc(p.sx, p.sy, 5 + t * 28, 0, Math.PI * 2);
       ctx.strokeStyle = pulse.color;
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = 1;
       ctx.stroke();
-
-      if (pulse.beam) {
-        const floor = this._project(pulse.x, pulse.y, 0);
-        ctx.strokeStyle = pulse.color;
-        ctx.lineWidth = 2.5 * alpha;
-        ctx.beginPath();
-        ctx.moveTo(floor.sx, floor.sy);
-        ctx.lineTo(p.sx, p.sy - 30);
-        ctx.stroke();
-      }
 
       if (pulse.to) {
         const dest = this._project(pulse.to.x, pulse.to.y, pulse.to.z);
-        const mx = (p.sx + dest.sx) * 0.5;
-        const my = (p.sy + dest.sy) * 0.5 - 42;
         ctx.beginPath();
         ctx.moveTo(p.sx, p.sy);
-        ctx.quadraticCurveTo(mx, my, dest.sx, dest.sy);
+        ctx.quadraticCurveTo((p.sx + dest.sx) * 0.5, (p.sy + dest.sy) * 0.5 - 28, dest.sx, dest.sy);
         ctx.strokeStyle = pulse.color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.1;
         ctx.stroke();
       }
 
       if (pulse.label) {
-        this._drawLabelPill(ctx, p.sx, p.sy - 26 - t * 18, pulse.label, "#ffffff", "rgba(17, 24, 39, 0.92)");
+        ctx.font = "500 9.5px 'IBM Plex Mono', monospace";
+        const w = ctx.measureText(pulse.label).width + 10;
+        const bx = p.sx - w / 2;
+        const by = p.sy - 18 - t * 14;
+        ctx.fillStyle = "rgba(11, 14, 20, 0.9)";
+        ctx.fillRect(bx, by - 9, w, 14);
+        ctx.strokeStyle = pulse.color;
+        ctx.lineWidth = 0.75;
+        ctx.strokeRect(bx, by - 9, w, 14);
+        ctx.fillStyle = "#f8fafc";
+        ctx.fillText(pulse.label, bx + 5, by + 1);
       }
       ctx.restore();
     }

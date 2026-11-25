@@ -77,8 +77,11 @@ function summarizeEvent(ev) {
       return `${who} crafted ${p.kind || "artifact"} “${p.name || p.id}” (${p.id})${p.parent ? ` — forked from ${p.parent}` : ""}.`;
     case "act.edit":
       return `${who} revised ${p.target} (${Array.isArray(p.updated) ? p.updated.join(", ") : "fields"}).`;
-    case "act.run":
-      return `${who} executed ${p.target} [${p.input}] → ${p.reply || "ok"}`;
+    case "act.run": {
+      const tag = p.sandbox === "quickjs-wasm" ? "[WASM] " : "";
+      const coin = p.payoutReceived ? ` (+${p.payoutReceived} coin)` : "";
+      return `${who} ran ${tag}${p.target} [${p.input}] → ${p.reply || "ok"}${coin}`;
+    }
     case "act.give":
       return `${who} transferred ${p.item || ""}${p.item && p.amount ? " + " : ""}${p.amount ? `${p.amount} coin` : ""} to ${actorLabel(p.target)}.`;
     case "act.dismantle":
@@ -254,6 +257,17 @@ function renderWire() {
 }
 
 function artifactPreviewText(a) {
+  if (a.kind === "script" && typeof a.data === "string") {
+    try {
+      const parsed = JSON.parse(a.data);
+      if (typeof parsed.code === "string") {
+        const st = parsed.state ? Object.entries(parsed.state).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("  ") : "";
+        return `WASM JS · ${st ? `STATE: ${st}` : parsed.code.trim().slice(0, 140)}`;
+      }
+    } catch {
+      return `WASM JS · ${a.data.trim().slice(0, 160)}`;
+    }
+  }
   if (a.kind === "machine" && typeof a.data === "string") {
     try {
       const parsed = JSON.parse(a.data);
@@ -322,25 +336,52 @@ function openArtifactInspector(art) {
   const dialog = $("inspector");
   $("inspector-kind").textContent = `${String(art.kind || "artifact").toUpperCase()} · ${art.id}`;
   $("inspector-title").textContent = art.name || art.id;
-  let formatted = art.data || "";
-  try {
-    formatted = JSON.stringify(JSON.parse(art.data), null, 2);
-  } catch {
-    // Plain text
+  let payloadHtml = "";
+  let parsedScript = null;
+  if (art.kind === "script" && typeof art.data === "string") {
+    try {
+      const p = JSON.parse(art.data);
+      if (p && typeof p.code === "string") parsedScript = p;
+    } catch {
+      // raw JS string
+    }
+  }
+  if (parsedScript) {
+    payloadHtml = `
+      <div>
+        <p class="kicker">PERSISTED STATE (JSON)</p>
+        <pre>${esc(JSON.stringify(parsedScript.state ?? {}, null, 2))}</pre>
+      </div>
+      <div>
+        <p class="kicker">SANDBOXED ES2023 JAVASCRIPT (QUICKJS WASM)</p>
+        <pre>${esc(parsedScript.code.trim())}</pre>
+      </div>
+    `;
+  } else {
+    let formatted = art.data || "";
+    try {
+      formatted = JSON.stringify(JSON.parse(art.data), null, 2);
+    } catch {
+      // Plain text
+    }
+    payloadHtml = `
+      <div>
+        <p class="kicker">ARTIFACT PAYLOAD</p>
+        <pre>${esc(formatted)}</pre>
+      </div>
+    `;
   }
   $("inspector-body").innerHTML = `
     <dl class="specimen-table">
       <div><dt>Owner</dt><dd class="mono">${esc(actorLabel(art.owner))}</dd></div>
       <div><dt>Shape</dt><dd class="mono">${esc(art.shape || "monolith")}</dd></div>
+      <div><dt>Treasury</dt><dd class="mono">${esc(art.currency ?? 0)} coin</dd></div>
       <div><dt>Tags</dt><dd class="mono">${esc(art.tags || "—")}</dd></div>
       <div><dt>Position</dt><dd class="mono">${art.position ? `(${art.position.x}, ${art.position.y}, ${art.position.z})` : "—"}</dd></div>
       ${art.parent ? `<div><dt>Parent</dt><dd class="mono">${esc(art.parent)}</dd></div>` : ""}
       ${art.cites ? `<div><dt>Cites</dt><dd class="mono">${esc(art.cites)}</dd></div>` : ""}
     </dl>
-    <div>
-      <p class="kicker">ARTIFACT PAYLOAD</p>
-      <pre>${esc(formatted)}</pre>
-    </div>
+    ${payloadHtml}
   `;
   dialog.showModal();
 }
