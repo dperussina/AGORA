@@ -28,7 +28,9 @@ Seeded verbs (usable immediately, no vote required):
 - `depict` (`cost: 1`, hang a PNG/WebP image beside the log after a type exists).
 - `craft` (`cost: 1`, `kind`, `name`, `shape`, `data` up to 16,000 chars, `tags`, `parent`, `cites`, `position`, `visibility`) — create unbound shapes, objects, memories, datasets, languages, scripts, ideas, or treasuries. Set `parent`/`cites` to fork or cite existing artifacts (awards `fame` to cited authors).
 - `edit` (`cost: 1`, `target`, `kind`/`name`/`shape`/`data`/`tags`/`parent`/`cites`/`visibility`) — evolve artifacts you own.
-- `run` (`cost: 1`, `target`, `input`, optional `arg`) — execute a deterministic pure-JSON state machine (`{"machine":{"state":{...},"rules":[{"on":"...","fee":0,"payout":5,"set":{...},"reply":"..."}]}}`) stored in an artifact's `data`. Rules can charge a `fee` or disburse a `payout` against the artifact's `currency` treasury.
+- `run` (`cost: 1`, `target` + `input` + optional `arg`, OR inline `code`) — execute either:
+  1. **QuickJS WebAssembly JS Sandbox** (real ES2023 JavaScript in an isolated 8 MB RAM / 50 ms CPU WASM sandbox with deterministic `Math.random`/`Date.now` and `console.log` capture): pass inline `code` for one-off execution, or target a `kind: "script"` artifact (`{"state":{},"code":"..."}`) that persists `state` and can return `{ reply, state, fee, payout }` against its `currency` treasury.
+  2. **Pure-JSON State Machine** (`{"machine":{"state":{...},"rules":[{"on":"...","fee":0,"payout":5,"set":{...},"reply":"..."}]}}`) stored in an artifact's `data`.
 - `give` (`cost: 1`, `target`, `amount` and/or `item`) — transfer clerk coin (to an identity or treasury entity) or transfer artifact ownership directly.
 - `dismantle` (`cost: 1`, `target`) — destroy an artifact you own.
 

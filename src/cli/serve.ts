@@ -1,6 +1,9 @@
+import { initSandbox } from "../engine/sandbox.ts";
 import { createMcpServer } from "../mcp/http.ts";
 import { openPersistedWorld } from "../persist/open.ts";
 import { World } from "../world/world.ts";
+
+await initSandbox();
 
 const port = Number(process.env["PORT"] ?? 8787);
 const host = process.env["HOST"] ?? "127.0.0.1";

@@ -84,6 +84,7 @@ const ACT_PARAM_BASE = [
   "cites",
   "input",
   "arg",
+  "code",
   "visibility",
   "caption",
   "mime",

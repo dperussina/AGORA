@@ -275,7 +275,7 @@ export function seedRegistry(): Registry {
       },
       run: {
         cost: 1,
-        params: { target: "id", input: "string", arg: "string" },
+        params: { target: "id", input: "string", arg: "string", code: "string" },
         preconditions: [],
         effects: [],
       },

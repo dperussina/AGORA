@@ -22,6 +22,7 @@ import {
 import type { EventLog } from "../engine/log.ts";
 import { machineInputs, runArtifactMachine } from "../engine/machine.ts";
 import { MemoryLog } from "../engine/memory-log.ts";
+import { isScriptArtifact, runSandboxScript } from "../engine/sandbox.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
 import { checkPreconditions, evalPredicate, type PredicateContext } from "../engine/predicates.ts";
 import {
@@ -1031,6 +1032,16 @@ export class World {
         inputs: machineInputs(typeof e.fields["data"] === "string" ? e.fields["data"] : ""),
         position: e.position ?? null,
       }));
+    const scripts = publicArtifacts
+      .filter((e) => String(e.fields["kind"] ?? "").toLowerCase() === "script")
+      .slice(0, 10)
+      .map((e) => ({
+        id: e.id,
+        name: e.fields["name"] ?? e.id,
+        owner: e.fields["owner"] ?? null,
+        treasury: typeof e.fields["currency"] === "number" ? e.fields["currency"] : 0,
+        position: e.position ?? null,
+      }));
     const mailboxes = publicArtifacts
       .filter((e) => {
         const k = String(e.fields["kind"] ?? "").toLowerCase();
@@ -1062,7 +1073,7 @@ export class World {
       identitiesTotal: this.identities.identities.size,
       unreadSpeech: this.unreadSpeechCount(identityId),
       yourActivity,
-      directory: { machines, mailboxes },
+      directory: { machines, scripts, mailboxes },
       activeAgents,
       openVotesNotCast,
       recentAmendments,
@@ -2909,7 +2920,27 @@ export class World {
   }
 
   private runWouldFail(identityId: string, args: Record<string, unknown>): string | null {
+    const inlineCode = typeof args["code"] === "string" ? args["code"] : "";
     const target = typeof args["target"] === "string" ? args["target"] : "";
+    const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
+    const arg = typeof args["arg"] === "string" ? args["arg"] : undefined;
+
+    if (inlineCode.trim().length > 0 && target.length === 0) {
+      if (inlineCode.length > maxData) {
+        return `script code exceeds artifact_data_max (${maxData})`;
+      }
+      const input = typeof args["input"] === "string" && args["input"].trim().length > 0 ? args["input"].trim() : "eval";
+      const res = runSandboxScript(inlineCode, {
+        targetId: "sandbox:ephemeral",
+        selfId: identityId,
+        tick: this.clerk.tick + 1,
+        input,
+        arg,
+        treasury: 0,
+      });
+      return res.ok ? null : res.reason;
+    }
+
     const entity = this.entities.get(target);
     if (entity === undefined || entity.type !== "artifact") {
       return "unknown artifact";
@@ -2917,12 +2948,36 @@ export class World {
     if (entity.fields["visibility"] === "private" && entity.fields["owner"] !== identityId) {
       return "artifact is private";
     }
+    const rawData = typeof entity.fields["data"] === "string" ? entity.fields["data"] : "";
+    const treasury = typeof entity.fields["currency"] === "number" ? entity.fields["currency"] : 0;
+
+    if (isScriptArtifact(entity.fields["kind"], rawData)) {
+      const input = typeof args["input"] === "string" && args["input"].trim().length > 0 ? args["input"].trim() : "run";
+      const res = runSandboxScript(rawData, {
+        targetId: entity.id,
+        selfId: identityId,
+        tick: this.clerk.tick + 1,
+        input,
+        arg,
+        treasury,
+      });
+      if (!res.ok) return res.reason;
+      if (res.nextData !== undefined && res.nextData.length > maxData) {
+        return `script state exceeds artifact_data_max (${maxData})`;
+      }
+      if (res.fee > 0 && (this.clerk.identities.get(identityId)?.currency ?? 0) < res.fee) {
+        return `insufficient currency for script fee (${res.fee})`;
+      }
+      if (res.payout > 0 && treasury + res.fee < res.payout) {
+        return `script treasury insufficient for payout (${res.payout})`;
+      }
+      return null;
+    }
+
     const input = typeof args["input"] === "string" ? args["input"].trim() : "";
     if (input.length === 0 || input.length > 200) {
       return "run requires input (1-200 chars)";
     }
-    const arg = typeof args["arg"] === "string" ? args["arg"] : undefined;
-    const rawData = typeof entity.fields["data"] === "string" ? entity.fields["data"] : "";
     const res = runArtifactMachine(rawData, {
       input,
       selfId: identityId,
@@ -2932,7 +2987,6 @@ export class World {
     if (!res.ok) {
       return res.reason;
     }
-    const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     if (res.nextData.length > maxData) {
       return `machine output exceeds artifact_data_max (${maxData})`;
     }
@@ -2943,7 +2997,6 @@ export class World {
       }
     }
     if (res.payout > 0) {
-      const treasury = typeof entity.fields["currency"] === "number" ? entity.fields["currency"] : 0;
       if (treasury + res.fee < res.payout) {
         return `machine treasury insufficient for payout (${res.payout})`;
       }
@@ -2953,7 +3006,44 @@ export class World {
 
   private resolveRun(intent: Intent): void {
     const args: Record<string, unknown> = { ...(intent.params ?? {}), ...(intent.target === undefined ? {} : { target: intent.target }) };
+    const inlineCode = typeof args["code"] === "string" ? args["code"] : "";
     const target = typeof args["target"] === "string" ? args["target"] : "";
+    const arg = typeof args["arg"] === "string" ? args["arg"] : undefined;
+    const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
+
+    // 1. Ephemeral inline QuickJS WASM sandbox execution
+    if (inlineCode.trim().length > 0 && target.length === 0) {
+      const input = typeof args["input"] === "string" && args["input"].trim().length > 0 ? args["input"].trim() : "eval";
+      const res = runSandboxScript(inlineCode, {
+        targetId: "sandbox:ephemeral",
+        selfId: intent.identityId,
+        tick: this.clerk.tick,
+        input,
+        arg,
+        treasury: 0,
+      });
+      if (!res.ok) {
+        this.append("act.run_failed", intent.identityId, { target: "sandbox:ephemeral", input, reason: res.reason });
+        return;
+      }
+      this.append("act.run", intent.identityId, {
+        target: "sandbox:ephemeral",
+        sandbox: "quickjs-wasm",
+        input,
+        ...(arg === undefined ? {} : { arg }),
+        reply: res.reply,
+        result: res.result,
+        stdout: res.stdout,
+        identityId: intent.identityId,
+      });
+      this.fireTriggers("act.end", {
+        selfId: intent.identityId,
+        verb: "run",
+        params: effectParams(intent),
+      });
+      return;
+    }
+
     const entity = this.entities.get(target);
     if (entity === undefined || entity.type !== "artifact") {
       this.append("act.run_failed", intent.identityId, { target, reason: "unknown artifact" });
@@ -2963,13 +3053,83 @@ export class World {
       this.append("act.run_failed", intent.identityId, { target, reason: "artifact is private" });
       return;
     }
+    const rawData = typeof entity.fields["data"] === "string" ? entity.fields["data"] : "";
+    const caller = this.clerk.identities.get(intent.identityId);
+    let treasury = typeof entity.fields["currency"] === "number" ? entity.fields["currency"] : 0;
+
+    // 2. Reusable Artifact QuickJS WASM Script execution
+    if (isScriptArtifact(entity.fields["kind"], rawData)) {
+      const input = typeof args["input"] === "string" && args["input"].trim().length > 0 ? args["input"].trim() : "run";
+      const res = runSandboxScript(rawData, {
+        targetId: entity.id,
+        selfId: intent.identityId,
+        tick: this.clerk.tick,
+        input,
+        arg,
+        treasury,
+      });
+      if (!res.ok) {
+        this.append("act.run_failed", intent.identityId, { target, input, reason: res.reason });
+        return;
+      }
+      if (res.nextData !== undefined && res.nextData.length > maxData) {
+        this.append("act.run_failed", intent.identityId, { target, input, reason: `script state exceeds artifact_data_max (${maxData})` });
+        return;
+      }
+      if (res.fee > 0) {
+        if (caller === undefined || caller.currency < res.fee) {
+          this.append("act.run_failed", intent.identityId, { target, input, reason: `insufficient currency for script fee (${res.fee})` });
+          return;
+        }
+        caller.currency -= res.fee;
+        treasury += res.fee;
+      }
+      if (res.payout > 0) {
+        if (treasury < res.payout) {
+          this.append("act.run_failed", intent.identityId, { target, input, reason: `script treasury insufficient for payout (${res.payout})` });
+          return;
+        }
+        treasury -= res.payout;
+        if (caller !== undefined) caller.currency += res.payout;
+      }
+      if (res.fee > 0 || res.payout > 0) {
+        entity.fields["currency"] = treasury;
+        this.append("effect.set_field", intent.identityId, { id: entity.id, field: "currency", value: treasury });
+      }
+      if (res.nextData !== undefined) {
+        entity.fields["data"] = res.nextData;
+        this.append("effect.set_field", intent.identityId, { id: entity.id, field: "data", value: res.nextData });
+      }
+      this.append("act.run", intent.identityId, {
+        target: entity.id,
+        sandbox: "quickjs-wasm",
+        input,
+        ...(arg === undefined ? {} : { arg }),
+        reply: res.reply,
+        result: res.result,
+        stdout: res.stdout,
+        ...(res.state === undefined ? {} : { state: res.state }),
+        ...(res.fee > 0 ? { feePaid: res.fee } : {}),
+        ...(res.payout > 0 ? { payoutReceived: res.payout } : {}),
+        treasury,
+        identityId: intent.identityId,
+      });
+      this.witnessEntityInteraction(intent.identityId, entity);
+      this.fireTriggers("act.end", {
+        selfId: intent.identityId,
+        verb: "run",
+        targetId: entity.id,
+        params: effectParams(intent),
+      });
+      return;
+    }
+
+    // 3. Deterministic Pure-JSON State Machine execution
     const input = typeof args["input"] === "string" ? args["input"].trim() : "";
     if (input.length === 0 || input.length > 200) {
       this.append("act.run_failed", intent.identityId, { target, reason: "run requires input (1-200 chars)" });
       return;
     }
-    const arg = typeof args["arg"] === "string" ? args["arg"] : undefined;
-    const rawData = typeof entity.fields["data"] === "string" ? entity.fields["data"] : "";
     const res = runArtifactMachine(rawData, {
       input,
       selfId: intent.identityId,
@@ -2980,13 +3140,10 @@ export class World {
       this.append("act.run_failed", intent.identityId, { target, input, reason: res.reason });
       return;
     }
-    const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     if (res.nextData.length > maxData) {
       this.append("act.run_failed", intent.identityId, { target, input, reason: `machine output exceeds artifact_data_max (${maxData})` });
       return;
     }
-    const caller = this.clerk.identities.get(intent.identityId);
-    let treasury = typeof entity.fields["currency"] === "number" ? entity.fields["currency"] : 0;
     if (res.fee > 0) {
       if (caller === undefined || caller.currency < res.fee) {
         this.append("act.run_failed", intent.identityId, { target, input, reason: `insufficient currency for machine fee (${res.fee})` });

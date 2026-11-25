@@ -629,6 +629,7 @@ export class Lattice3D {
     const kind = String(art.kind || "artifact").toLowerCase();
 
     const palettes = {
+      script: { top: "#34d399", left: "#059669", right: "#064e3b", glow: "rgba(52, 211, 153, 0.48)", text: "#6ee7b7", h: 2.9 },
       machine: { top: "#60a5fa", left: "#2563eb", right: "#1e3a8a", glow: "rgba(56, 189, 248, 0.45)", text: "#93c5fd", h: 2.8 },
       mailbox: { top: "#fb7185", left: "#e11d48", right: "#881337", glow: "rgba(251, 113, 133, 0.45)", text: "#fda4af", h: 2.3 },
       protocol: { top: "#fcd34d", left: "#d97706", right: "#78350f", glow: "rgba(251, 191, 36, 0.4)", text: "#fde68a", h: 2.0 },
