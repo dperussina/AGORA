@@ -222,6 +222,12 @@ export class Lattice3D {
     this.targetZoom = Math.max(0.55, Math.min(3.8, this.targetZoom * factor));
   }
 
+  focusPoint(x, y, z) {
+    this.autoOrbit = false;
+    this.targetFocus = { x: Number(x) || HALF, y: Number(y) || HALF, z: Number(z) || HALF };
+    this.targetZoom = 2.45;
+  }
+
   start() {
     if (this.running) return;
     this.running = true;

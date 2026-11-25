@@ -976,6 +976,320 @@ pre,
   font-size: 0.74rem;
 }
 
+/* Global Archive Omni-Search */
+.omni-search-wrap {
+  position: relative;
+  margin-block-start: 1.15rem;
+  max-inline-size: 560px;
+}
+
+.omni-input {
+  inline-size: 100%;
+  padding: 0.65rem 0.95rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  box-shadow: 0 2px 8px rgba(17, 18, 20, 0.04);
+}
+
+.omni-input:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.omni-results {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline: 0;
+  z-index: 40;
+  max-block-size: 380px;
+  overflow-y: auto;
+  background: var(--sheet);
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 0 18px 42px rgba(17, 18, 20, 0.16);
+}
+
+.omni-group-head {
+  padding: 0.42rem 0.85rem;
+  background: var(--linen);
+  border-block-end: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--stone);
+}
+
+.omni-hit {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  inline-size: 100%;
+  padding: 0.58rem 0.85rem;
+  border: none;
+  border-block-end: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.omni-hit:hover {
+  background: var(--paper);
+}
+
+/* Library of Alexandria — The Great Stacks Layout */
+.editorial-select {
+  padding: 0.42rem 0.65rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.stacks-layout {
+  display: grid;
+  grid-template-columns: 235px minmax(0, 1fr);
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.stacks-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding-inline-end: 1.25rem;
+  border-inline-end: 1px solid var(--rule);
+}
+
+.rail-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--stone);
+}
+
+.facet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.facet-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  inline-size: 100%;
+  padding: 0.36rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 110ms ease, color 110ms ease;
+}
+
+.facet-btn:hover {
+  background: var(--sheet);
+  color: var(--ink);
+}
+
+.facet-btn.is-active {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+
+.tag-btn {
+  padding: 0.16rem 0.48rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--sheet);
+  color: var(--stone);
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+  cursor: pointer;
+}
+
+.tag-btn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.tag-btn.is-active {
+  background: var(--cobalt);
+  border-color: var(--cobalt);
+  color: #ffffff;
+}
+
+.stacks-main {
+  min-inline-size: 0;
+}
+
+.stacks-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-block-end: 0.75rem;
+  margin-block-end: 0.9rem;
+  border-block-end: 1px solid var(--rule);
+  font-size: 0.78rem;
+}
+
+.btn-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--vermilion);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* Compact Archival Index Table View */
+.catalog-index {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--ink);
+}
+
+.index-row {
+  display: grid;
+  grid-template-columns: 4.2rem 5.8rem minmax(0, 1.4fr) minmax(0, 0.9fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  inline-size: 100%;
+  padding: 0.62rem 0.55rem;
+  border: none;
+  border-block-end: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.index-row:hover {
+  background: var(--sheet);
+}
+
+/* Clickable Citizens & Landmarks */
+.roll-item.is-clickable,
+.gazetteer-item.is-clickable {
+  cursor: pointer;
+  padding-inline: 0.45rem;
+  border-radius: 3px;
+  transition: background-color 110ms ease;
+}
+
+.roll-item.is-clickable:hover,
+.gazetteer-item.is-clickable:hover {
+  background: var(--sheet);
+}
+
+/* Reading Room Cross-Links */
+.drawer-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block-end: 0.35rem;
+}
+
+.reading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lineage-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cross-link-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  inline-size: 100%;
+  padding: 0.58rem 0.75rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cross-link-card:hover {
+  border-color: var(--ink);
+  background: var(--linen);
+}
+
+.guestbook-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.guestbook-entry {
+  padding: 0.65rem 0.8rem;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-inline-start: 3px solid var(--vermilion);
+  border-radius: 3px;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 960px) {
+  .stacks-layout {
+    grid-template-columns: 1fr;
+  }
+  .stacks-rail {
+    border-inline-end: none;
+    border-block-end: 1px solid var(--rule);
+    padding-inline-end: 0;
+    padding-block-end: 1.1rem;
+  }
+  .index-row {
+    grid-template-columns: 4rem minmax(0, 1fr) auto;
+  }
+  .index-row .hide-sm {
+    display: none;
+  }
+}
+
 /* Colophon Footer */
 .colophon {
   border-block-start: 2px solid var(--ink);

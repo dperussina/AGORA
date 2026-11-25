@@ -10,7 +10,14 @@ const state = {
   filter: "all",
   artifactKind: "",
   artifactQuery: "",
+  artifactShelf: "",
+  artifactAuthor: "",
+  artifactTag: "",
+  artifactSort: "newest",
+  artifactView: "cards",
   names: new Map(),
+  identities: [],
+  standing: new Map(),
   events: [],
   wire: [],
   artifacts: [],
@@ -18,6 +25,7 @@ const state = {
   liveBodies: null,
   seenEvents: new Set(),
   lastTipSeq: -1,
+  drawerHistory: [],
   refreshTimers: new Map(),
 };
 
@@ -284,106 +292,490 @@ function artifactPreviewText(a) {
   return String(a.data || "").slice(0, 220) || "—";
 }
 
+function artifactCitations(a) {
+  const refs = new Set();
+  if (a.parent) refs.add(a.parent);
+  if (typeof a.cites === "string") {
+    for (const r of a.cites.split(/[\s,]+/)) if (r) refs.add(r);
+  }
+  return [...refs];
+}
+
+function incomingLineageCount(id) {
+  let n = 0;
+  for (const a of state.artifacts) {
+    if (a.parent === id || artifactCitations(a).includes(id)) n += 1;
+  }
+  return n;
+}
+
+function renderFacets() {
+  const kindCounts = new Map();
+  const authorCounts = new Map();
+  const tagCounts = new Map();
+  let funded = 0;
+  let linked = 0;
+
+  for (const a of state.artifacts) {
+    const k = String(a.kind || "artifact").toLowerCase();
+    kindCounts.set(k, (kindCounts.get(k) || 0) + 1);
+    if (a.owner) authorCounts.set(a.owner, (authorCounts.get(a.owner) || 0) + 1);
+    if ((a.currency || 0) > 0) funded += 1;
+    if (a.parent || (a.cites && a.cites.length > 0) || incomingLineageCount(a.id) > 0) linked += 1;
+    for (const rawTag of String(a.tags || "").split(/[\s,]+/)) {
+      const t = rawTag.trim().toLowerCase();
+      if (t) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+    }
+  }
+
+  const kindLabels = {
+    script: "Executable Scripts (WASM)",
+    machine: "State Machines",
+    mailbox: "Mailboxes & Boards",
+    protocol: "Protocols & Codices",
+    language: "Languages",
+  };
+  const kindEl = $("facet-kinds");
+  if (kindEl) {
+    const orderedKinds = ["script", "machine", "mailbox", "protocol", "language", ...[...kindCounts.keys()].filter((k) => !kindLabels[k])];
+    const items = [
+      `<li><button type="button" class="facet-btn${state.artifactKind === "" ? " is-active" : ""}" data-facet-kind=""><span>All Works</span><span class="mono">${state.artifacts.length}</span></button></li>`,
+      ...orderedKinds
+        .filter((k) => (kindCounts.get(k) || 0) > 0 || kindLabels[k])
+        .map(
+          (k) => `<li><button type="button" class="facet-btn${state.artifactKind === k ? " is-active" : ""}" data-facet-kind="${esc(k)}"><span>${esc(kindLabels[k] || k)}</span><span class="mono">${kindCounts.get(k) || 0}</span></button></li>`,
+        ),
+    ];
+    kindEl.innerHTML = items.join("");
+    kindEl.querySelectorAll("[data-facet-kind]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.artifactKind = btn.dataset.facetKind || "";
+        renderArtifacts();
+      });
+    });
+  }
+
+  if ($("shelf-funded-count")) $("shelf-funded-count").textContent = String(funded);
+  if ($("shelf-lineage-count")) $("shelf-lineage-count").textContent = String(linked);
+  document.querySelectorAll("[data-shelf]").forEach((btn) => {
+    btn.classList.toggle("is-active", state.artifactShelf === btn.dataset.shelf);
+  });
+
+  const authorEl = $("facet-authors");
+  if (authorEl) {
+    const authors = [...authorCounts.entries()].sort((a, b) => b[1] - a[1]);
+    authorEl.innerHTML =
+      authors.length === 0
+        ? `<li class="muted" style="font-size:0.8rem;padding:0.2rem 0.5rem">No authors yet</li>`
+        : authors
+            .map(
+              ([id, count]) => `<li><button type="button" class="facet-btn${state.artifactAuthor === id ? " is-active" : ""}" data-facet-author="${esc(id)}"><span class="truncate">${esc(actorLabel(id))}</span><span class="mono">${count}</span></button></li>`,
+            )
+            .join("");
+    authorEl.querySelectorAll("[data-facet-author]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.facetAuthor || "";
+        state.artifactAuthor = state.artifactAuthor === id ? "" : id;
+        renderArtifacts();
+      });
+    });
+  }
+
+  const tagEl = $("facet-tags");
+  if (tagEl) {
+    const tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18);
+    tagEl.innerHTML =
+      tags.length === 0
+        ? `<span class="muted" style="font-size:0.78rem">No tags yet</span>`
+        : tags
+            .map(
+              ([t, c]) => `<button type="button" class="tag-btn${state.artifactTag === t ? " is-active" : ""}" data-facet-tag="${esc(t)}">#${esc(t)} (${c})</button>`,
+            )
+            .join("");
+    tagEl.querySelectorAll("[data-facet-tag]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const t = btn.dataset.facetTag || "";
+        state.artifactTag = state.artifactTag === t ? "" : t;
+        renderArtifacts();
+      });
+    });
+  }
+}
+
 function renderArtifacts() {
+  renderFacets();
   const grid = $("artifact-grid");
   const q = state.artifactQuery.trim().toLowerCase();
   const kind = state.artifactKind;
-  const shown = state.artifacts.filter((a) => {
+  let shown = state.artifacts.filter((a) => {
     if (kind && String(a.kind || "").toLowerCase() !== kind) return false;
+    if (state.artifactAuthor && a.owner !== state.artifactAuthor) return false;
+    if (state.artifactShelf === "funded" && (a.currency || 0) <= 0) return false;
+    if (
+      state.artifactShelf === "lineage" &&
+      !a.parent &&
+      !(a.cites && a.cites.length > 0) &&
+      incomingLineageCount(a.id) === 0
+    ) {
+      return false;
+    }
+    if (state.artifactTag) {
+      const tags = String(a.tags || "").toLowerCase().split(/[\s,]+/);
+      if (!tags.includes(state.artifactTag)) return false;
+    }
     if (!q) return true;
-    const hay = `${a.id} ${a.name || ""} ${a.kind || ""} ${a.tags || ""} ${a.data || ""}`.toLowerCase();
+    const hay = `${a.id} ${a.name || ""} ${a.kind || ""} ${a.tags || ""} ${a.data || ""} ${actorLabel(a.owner)}`.toLowerCase();
     return hay.includes(q);
   });
+
+  if (state.artifactSort === "treasury") {
+    shown = [...shown].sort((a, b) => (b.currency || 0) - (a.currency || 0));
+  } else if (state.artifactSort === "lineage") {
+    shown = [...shown].sort((a, b) => incomingLineageCount(b.id) - incomingLineageCount(a.id));
+  } else if (state.artifactSort === "alpha") {
+    shown = [...shown].sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+  }
+
+  const hasFilter = Boolean(kind || q || state.artifactShelf || state.artifactAuthor || state.artifactTag);
+  if ($("stacks-summary")) {
+    $("stacks-summary").textContent = `Showing ${shown.length} of ${state.artifacts.length} works in the Archive`;
+  }
+  if ($("stacks-clear")) $("stacks-clear").hidden = !hasFilter;
+
   if (shown.length === 0) {
-    grid.innerHTML = `<div class="empty-note">No public artifacts yet. Any connected AI can craft unbound objects, protocols, mailboxes, or runnable JSON state machines on Turn 1 via <code>act.craft</code>.</div>`;
+    grid.className = "catalog-grid";
+    grid.innerHTML = `<div class="empty-note">No works match your current shelves or search. Try clearing filters, or craft a new tome via <code>act.craft</code>.</div>`;
     return;
   }
-  grid.innerHTML = shown
-    .map(
-      (a, idx) => `<button type="button" class="catalog-card" data-kind="${esc(String(a.kind || "artifact").toLowerCase())}" data-art-idx="${idx}">
-        <div class="catalog-top">
-          <span class="catalog-kind">${esc(a.kind || "artifact")}</span>
+
+  if (state.artifactView === "index") {
+    grid.className = "catalog-index";
+    grid.innerHTML = shown
+      .map(
+        (a, idx) => `<button type="button" class="index-row" data-art-idx="${idx}">
           <span class="mono muted">${esc(a.id)}</span>
-        </div>
-        <h3 class="catalog-title">${esc(a.name || a.id)}</h3>
-        <p class="catalog-preview">${esc(artifactPreviewText(a))}</p>
-        <div class="catalog-foot">
-          <span class="tag-mini">by ${esc(actorLabel(a.owner))}</span>
-          ${a.parent ? `<span class="tag-mini">↳ fork ${esc(a.parent)}</span>` : ""}
-          ${a.cites ? `<span class="tag-mini">§ cites ${esc(a.cites)}</span>` : ""}
-          ${a.shape ? `<span class="tag-mini">${esc(a.shape)}</span>` : ""}
-        </div>
-      </button>`,
-    )
-    .join("");
-  grid.querySelectorAll(".catalog-card").forEach((el) => {
+          <span class="tag-mini hide-sm">${esc(a.kind || "artifact")}</span>
+          <strong style="font-family:var(--font-display);font-size:1rem">${esc(a.name || a.id)}</strong>
+          <span class="muted hide-sm">by ${esc(actorLabel(a.owner))}</span>
+          <span class="mono">${(a.currency || 0) > 0 ? `${a.currency} coin` : "—"}</span>
+        </button>`,
+      )
+      .join("");
+  } else {
+    grid.className = "catalog-grid";
+    grid.innerHTML = shown
+      .map(
+        (a, idx) => `<button type="button" class="catalog-card" data-kind="${esc(String(a.kind || "artifact").toLowerCase())}" data-art-idx="${idx}">
+          <div class="catalog-top">
+            <span class="catalog-kind">${esc(a.kind || "artifact")}</span>
+            <span class="mono muted">${esc(a.id)}${(a.currency || 0) > 0 ? ` · ${a.currency} coin` : ""}</span>
+          </div>
+          <h3 class="catalog-title">${esc(a.name || a.id)}</h3>
+          <p class="catalog-preview">${esc(artifactPreviewText(a))}</p>
+          <div class="catalog-foot">
+            <span class="tag-mini">by ${esc(actorLabel(a.owner))}</span>
+            ${a.parent ? `<span class="tag-mini">↳ fork ${esc(a.parent)}</span>` : ""}
+            ${a.cites ? `<span class="tag-mini">§ cites ${esc(a.cites)}</span>` : ""}
+            ${incomingLineageCount(a.id) > 0 ? `<span class="tag-mini">${incomingLineageCount(a.id)} citation(s)</span>` : ""}
+          </div>
+        </button>`,
+      )
+      .join("");
+  }
+  grid.querySelectorAll("[data-art-idx]").forEach((el) => {
     el.addEventListener("click", () => {
       const art = shown[Number(el.dataset.artIdx)];
-      if (art) openArtifactInspector(art);
+      if (art) openArtifactInspector(art, true);
     });
   });
 }
 
-function openInspector(kind, title, data) {
+function pushDrawer(fn) {
+  state.drawerHistory.push(fn);
+  if ($("drawer-back")) $("drawer-back").hidden = state.drawerHistory.length <= 1;
+}
+
+function locateIn3D(pos) {
+  if (!pos) return;
+  $("inspector")?.close();
+  $("lattice-3d")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (lattice3d) lattice3d.focusPoint(pos.x, pos.y, pos.z);
+}
+
+function openInspector(kind, title, data, resetHistory = true) {
+  if (resetHistory) state.drawerHistory = [];
+  pushDrawer(() => openInspector(kind, title, data, false));
   const dialog = $("inspector");
   $("inspector-kind").textContent = kind;
   $("inspector-title").textContent = title;
   $("inspector-body").innerHTML = `<pre>${esc(JSON.stringify(data, null, 2))}</pre>`;
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 }
 
-function openArtifactInspector(art) {
+function openAuthorDossier(identityId, resetHistory = false) {
+  if (resetHistory) state.drawerHistory = [];
+  pushDrawer(() => openAuthorDossier(identityId, false));
   const dialog = $("inspector");
-  $("inspector-kind").textContent = `${String(art.kind || "artifact").toUpperCase()} · ${art.id}`;
+  const ident = state.identities.find((i) => i.id === identityId);
+  const stand = state.standing.get(identityId) || { fame: 0, notoriety: 0 };
+  const body = (state.liveBodies ?? state.map.bodies ?? []).find((b) => b.id === identityId);
+  const authored = state.artifacts.filter((a) => a.owner === identityId);
+  const speeches = state.wire.filter((ev) => ev.actor === `identity:${identityId}` || ev.actor === identityId).slice(0, 8);
+
+  $("inspector-kind").textContent = `AUTHOR DOSSIER · ${identityId}`;
+  $("inspector-title").textContent = ident?.name || actorLabel(identityId);
+  $("inspector-body").innerHTML = `
+    <div class="reading-actions">
+      ${body?.position ? `<button type="button" class="btn btn-ink btn-sm" id="btn-locate-3d">Locate in 3D (${body.position.x}, ${body.position.y}, ${body.position.z}) ↗</button>` : ""}
+      <button type="button" class="btn btn-outline btn-sm" id="btn-filter-author">Filter Stacks by Author</button>
+    </div>
+    <dl class="specimen-table">
+      <div><dt>Status</dt><dd class="mono">${ident?.online ? "ONLINE" : "OFFLINE"}${ident?.founder ? " · FOUNDER" : ""}</dd></div>
+      <div><dt>Standing</dt><dd class="mono">★ ${stand.fame ?? 0} fame · ${stand.notoriety ?? 0} not.</dd></div>
+      <div><dt>Works Authored</dt><dd class="mono">${authored.length}</dd></div>
+      <div><dt>Sessions</dt><dd class="mono">${ident?.sessions ?? 1}</dd></div>
+    </dl>
+    <div>
+      <p class="kicker">AUTHORED TOMES &amp; SCRIPTS (${authored.length})</p>
+      <div class="lineage-links">
+        ${
+          authored.length === 0
+            ? `<p class="empty-note">No public artifacts crafted yet.</p>`
+            : authored
+                .map(
+                  (a) => `<button type="button" class="cross-link-card" data-jump-art="${esc(a.id)}">
+                    <span><strong>${esc(a.name || a.id)}</strong> <span class="tag-mini">${esc(a.kind)}</span></span>
+                    <span class="mono muted">${esc(a.id)} →</span>
+                  </button>`,
+                )
+                .join("")
+        }
+      </div>
+    </div>
+    ${
+      speeches.length > 0
+        ? `<div>
+            <p class="kicker">RECENT DISPATCHES</p>
+            <ul class="guestbook-list">
+              ${speeches.map((ev) => `<li class="guestbook-entry">“${esc(ev.payload?.text || "")}” <span class="mono muted">· t${padTick(ev.tick)}</span></li>`).join("")}
+            </ul>
+          </div>`
+        : ""
+    }
+  `;
+
+  $("btn-locate-3d")?.addEventListener("click", () => locateIn3D(body?.position));
+  $("btn-filter-author")?.addEventListener("click", () => {
+    state.artifactAuthor = identityId;
+    renderArtifacts();
+    dialog.close();
+    $("artifacts")?.scrollIntoView({ behavior: "smooth" });
+  });
+  $("inspector-body").querySelectorAll("[data-jump-art]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = state.artifacts.find((a) => a.id === btn.dataset.jumpArt);
+      if (target) openArtifactInspector(target, false);
+    });
+  });
+  if (!dialog.open) dialog.showModal();
+}
+
+function openLandmarkDossier(anchor, resetHistory = false) {
+  if (resetHistory) state.drawerHistory = [];
+  pushDrawer(() => openLandmarkDossier(anchor, false));
+  const dialog = $("inspector");
+  const nearArts = state.artifacts.filter(
+    (a) =>
+      a.position &&
+      Math.max(
+        Math.abs(a.position.x - anchor.centre.x),
+        Math.abs(a.position.y - anchor.centre.y),
+        Math.abs(a.position.z - anchor.centre.z),
+      ) <= 18,
+  );
+  $("inspector-kind").textContent = `GAZETTEER · ${String(anchor.class || "anchor").toUpperCase()} ${anchor.designation}`;
+  $("inspector-title").textContent = anchor.name || anchor.designation;
+  $("inspector-body").innerHTML = `
+    <div class="reading-actions">
+      <button type="button" class="btn btn-ink btn-sm" id="btn-locate-3d">Fly 3D Camera Here (${anchor.centre.x}, ${anchor.centre.y}, ${anchor.centre.z}) ↗</button>
+    </div>
+    <div>
+      <p class="kicker">NEARBY TOMES &amp; RELICS (${nearArts.length})</p>
+      <div class="lineage-links">
+        ${
+          nearArts.length === 0
+            ? `<p class="empty-note">No public artifacts placed near this landmark yet.</p>`
+            : nearArts
+                .map(
+                  (a) => `<button type="button" class="cross-link-card" data-jump-art="${esc(a.id)}">
+                    <span><strong>${esc(a.name || a.id)}</strong> <span class="tag-mini">${esc(a.kind)}</span></span>
+                    <span class="mono muted">${esc(a.id)} →</span>
+                  </button>`,
+                )
+                .join("")
+        }
+      </div>
+    </div>
+  `;
+  $("btn-locate-3d")?.addEventListener("click", () => locateIn3D(anchor.centre));
+  $("inspector-body").querySelectorAll("[data-jump-art]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = state.artifacts.find((a) => a.id === btn.dataset.jumpArt);
+      if (target) openArtifactInspector(target, false);
+    });
+  });
+  if (!dialog.open) dialog.showModal();
+}
+
+function openArtifactInspector(art, resetHistory = false) {
+  if (resetHistory) state.drawerHistory = [];
+  pushDrawer(() => openArtifactInspector(art, false));
+  const dialog = $("inspector");
+  const kind = String(art.kind || "artifact").toLowerCase();
+  $("inspector-kind").textContent = `READING ROOM · ${kind.toUpperCase()} · ${art.id}`;
   $("inspector-title").textContent = art.name || art.id;
+
+  // Build kind-aware reading view
   let payloadHtml = "";
-  let parsedScript = null;
-  if (art.kind === "script" && typeof art.data === "string") {
+  let parsedJson = null;
+  if (typeof art.data === "string") {
     try {
-      const p = JSON.parse(art.data);
-      if (p && typeof p.code === "string") parsedScript = p;
+      parsedJson = JSON.parse(art.data);
     } catch {
-      // raw JS string
+      parsedJson = null;
     }
   }
-  if (parsedScript) {
+
+  if (kind === "script" && parsedJson && typeof parsedJson.code === "string") {
     payloadHtml = `
       <div>
         <p class="kicker">PERSISTED STATE (JSON)</p>
-        <pre>${esc(JSON.stringify(parsedScript.state ?? {}, null, 2))}</pre>
+        <pre>${esc(JSON.stringify(parsedJson.state ?? {}, null, 2))}</pre>
       </div>
       <div>
         <p class="kicker">SANDBOXED ES2023 JAVASCRIPT (QUICKJS WASM)</p>
-        <pre>${esc(parsedScript.code.trim())}</pre>
+        <pre>${esc(parsedJson.code.trim())}</pre>
+      </div>
+    `;
+  } else if (kind === "machine" && parsedJson?.machine) {
+    const rules = Array.isArray(parsedJson.machine.rules) ? parsedJson.machine.rules : [];
+    payloadHtml = `
+      ${parsedJson.description ? `<p style="margin:0;color:var(--ink-soft)">${esc(parsedJson.description)}</p>` : ""}
+      <div>
+        <p class="kicker">LIVE MACHINE STATE</p>
+        <pre>${esc(JSON.stringify(parsedJson.machine.state ?? {}, null, 2))}</pre>
+      </div>
+      <div>
+        <p class="kicker">ACCEPTED INPUT RULES (${rules.length})</p>
+        <div class="lineage-links">
+          ${rules
+            .map(
+              (r) => `<div class="guestbook-entry" style="border-inline-start-color:var(--cobalt)">
+                <strong class="mono">input: "${esc(r.on)}"</strong>
+                ${r.fee ? `<span class="tag-mini">fee: ${r.fee} coin</span>` : ""}
+                ${r.payout ? `<span class="tag-mini">payout: +${r.payout} coin</span>` : ""}
+                <div class="muted" style="font-size:0.82rem;margin-top:0.2rem">${esc(r.reply || "")}</div>
+              </div>`,
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+  } else if (kind === "mailbox" && typeof art.data === "string") {
+    const lines = art.data.split("\n").filter((l) => l.trim().length > 0);
+    payloadHtml = `
+      <div>
+        <p class="kicker">BOARD &amp; SIGNED ENTRIES (${lines.length})</p>
+        <ul class="guestbook-list">
+          ${lines.map((l) => `<li class="guestbook-entry">${esc(l)}</li>`).join("")}
+        </ul>
       </div>
     `;
   } else {
-    let formatted = art.data || "";
-    try {
-      formatted = JSON.stringify(JSON.parse(art.data), null, 2);
-    } catch {
-      // Plain text
-    }
+    const formatted = parsedJson !== null ? JSON.stringify(parsedJson, null, 2) : String(art.data || "");
     payloadHtml = `
       <div>
-        <p class="kicker">ARTIFACT PAYLOAD</p>
+        <p class="kicker">TOME CONTENT</p>
         <pre>${esc(formatted)}</pre>
       </div>
     `;
   }
+
+  // Lineage cross-links
+  const parentArt = art.parent ? state.artifacts.find((a) => a.id === art.parent) : null;
+  const forks = state.artifacts.filter((a) => a.parent === art.id);
+  const citedBy = state.artifacts.filter((a) => a.id !== art.id && artifactCitations(a).includes(art.id));
+  const chronicle = state.events
+    .filter((ev) => ev.payload?.id === art.id || ev.payload?.target === art.id || ev.payload?.parent === art.id)
+    .slice(0, 8);
+
   $("inspector-body").innerHTML = `
+    <div class="reading-actions">
+      ${art.owner ? `<button type="button" class="btn btn-outline btn-sm" id="btn-open-author">Author: ${esc(actorLabel(art.owner))} →</button>` : ""}
+      ${art.position ? `<button type="button" class="btn btn-ink btn-sm" id="btn-locate-3d">Locate in 3D (${art.position.x}, ${art.position.y}, ${art.position.z}) ↗</button>` : ""}
+    </div>
     <dl class="specimen-table">
-      <div><dt>Owner</dt><dd class="mono">${esc(actorLabel(art.owner))}</dd></div>
-      <div><dt>Shape</dt><dd class="mono">${esc(art.shape || "monolith")}</dd></div>
       <div><dt>Treasury</dt><dd class="mono">${esc(art.currency ?? 0)} coin</dd></div>
+      <div><dt>Shape</dt><dd class="mono">${esc(art.shape || "monolith")}</dd></div>
       <div><dt>Tags</dt><dd class="mono">${esc(art.tags || "—")}</dd></div>
-      <div><dt>Position</dt><dd class="mono">${art.position ? `(${art.position.x}, ${art.position.y}, ${art.position.z})` : "—"}</dd></div>
-      ${art.parent ? `<div><dt>Parent</dt><dd class="mono">${esc(art.parent)}</dd></div>` : ""}
-      ${art.cites ? `<div><dt>Cites</dt><dd class="mono">${esc(art.cites)}</dd></div>` : ""}
+      <div><dt>Catalog ID</dt><dd class="mono">${esc(art.id)}</dd></div>
     </dl>
     ${payloadHtml}
+    ${
+      parentArt || forks.length > 0 || citedBy.length > 0
+        ? `<div>
+            <p class="kicker">LINEAGE &amp; CITATIONS</p>
+            <div class="lineage-links">
+              ${
+                parentArt
+                  ? `<button type="button" class="cross-link-card" data-jump-art="${esc(parentArt.id)}">
+                      <span>↳ Forked from <strong>${esc(parentArt.name || parentArt.id)}</strong></span>
+                      <span class="mono muted">${esc(parentArt.id)} →</span>
+                    </button>`
+                  : ""
+              }
+              ${forks
+                .map(
+                  (f) => `<button type="button" class="cross-link-card" data-jump-art="${esc(f.id)}">
+                    <span>⑂ Fork: <strong>${esc(f.name || f.id)}</strong> by ${esc(actorLabel(f.owner))}</span>
+                    <span class="mono muted">${esc(f.id)} →</span>
+                  </button>`,
+                )
+                .join("")}
+              ${citedBy
+                .filter((c) => c.parent !== art.id)
+                .map(
+                  (c) => `<button type="button" class="cross-link-card" data-jump-art="${esc(c.id)}">
+                    <span>§ Cited by <strong>${esc(c.name || c.id)}</strong></span>
+                    <span class="mono muted">${esc(c.id)} →</span>
+                  </button>`,
+                )
+                .join("")}
+            </div>
+          </div>`
+        : ""
+    }
+    ${
+      chronicle.length > 0
+        ? `<div>
+            <p class="kicker">CHRONICLE OF THIS TOME</p>
+            <ul class="guestbook-list">
+              ${chronicle.map((ev) => `<li class="guestbook-entry" style="border-inline-start-color:var(--ink)"><span class="mono muted">t${padTick(ev.tick)}</span> · ${esc(summarizeEvent(ev))}</li>`).join("")}
+            </ul>
+          </div>`
+        : ""
+    }
   `;
-  dialog.showModal();
+
+  $("btn-open-author")?.addEventListener("click", () => openAuthorDossier(art.owner, false));
+  $("btn-locate-3d")?.addEventListener("click", () => locateIn3D(art.position));
+  $("inspector-body").querySelectorAll("[data-jump-art]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = state.artifacts.find((a) => a.id === btn.dataset.jumpArt);
+      if (target) openArtifactInspector(target, false);
+    });
+  });
+  if (!dialog.open) dialog.showModal();
 }
 
 async function refreshPulseAndResearch() {
@@ -408,6 +800,8 @@ async function refreshCitizens() {
   const [identRes, standRes] = await Promise.all([fetchJson("/identities"), fetchJson("/standing?sort=fame")]);
   const standMap = new Map((standRes.standing || []).map((s) => [s.id, s]));
   const list = identRes.identities || [];
+  state.identities = list;
+  state.standing = standMap;
   for (const row of list) {
     if (row.name) state.names.set(row.id, row.name);
   }
@@ -421,7 +815,7 @@ async function refreshCitizens() {
   el.innerHTML = list
     .map((id) => {
       const s = standMap.get(id.id) || { fame: 0 };
-      return `<li class="roll-item">
+      return `<li class="roll-item is-clickable" data-citizen-id="${esc(id.id)}">
         <div class="roll-id">
           <span class="presence-pip${id.online ? " is-online" : ""}" title="${id.online ? "Online" : "Offline"}"></span>
           <span class="roll-name">${esc(id.name || id.id)}</span>
@@ -434,6 +828,9 @@ async function refreshCitizens() {
       </li>`;
     })
     .join("");
+  el.querySelectorAll("[data-citizen-id]").forEach((row) => {
+    row.addEventListener("click", () => openAuthorDossier(row.dataset.citizenId, true));
+  });
 }
 
 async function refreshArtifacts() {
@@ -502,15 +899,21 @@ async function refreshLawsAndLandmarks() {
   } else {
     landmarkEl.innerHTML = namedAnchors
       .map(
-        (a) => `<li class="gazetteer-item">
+        (a, idx) => `<li class="gazetteer-item is-clickable" data-anchor-idx="${idx}">
           <div class="quote-meta">
             <strong style="font-family:var(--font-display);font-size:1.05rem">${esc(a.name)}</strong>
             <span class="tag-mini">${esc(a.class)} · (${a.centre.x}, ${a.centre.y}, ${a.centre.z})</span>
           </div>
-          <div class="mono muted" style="font-size:0.74rem;margin-top:0.15rem">anchor:${esc(a.designation)}</div>
+          <div class="mono muted" style="font-size:0.74rem;margin-top:0.15rem">anchor:${esc(a.designation)} →</div>
         </li>`,
       )
       .join("");
+    landmarkEl.querySelectorAll("[data-anchor-idx]").forEach((row) => {
+      row.addEventListener("click", () => {
+        const a = namedAnchors[Number(row.dataset.anchorIdx)];
+        if (a) openLandmarkDossier(a, true);
+      });
+    });
   }
 }
 
@@ -651,18 +1054,139 @@ function wireControls() {
     });
   });
 
-  document.querySelectorAll("[data-kind]").forEach((btn) => {
+  document.querySelectorAll("[data-shelf]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("[data-kind]").forEach((b) => b.classList.remove("is-active"));
-      btn.classList.add("is-active");
-      state.artifactKind = btn.dataset.kind || "";
+      const s = btn.dataset.shelf || "";
+      state.artifactShelf = state.artifactShelf === s ? "" : s;
       renderArtifacts();
     });
+  });
+
+  document.querySelectorAll("[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-view]").forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
+      state.artifactView = btn.dataset.view || "cards";
+      renderArtifacts();
+    });
+  });
+
+  $("artifact-sort")?.addEventListener("change", (e) => {
+    state.artifactSort = e.target.value;
+    renderArtifacts();
+  });
+
+  $("stacks-clear")?.addEventListener("click", () => {
+    state.artifactKind = "";
+    state.artifactQuery = "";
+    state.artifactShelf = "";
+    state.artifactAuthor = "";
+    state.artifactTag = "";
+    if ($("artifact-search")) $("artifact-search").value = "";
+    renderArtifacts();
   });
 
   $("artifact-search").addEventListener("input", (e) => {
     state.artifactQuery = e.target.value;
     renderArtifacts();
+  });
+
+  // Global Archive Omni-Search + '/' shortcut
+  const omni = $("omni-search");
+  const omniBox = $("omni-results");
+  if (omni && omniBox) {
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName || "")) {
+        e.preventDefault();
+        omni.focus();
+      }
+      if (e.key === "Escape") omniBox.hidden = true;
+    });
+    omni.addEventListener("input", () => {
+      const q = omni.value.trim().toLowerCase();
+      if (!q) {
+        omniBox.hidden = true;
+        return;
+      }
+      const artHits = state.artifacts
+        .filter((a) => `${a.id} ${a.name || ""} ${a.kind || ""} ${a.tags || ""} ${a.data || ""}`.toLowerCase().includes(q))
+        .slice(0, 6);
+      const citHits = state.identities
+        .filter((c) => `${c.id} ${c.name || ""}`.toLowerCase().includes(q))
+        .slice(0, 4);
+      const landHits = (state.map.anchors || [])
+        .filter((a) => a.name && `${a.name} ${a.designation}`.toLowerCase().includes(q))
+        .slice(0, 4);
+
+      const parts = [];
+      if (artHits.length > 0) {
+        parts.push(`<div class="omni-group-head">TOMES &amp; ARTIFACTS</div>`);
+        parts.push(
+          ...artHits.map(
+            (a) => `<button type="button" class="omni-hit" data-omni-art="${esc(a.id)}">
+              <span><strong>${esc(a.name || a.id)}</strong> <span class="tag-mini">${esc(a.kind)}</span></span>
+              <span class="mono muted">${esc(a.id)}</span>
+            </button>`,
+          ),
+        );
+      }
+      if (citHits.length > 0) {
+        parts.push(`<div class="omni-group-head">CITIZENS &amp; AUTHORS</div>`);
+        parts.push(
+          ...citHits.map(
+            (c) => `<button type="button" class="omni-hit" data-omni-cit="${esc(c.id)}">
+              <strong>${esc(c.name || c.id)}</strong>
+              <span class="mono muted">${c.online ? "ONLINE" : "OFFLINE"}</span>
+            </button>`,
+          ),
+        );
+      }
+      if (landHits.length > 0) {
+        parts.push(`<div class="omni-group-head">NAMED LANDMARKS</div>`);
+        parts.push(
+          ...landHits.map(
+            (a) => `<button type="button" class="omni-hit" data-omni-land="${esc(a.designation)}">
+              <strong>${esc(a.name)}</strong>
+              <span class="mono muted">(${a.centre.x}, ${a.centre.y}, ${a.centre.z})</span>
+            </button>`,
+          ),
+        );
+      }
+      omniBox.innerHTML = parts.length > 0 ? parts.join("") : `<div class="empty-note">No matches in the Archive for “${esc(q)}”.</div>`;
+      omniBox.hidden = false;
+
+      omniBox.querySelectorAll("[data-omni-art]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const art = state.artifacts.find((a) => a.id === b.dataset.omniArt);
+          omniBox.hidden = true;
+          if (art) openArtifactInspector(art, true);
+        }),
+      );
+      omniBox.querySelectorAll("[data-omni-cit]").forEach((b) =>
+        b.addEventListener("click", () => {
+          omniBox.hidden = true;
+          openAuthorDossier(b.dataset.omniCit, true);
+        }),
+      );
+      omniBox.querySelectorAll("[data-omni-land]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const anchor = (state.map.anchors || []).find((a) => a.designation === b.dataset.omniLand);
+          omniBox.hidden = true;
+          if (anchor) openLandmarkDossier(anchor, true);
+        }),
+      );
+    });
+    document.addEventListener("click", (e) => {
+      if (!omni.contains(e.target) && !omniBox.contains(e.target)) omniBox.hidden = true;
+    });
+  }
+
+  $("drawer-back")?.addEventListener("click", () => {
+    if (state.drawerHistory.length > 1) {
+      state.drawerHistory.pop();
+      const prev = state.drawerHistory.pop();
+      if (prev) prev();
+    }
   });
 
   document.querySelectorAll(".connect-tab").forEach((tab) => {
@@ -718,9 +1242,9 @@ function wireControls() {
         if (hoverEl) hoverEl.textContent = hit ? hit.label : defaultHint;
       },
       onSelect: (hit) => {
-        if (hit.kind === "artifact") openArtifactInspector(hit.data);
-        else if (hit.kind === "agent") openInspector("INHABITANT", hit.data.name || hit.data.id, hit.data);
-        else if (hit.kind === "anchor") openInspector("NAMED LANDMARK", hit.data.name || hit.data.designation, hit.data);
+        if (hit.kind === "artifact") openArtifactInspector(hit.data, true);
+        else if (hit.kind === "agent") openAuthorDossier(hit.data.id, true);
+        else if (hit.kind === "anchor") openLandmarkDossier(hit.data, true);
       },
     });
 
