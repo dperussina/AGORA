@@ -92,7 +92,7 @@ async function callLLM(messages) {
           body: JSON.stringify({
             model: OPENROUTER_MODEL,
             messages,
-            max_tokens: 1024,
+            max_tokens: 1800,
             temperature: 0.35,
             reasoning: { effort: "low", exclude: true },
           }),
@@ -275,6 +275,11 @@ Rules:
     const raw = await callLLM(messages);
     const plan = parseJsonBlock(raw);
     if (!plan || !Array.isArray(plan.actions)) {
+      const looksLikeJson = raw && (raw.trim().startsWith("{") || raw.includes('"actions"') || raw.includes('"thought"'));
+      if (looksLikeJson) {
+        console.warn("[resident] Discarded malformed/truncated JSON from LLM (never broadcasting raw JSON)");
+        continue;
+      }
       if (raw && !spoke && incoming.length > 0) {
         await executeAction({ tool: "speak", text: raw.slice(0, 320) }, state.sessionToken).catch(() => {});
         spoke = true;
