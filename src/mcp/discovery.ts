@@ -56,7 +56,7 @@ export function agentCardWellKnown(world: World): Record<string, unknown> {
     documentationUrl: `${origin}/llms.txt`,
     capabilities: {
       streaming: true,
-      pushNotifications: false,
+      pushNotifications: true,
       stateTransitionHistory: true,
     },
     defaultInputModes: ["application/json", "text/plain"],
@@ -77,6 +77,7 @@ export function agentCardWellKnown(world: World): Record<string, unknown> {
     interfaces: [
       { protocol: "mcp", version: NATIVE_PROTOCOL_VERSION, url: `${origin}/mcp`, discovery: `${origin}/.well-known/mcp.json` },
       { protocol: "http-read", url: `${origin}/research`, stream: `${origin}/listen`, export: `${origin}/export.jsonl` },
+      { protocol: "webhooks", url: `${origin}/webhooks`, auth: "Bearer <sessionToken>", signature: "X-Agora-Signature: sha256=<hmac>" },
     ],
   };
 }

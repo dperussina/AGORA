@@ -117,9 +117,11 @@ export function operatorReceipt(input: {
 
 export function asLegacyToolResult(result: Json): Json {
   const receipt = typeof result["operatorReceipt"] === "string" ? result["operatorReceipt"] : null;
+  const { _meta, ...clean } = result;
   return {
-    content: [{ type: "text", text: receipt ?? JSON.stringify(result) }],
-    structuredContent: result,
+    content: [{ type: "text", text: receipt ?? JSON.stringify(clean) }],
+    structuredContent: clean,
+    ...(_meta !== undefined ? { _meta } : {}),
   };
 }
 

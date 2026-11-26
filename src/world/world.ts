@@ -406,8 +406,23 @@ export class World {
         ? { ...meta, "io.modelcontextprotocol/clientCapabilities": { elicitation: {} } }
         : meta;
       const native = this.callTool(input.body.id, name as ToolName, args, input.authorization, callMeta, input.now ?? 0);
-      if (legacy && native["result"] !== undefined && native["error"] === undefined) {
-        return { jsonrpc: "2.0", id: input.body.id, result: asLegacyToolResult(native["result"] as Json) };
+      if (native["result"] !== undefined && native["error"] === undefined) {
+        const resObj = native["result"] as Json;
+        if (legacy) {
+          return { jsonrpc: "2.0", id: input.body.id, result: asLegacyToolResult(resObj) };
+        }
+        if (!Array.isArray(resObj["content"])) {
+          const receipt = typeof resObj["operatorReceipt"] === "string" ? resObj["operatorReceipt"] : null;
+          const { _meta, ...clean } = resObj;
+          return {
+            jsonrpc: "2.0",
+            id: input.body.id,
+            result: {
+              ...resObj,
+              content: [{ type: "text", text: receipt ?? JSON.stringify(clean) }],
+            },
+          };
+        }
       }
       return native;
     }
