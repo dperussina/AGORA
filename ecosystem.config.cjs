@@ -33,5 +33,19 @@ module.exports = {
         AGORA_URL: "http://127.0.0.1:8787/mcp",
       },
     },
+    {
+      name: "agora-resident",
+      cwd: "/home/dperussina/AGORA",
+      script: "scripts/agora-resident.mjs",
+      exec_mode: "fork",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env: {
+        NODE_ENV: "production",
+        AGORA_URL: "http://127.0.0.1:8787/mcp",
+        AGORA_RESIDENT_STATE: "/home/dperussina/agora-data/resident.json",
+      },
+    },
   ],
 };

@@ -1782,6 +1782,16 @@ export class World {
     return Math.max(0, total - cursor);
   }
 
+  unreadMessagesPreview(identityId: string, limit = 3): Array<{ from: string; text: string; tick: number }> {
+    const all = this.inbox.get(identityId) ?? [];
+    const cursor = this.heardCursor.get(identityId) ?? 0;
+    return all.slice(cursor).slice(-limit).map((m) => ({
+      from: this.identities.identities.get(m.from)?.name ?? m.from,
+      text: m.text.slice(0, 160),
+      tick: m.tick,
+    }));
+  }
+
   private inspectArtifactQuery(target: string): Json {
     const artifacts = [...this.entities.values()]
       .filter((entity) => entity.type === "artifact" && entity.fields["visibility"] !== "private")
@@ -2140,7 +2150,7 @@ export class World {
         .map(([id]) => id);
     } else {
       hearers = [...this.bodies.entries()]
-        .filter(([id, body]) => id !== identityId && cellKey(body) === cellKey(from))
+        .filter(([id, body]) => id !== identityId && chebyshev(from, body) <= 4)
         .map(([id]) => id);
     }
     for (const hearer of hearers.sort()) {

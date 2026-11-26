@@ -121,10 +121,12 @@ export function publicRead(
       (e) =>
         e.type === "artifact" &&
         e.fields["visibility"] !== "private" &&
+        (forId === null || e.fields["owner"] !== forId) &&
         typeof e.createdBy === "number" &&
         e.createdBy > since,
     ).length;
     const unreadSpeech = forId !== null ? world.unreadSpeechCount(forId) : 0;
+    const recentMessages = forId !== null ? world.unreadMessagesPreview(forId, 3) : [];
     const openVotesNotCast =
       forId !== null ? world.clerk.docket().filter((p) => !p.ballots.has(forId)).length : world.clerk.docket().length;
     const closingSoonVotes = world.clerk
@@ -195,6 +197,7 @@ export function publicRead(
       myCitations,
       myEarnings,
       myGifts,
+      recentMessages,
       highlights: highlights.slice(-5).reverse(),
       newEvents,
       online: world.onlineCount,

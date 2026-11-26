@@ -583,5 +583,15 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(worldCheck.outcome.result.pubOwner).toBe(ada.identityId);
     expect(worldCheck.outcome.result.privVisible).toBe(false);
     expect(worldCheck.outcome.result.anchorCount).toBeGreaterThan(0);
+
+    // 12. /digest ignores self-crafted artifacts & includes recentMessages preview
+    const tipBeforeSelf = world.log.tip()!.seq;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "note", name: "Self Note", data: "hi" } }), ada.sessionToken);
+    const selfDigest = publicRead(world, "/digest", new URLSearchParams({ for: ada.identityId, since: String(tipBeforeSelf) })) as {
+      newArtifacts: number;
+      recentMessages: Array<{ from: string; text: string }>;
+    };
+    expect(selfDigest.newArtifacts).toBe(0);
+    expect(Array.isArray(selfDigest.recentMessages)).toBe(true);
   });
 });
