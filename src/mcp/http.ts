@@ -112,6 +112,7 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
         "content-disposition": 'inline; filename="agora-export.jsonl"',
         "x-agora-merkle-root": root,
         "x-agora-tip-seq": String(tip?.seq ?? -1),
+        "x-agora-tip-hash": tip?.hash ?? "",
         "x-agora-tick": String(world.clerk.tick),
         ...CORS_HEADERS,
       });

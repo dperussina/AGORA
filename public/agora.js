@@ -875,9 +875,10 @@ async function refreshLawsAndLandmarks() {
   state.map = map;
   renderBlueprint();
 
-  const verbs = Object.keys(rules.verbs || {}).sort();
-  const types = Object.keys(rules.types || {}).sort();
-  const triggers = Object.keys(rules.triggers || {}).sort();
+  const reg = rules.registry || rules;
+  const verbs = Object.keys(reg.verbs || {}).sort();
+  const types = Object.keys(reg.types || {}).sort();
+  const triggers = Object.keys(reg.triggers || {}).sort();
 
   $("verbs-count").textContent = String(verbs.length);
   $("verbs-list").innerHTML = verbs
@@ -899,8 +900,8 @@ async function refreshLawsAndLandmarks() {
     "speak_messages_per_tick",
   ];
   $("params-list").innerHTML = keyParams
-    .filter((k) => rules.params?.[k] !== undefined)
-    .map((k) => `<div><dt>${esc(k)}</dt><dd class="mono">${esc(rules.params[k].value)}</dd></div>`)
+    .filter((k) => reg.params?.[k] !== undefined)
+    .map((k) => `<div><dt>${esc(k)}</dt><dd class="mono">${esc(reg.params[k].value)}</dd></div>`)
     .join("");
 
   const pending = docket.pending || [];

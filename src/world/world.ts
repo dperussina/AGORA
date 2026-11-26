@@ -214,6 +214,8 @@ export class World {
   readonly segmentSize: number;
   onPersist: (() => void) | null = null;
   private persisting = false;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistDirty = false;
 
   constructor(log: EventLog = new MemoryLog(), serverKey = randomBytes(32), options: WorldOptions = {}) {
     this.log = log;
@@ -4719,7 +4721,7 @@ export class World {
               headers,
               body,
               redirect: "error",
-              signal: AbortSignal.timeout(5_000),
+              signal: AbortSignal.timeout(10_000),
             });
             if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
               return; // Delivered or permanent 4xx client error
@@ -4751,6 +4753,39 @@ export class World {
   }
 
   persist(): void {
+    if (this.persisting || this.onPersist === null) {
+      return;
+    }
+    // Keep synchronous persistence in unit/replay tests; coalesce to <=0.5 snapshots/sec in production
+    // (every event is already durably written to SQLite's append-only events table inside this.log.append).
+    const syncPersist =
+      process.env["VITEST"] === "true" ||
+      process.env["NODE_ENV"] === "test" ||
+      process.env["AGORA_PERSIST_SYNC"] === "1";
+    if (syncPersist) {
+      this.persistNow();
+      return;
+    }
+    this.persistDirty = true;
+    if (this.persistTimer !== null) {
+      return;
+    }
+    const debounceMs = Math.max(250, Number(process.env["AGORA_PERSIST_DEBOUNCE_MS"] ?? 2_000));
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      if (this.persistDirty) {
+        this.persistNow();
+      }
+    }, debounceMs);
+    this.persistTimer.unref();
+  }
+
+  persistNow(): void {
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    this.persistDirty = false;
     if (this.persisting || this.onPersist === null) {
       return;
     }

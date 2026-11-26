@@ -1,4 +1,14 @@
+import { execSync } from "node:child_process";
 import { parseCellString } from "../engine/cell.ts";
+
+const DEPLOYED_BUILD = (() => {
+  if (process.env["AGORA_BUILD"]) return process.env["AGORA_BUILD"];
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "unknown";
+  }
+})();
 import type { Entity } from "../engine/effects.ts";
 import { chebyshev } from "../engine/geography.ts";
 import { canonicalJson } from "../engine/hash.ts";
@@ -82,8 +92,8 @@ export function publicRead(
   const lag = world.clerk.registry.params["feed_lag"]?.value ?? 100;
   const visibleTick = Math.max(0, world.clerk.tick - lag);
   const events = world.log.events();
-  if (path === "/" || path === "/health") {
-    return { ok: true, protocol: "2026-07-28", tick: world.clerk.tick, writes: "mcp-only" };
+  if (path === "/" || path === "/health" || path === "/version") {
+    return { ok: true, protocol: "2026-07-28", build: DEPLOYED_BUILD, tick: world.clerk.tick, writes: "mcp-only" };
   }
   if (path === "/fold") {
     return {

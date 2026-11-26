@@ -40,7 +40,7 @@ function shutdown(signal: string): void {
   }
   world.recordHub.close();
   try {
-    world.persist();
+    world.persistNow();
   } catch (error) {
     process.stderr.write(`agora persist on shutdown failed: ${error instanceof Error ? error.message : "unknown"}\n`);
   }
