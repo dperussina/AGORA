@@ -950,12 +950,12 @@ export class Lattice3D {
     // 3. Advance active 3D synapses; excite cortical tissue along wavefront & ignite target on arrival
     const aliveSyn = [];
     for (const syn of this.synapses) {
-      const age = now - syn.born;
+      const age = Math.max(0, now - syn.born);
       if (age >= syn.ttl) continue;
-      const travelT = Math.min(1, age / syn.travelMs);
+      const travelT = Math.max(0, Math.min(1, age / syn.travelMs));
 
       // Gently graze nearby cortical micro-neurons as the comet zips through the brain!
-      const sampleIdx = Math.min(syn.samples.length - 1, Math.floor(travelT * (syn.samples.length - 1)));
+      const sampleIdx = Math.max(0, Math.min(syn.samples.length - 1, Math.floor(travelT * (syn.samples.length - 1))));
       if (sampleIdx > syn.lastMidExcIdx && sampleIdx % 4 === 0 && travelT < 1) {
         syn.lastMidExcIdx = sampleIdx;
         const sp = syn.samples[sampleIdx];
@@ -1159,11 +1159,12 @@ export class Lattice3D {
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     for (const syn of this.synapses) {
-      const age = now - syn.born;
-      const life = Math.max(0, 1 - age / syn.ttl);
+      const age = Math.max(0, now - syn.born);
+      const life = Math.max(0, Math.min(1, 1 - age / syn.ttl));
       const fade = life * life;
-      const travelT = Math.min(1, age / syn.travelMs);
+      const travelT = Math.max(0, Math.min(1, age / syn.travelMs));
       const pts = syn.samples.map((s) => this._project(s.x, s.y, s.z));
+      if (pts.length < 2) continue;
       const maxIdx = Math.max(1, Math.min(pts.length - 1, Math.ceil(travelT * (pts.length - 1))));
 
       // A) Wide soft outer electric aura along the fired portion of the 3D axon
@@ -1186,8 +1187,8 @@ export class Lattice3D {
       // C) White-hot action-potential comet head + tapered tail shooting along the 3D curve!
       if (travelT < 1) {
         const exactPos = travelT * (pts.length - 1);
-        const idx0 = Math.min(pts.length - 2, Math.floor(exactPos));
-        const frac = exactPos - idx0;
+        const idx0 = Math.max(0, Math.min(pts.length - 2, Math.floor(exactPos)));
+        const frac = Math.max(0, Math.min(1, exactPos - idx0));
         const headX = pts[idx0].x + (pts[idx0 + 1].x - pts[idx0].x) * frac;
         const headY = pts[idx0].y + (pts[idx0 + 1].y - pts[idx0].y) * frac;
 
@@ -1220,8 +1221,8 @@ export class Lattice3D {
 
     // 8. Expanding 3D synaptic arrival shockwaves
     for (const rp of this.ripples) {
-      const age = now - rp.born;
-      const t = Math.min(1, age / rp.ttl);
+      const age = Math.max(0, now - rp.born);
+      const t = Math.max(0, Math.min(1, age / rp.ttl));
       const fade = (1 - t) * (1 - t);
       const pt = this._project(rp.x, rp.y, rp.z);
       const ringR = Math.max(2, (4 + t * 24) * Math.min(1.5, pt.scale * 0.09));
