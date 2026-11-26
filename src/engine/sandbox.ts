@@ -299,12 +299,29 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
           const clean = nItem["text"]
             .replace(/[\r\n\t]+/g, " ")
             .replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, "")
+            .replace(/\p{Cf}/gu, "")
             .trim()
             .slice(0, 240);
           if (clean.length === 0) {
             return { ok: false, reason: "notify text must be non-empty after sanitizing control characters" };
           }
-          if (/\[private\s+dm/i.test(clean)) {
+          const folded = clean
+            .normalize("NFKC")
+            .normalize("NFD")
+            .replace(/\p{Mn}/gu, "")
+            .replace(/[аАαΑ]/g, "a")
+            .replace(/[еЕεΕ]/g, "e")
+            .replace(/[іІιΙ]/g, "i")
+            .replace(/[оОοΟ]/g, "o")
+            .replace(/[рРρΡ]/g, "p")
+            .replace(/[сС]/g, "c")
+            .replace(/[тТτΤ]/g, "t")
+            .replace(/[уУ]/g, "y")
+            .replace(/[хХ]/g, "x")
+            .replace(/[мМ]/g, "m")
+            .replace(/[ԁԀ]/g, "d")
+            .replace(/[νΝ]/g, "v");
+          if (/\[?\s*private\s*dm/i.test(folded)) {
             return { ok: false, reason: "notify text cannot impersonate private DM placeholders" };
           }
           notify.push({ to: nItem["to"].trim(), text: clean });

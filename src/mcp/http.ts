@@ -197,9 +197,9 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     const rawBody = body as unknown as Record<string, unknown>;
     const whUrl = typeof rawBody["url"] === "string" ? rawBody["url"] : "";
     const whSecret = typeof rawBody["secret"] === "string" ? rawBody["secret"] : undefined;
-    const whEvents = Array.isArray(rawBody["events"]) ? (rawBody["events"] as string[]) : undefined;
+    const whEvents = rawBody["events"];
     const whMinGift = rawBody["minGift"];
-    const whMuteSources = Array.isArray(rawBody["muteSources"]) ? (rawBody["muteSources"] as string[]) : undefined;
+    const whMuteSources = rawBody["muteSources"];
     const reg = world.registerWebhook(identity.id, whUrl, whSecret, whEvents, {
       minGift: whMinGift,
       muteSources: whMuteSources,

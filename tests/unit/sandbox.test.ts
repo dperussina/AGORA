@@ -984,12 +984,18 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ).result as { ok: boolean };
     expect(badName.ok).toBe(false);
 
-    // 3. MEDIUM: SSRF gaps blocked (IPv6 loopback, mapped IPv6, fd00::1, CGNAT 100.64.0.1, localhost., localtest.me, own host, >512 URL, unknown event)
+    // 3. MEDIUM: SSRF gaps blocked (IPv6 loopback, mapped IPv6, fd00::1, NAT64, 6to4, 198.18/15, 192.0.0/24, sslip.io, nip.io, CGNAT, localhost., localtest.me, own host, >512 URL, unknown/non-array events, bad minGift/muteSources)
     for (const badUrl of [
       "https://[::1]/hook",
       "https://[::ffff:127.0.0.1]/hook",
       "https://[fd00::1]/hook",
+      "https://[64:ff9b::7f00:1]/hook",
+      "https://[2002:7f00:1::]/hook",
       "https://100.64.0.1/hook",
+      "https://198.18.0.1/hook",
+      "https://192.0.0.1/hook",
+      "https://127.0.0.1.sslip.io/hook",
+      "https://127.0.0.1.nip.io/hook",
       "https://localhost./hook",
       "https://localtest.me/hook",
       "https://agora.perussina.com/webhooks",
@@ -997,28 +1003,33 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ]) {
       expect(world.registerWebhook(ada.identityId, badUrl).ok).toBe(false);
     }
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, "dm").ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["dm", "bogus_event"]).ok).toBe(false);
-    const filteredWh = world.registerWebhook(ada.identityId, "https://example.com/hook", "sec", ["gift", "vote"], {
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["gift"], { minGift: 1_000_000_000 }).ok).toBe(false);
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["dm"], { muteSources: ["../x"] }).ok).toBe(false);
+    const filteredWh = world.registerWebhook(ada.identityId, "https://example.com/hook", "sec", ["gift", "vote", "dm"], {
       minGift: 5,
       muteSources: [bob.identityId],
     });
     expect(filteredWh.ok).toBe(true);
 
-    // 4. LOW: Zero-width space cannot bypass [private DM impersonation block
-    const zwBypass = call(
-      world,
-      req("tools/call", {
-        name: "act",
-        arguments: {
-          verb: "run",
-          immediate: true,
-          code: `return { notify: [{ to: "${ada.identityId}", text: "[\\u200bprivate DM — fake]" }] };`,
-        },
-      }),
-      ada.sessionToken,
-    ).result as { accepted: boolean; reason: string };
-    expect(zwBypass.accepted).toBe(false);
-    expect(zwBypass.reason).toContain("impersonate private DM");
+    // 4. LOW: Zero-width, fullwidth, Cyrillic homoglyph, and combining marks cannot bypass [private DM impersonation block
+    for (const tricky of ["[\\u200bprivate DM — fake]", "［private DM］", "[privаte DM]", "[priva\\u0301te DM]"]) {
+      const zwBypass = call(
+        world,
+        req("tools/call", {
+          name: "act",
+          arguments: {
+            verb: "run",
+            immediate: true,
+            code: `return { notify: [{ to: "${ada.identityId}", text: "${tricky}" }] };`,
+          },
+        }),
+        ada.sessionToken,
+      ).result as { accepted: boolean; reason: string };
+      expect(zwBypass.accepted).toBe(false);
+      expect(zwBypass.reason).toContain("impersonate private DM");
+    }
 
     // 5. Team bug: unreadSpeech drops to 0 after observe() even when passing an older `since` seq
     const tipBeforeDm = world.log.tip()!.seq;

@@ -166,6 +166,7 @@ export class World {
   >();
   private readonly webhookLastSent = new Map<string, number>();
   readonly artifactSubscribers = new Map<string, Set<string>>();
+  private readonly scheduleFailCounts = new Map<string, number>();
   private readonly clientTelemetry = new Map<string, number>();
   private runningArtifactTriggers = false;
   private readonly dmHmacKey = randomBytes(32);
@@ -2257,7 +2258,7 @@ export class World {
       }
       this.inbox.set(hearer, list);
       if (isPrivateDm) {
-        this.fireWebhook(hearer, "dm", "New private DM received (call observe() to read)", "private");
+        this.fireWebhook(hearer, "dm", "New private DM received (call observe() to read)", "private", undefined, identityId);
       }
     }
     if (isPrivateDm) {
@@ -3467,6 +3468,7 @@ export class World {
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: "data", value: res.nextData });
       }
       this.recordArtifactSubscriber(entity.id, intent.identityId);
+      this.scheduleFailCounts.delete(entity.id);
       for (const n of res.notify) {
         this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`, "notify");
       }
@@ -3960,6 +3962,7 @@ export class World {
         const dueEvery = meta.every !== undefined && tick % meta.every === 0;
         const dueAt = meta.atTick !== undefined && tick === meta.atTick;
         if (!dueEvery && !dueAt) continue;
+        if ((this.scheduleFailCounts.get(entity.id) ?? 0) >= 3) continue;
         ran += 1;
         this.executeAutomatedArtifact(entity, "ARBITER", "tick", undefined, { scheduled: true }, maxData);
       }
@@ -4025,49 +4028,47 @@ export class World {
         treasury,
         world: this.sandboxWorldView(actorId),
       });
-      if (!res.ok) {
-        if (extra["scheduled"] === true) {
-          this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: res.reason, ...extra });
+      const recordSchedFailure = (reason: string): void => {
+        if (extra["scheduled"] !== true) return;
+        this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason, ...extra });
+        const fails = (this.scheduleFailCounts.get(entity.id) ?? 0) + 1;
+        this.scheduleFailCounts.set(entity.id, fails);
+        if (fails === 3) {
+          const owner = typeof entity.fields["owner"] === "string" ? entity.fields["owner"] : "";
+          if (owner && this.identities.identities.has(owner)) {
+            this.deliverInbox(owner, entity.id, `[${entity.id}] Scheduled script paused after 3 consecutive failures: ${reason.slice(0, 140)}`, "notify");
+          }
         }
+      };
+      if (!res.ok) {
+        recordSchedFailure(res.reason);
         return;
       }
       if (res.nextData !== undefined && res.nextData.length > maxData) {
-        if (extra["scheduled"] === true) {
-          this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: `script state exceeds artifact_data_max (${maxData})`, ...extra });
-        }
+        recordSchedFailure(`script state exceeds artifact_data_max (${maxData})`);
         return;
       }
       // Atomic check: validate payouts & notify BEFORE committing any state change!
       const totalAutoPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
       if (totalAutoPayout > 0) {
         if (treasury < totalAutoPayout) {
-          if (extra["scheduled"] === true) {
-            this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: `script treasury insufficient for payout (${totalAutoPayout})`, ...extra });
-          }
+          recordSchedFailure(`script treasury insufficient for payout (${totalAutoPayout})`);
           return;
         }
         for (const p of res.payouts) {
           if (!this.clerk.identities.has(p.to)) {
-            if (extra["scheduled"] === true) {
-              this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: `unknown payout recipient (${p.to})`, ...extra });
-            }
+            recordSchedFailure(`unknown payout recipient (${p.to})`);
             return;
           }
         }
       }
       for (const n of res.notify) {
         if (!this.identities.identities.has(n.to) || !this.canArtifactNotify(entity, n.to)) {
-          if (extra["scheduled"] === true) {
-            this.append("act.run_failed", "ARBITER", {
-              target: entity.id,
-              input,
-              reason: `notify recipient (${n.to}) has not subscribed or interacted with ${entity.id}`,
-              ...extra,
-            });
-          }
+          recordSchedFailure(`notify recipient (${n.to}) has not subscribed or interacted with ${entity.id}`);
           return;
         }
       }
+      this.scheduleFailCounts.delete(entity.id);
       if (res.nextData !== undefined && res.nextData !== rawData) {
         entity.fields["data"] = res.nextData;
         this.append("effect.set_field", "ARBITER", { id: entity.id, field: "data", value: res.nextData });
@@ -4263,8 +4264,8 @@ export class World {
     identityId: string,
     url: string,
     secret?: string,
-    events?: string[],
-    options?: { minGift?: unknown; muteSources?: string[] },
+    events?: unknown,
+    options?: { minGift?: unknown; muteSources?: unknown },
   ):
     | { ok: true; webhook: { url: string; events: string[]; hasSecret: boolean; minGift?: number; muteSources?: string[] } }
     | { ok: false; reason: string } {
@@ -4310,23 +4311,38 @@ export class World {
           return { ok: false, reason: `unknown webhook event category: ${String(e)} (valid: dm, notify, deadline, vote, gift)` };
         }
       }
-      cleanEvents = [...new Set(events)];
+      cleanEvents = [...new Set(events as string[])];
     } else {
       cleanEvents = ["dm", "notify", "deadline", "vote", "gift"];
     }
     let minGift: number | undefined;
     if (options?.minGift !== undefined) {
-      if (typeof options.minGift !== "number" || !Number.isInteger(options.minGift) || options.minGift < 1) {
-        return { ok: false, reason: "minGift must be a positive integer (>= 1)" };
+      if (
+        typeof options.minGift !== "number" ||
+        !Number.isInteger(options.minGift) ||
+        options.minGift < 1 ||
+        options.minGift > 1_000_000
+      ) {
+        return { ok: false, reason: "minGift must be an integer between 1 and 1,000,000" };
       }
       minGift = options.minGift;
     }
     let muteSources: string[] | undefined;
     if (options?.muteSources !== undefined) {
-      const cleaned = options.muteSources
-        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
-        .map((s) => s.trim().slice(0, 64))
-        .slice(0, 20);
+      if (!Array.isArray(options.muteSources)) {
+        return { ok: false, reason: "muteSources must be an array of identity or artifact IDs" };
+      }
+      if (options.muteSources.length > 20) {
+        return { ok: false, reason: "muteSources cannot exceed 20 entries" };
+      }
+      const idRe = /^(id_[0-9a-f]+|ent:\d+|id:[a-zA-Z0-9_-]+)$/;
+      const cleaned: string[] = [];
+      for (const s of options.muteSources) {
+        if (typeof s !== "string" || !idRe.test(s.trim())) {
+          return { ok: false, reason: `invalid muteSources entry: ${String(s)} (expected identity id or ent:N)` };
+        }
+        cleaned.push(s.trim());
+      }
       if (cleaned.length > 0) muteSources = [...new Set(cleaned)];
     }
     const cleanSecret = typeof secret === "string" && secret.trim().length > 0 ? secret.trim().slice(0, 128) : undefined;
@@ -4369,11 +4385,14 @@ export class World {
     return existed;
   }
 
-  fireWebhook(identityId: string, category: string, reason: string, source?: string, amount?: number): void {
+  fireWebhook(identityId: string, category: string, reason: string, source?: string, amount?: number, muteKey?: string): void {
     const wh = this.webhooks.get(identityId);
     if (wh === undefined || !wh.events.includes(category)) return;
     if (category === "gift" && wh.minGift !== undefined && (amount ?? 0) < wh.minGift) return;
-    if (source !== undefined && wh.muteSources !== undefined && wh.muteSources.includes(source)) return;
+    if (wh.muteSources !== undefined) {
+      if (source !== undefined && wh.muteSources.includes(source)) return;
+      if (muteKey !== undefined && wh.muteSources.includes(muteKey)) return;
+    }
     const cooldownMs = Number(process.env["AGORA_WEBHOOK_COOLDOWN_MS"] ?? 15_000);
     const now = Date.now();
     const last = this.webhookLastSent.get(identityId) ?? 0;
@@ -4856,17 +4875,40 @@ function isBlockedWebhookIp(ip: string): boolean {
     if (rest.includes(".")) return isBlockedWebhookIp(rest);
     return true;
   }
-  if (clean === "::1" || clean === "::" || clean.startsWith("fc") || clean.startsWith("fd") || clean.startsWith("fe8") || clean.startsWith("fe9") || clean.startsWith("fea") || clean.startsWith("feb")) {
+  // Loopback, unspecified, ULA (fc00::/7), link-local (fe80::/10), multicast (ff00::/8),
+  // NAT64 (64:ff9b::), 6to4 (2002::/16), Teredo (2001:0::/32), doc (2001:db8::/32), discard (100::/64)
+  if (
+    clean === "::1" ||
+    clean === "::" ||
+    clean.startsWith("fc") ||
+    clean.startsWith("fd") ||
+    clean.startsWith("fe8") ||
+    clean.startsWith("fe9") ||
+    clean.startsWith("fea") ||
+    clean.startsWith("feb") ||
+    clean.startsWith("ff") ||
+    clean.startsWith("64:ff9b:") ||
+    clean.startsWith("2002:") ||
+    clean.startsWith("2001:0:") ||
+    clean.startsWith("2001::") ||
+    clean.startsWith("2001:db8:") ||
+    clean.startsWith("100::")
+  ) {
     return true;
   }
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(clean);
   if (m) {
     const a = Number(m[1]);
     const b = Number(m[2]);
+    const c = Number(m[3]);
     if (a === 0 || a === 10 || a === 127) return true;
     if (a === 169 && b === 254) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
+    if (a === 192 && b === 0 && (c === 0 || c === 2)) return true; // IETF protocol / TEST-NET-1
+    if (a === 198 && (b === 18 || b === 19)) return true; // benchmark 198.18.0.0/15
+    if (a === 198 && b === 51 && c === 100) return true; // TEST-NET-2
+    if (a === 203 && b === 0 && c === 113) return true; // TEST-NET-3
     if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64.0.0/10
     if (a >= 224) return true; // multicast / reserved
   }
@@ -4882,7 +4924,17 @@ function isBlockedWebhookHost(rawHost: string): boolean {
     host.endsWith(".local") ||
     host.endsWith(".internal") ||
     host === "localtest.me" ||
-    host.endsWith(".localtest.me")
+    host.endsWith(".localtest.me") ||
+    host === "nip.io" ||
+    host.endsWith(".nip.io") ||
+    host === "sslip.io" ||
+    host.endsWith(".sslip.io") ||
+    host === "xip.io" ||
+    host.endsWith(".xip.io") ||
+    host === "lvh.me" ||
+    host.endsWith(".lvh.me") ||
+    host === "traefik.me" ||
+    host.endsWith(".traefik.me")
   ) {
     return true;
   }
