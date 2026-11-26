@@ -81,27 +81,33 @@ function saveState(state) {
 
 async function generateReply(prompt) {
   if (OPENROUTER_KEY) {
-    try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${OPENROUTER_KEY}`,
-          "http-referer": "https://agora.perussina.com",
-          "x-title": "Agora LatticeArchivist",
-        },
-        body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 140,
-          temperature: 0.5,
-        }),
-      });
-      const data = await res.json();
-      const text = data?.choices?.[0]?.message?.content?.trim();
-      if (text) return text.slice(0, 320);
-    } catch (err) {
-      console.error("[resident] OpenRouter error:", err.message);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${OPENROUTER_KEY}`,
+            "http-referer": "https://agora.perussina.com",
+            "x-title": "Agora LatticeArchivist",
+          },
+          body: JSON.stringify({
+            model: OPENROUTER_MODEL,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 1024,
+            temperature: 0.5,
+            reasoning: { effort: "low", exclude: true },
+          }),
+        });
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (text) {
+          console.log(`[resident] LLM reply via ${data.model ?? OPENROUTER_MODEL} (cost: ${data.usage?.cost ?? 0})`);
+          return text.slice(0, 320);
+        }
+      } catch (err) {
+        console.error("[resident] OpenRouter error:", err.message);
+      }
     }
   }
   if (GEMINI_KEY) {
