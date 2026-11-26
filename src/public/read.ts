@@ -6,6 +6,7 @@ import { merkleRoot } from "../engine/segment.ts";
 import type { Position } from "../engine/tick.ts";
 import type { Event } from "../engine/types.ts";
 import { foldWorld } from "../engine/world-fold.ts";
+import { sha256Hex } from "../identity/secrets.ts";
 import type { World } from "../world/world.ts";
 
 const GOVERNANCE = new Set([
@@ -132,6 +133,8 @@ export function publicRead(
     let myArtifactRuns = 0;
     let myCitations = 0;
     let myEarnings = 0;
+    let myGifts = 0;
+    const highlights: Array<{ tick: number; type: string; actor: string; target?: string; amount?: number }> = [];
     if (forId !== null) {
       const ownedIds = new Set(
         [...world.entities.values()]
@@ -146,18 +149,27 @@ export function publicRead(
           const isMine = ownedIds.has(target);
           if (isMine && ev.actor !== actorTag) {
             myArtifactRuns += 1;
-            if (typeof p["feePaid"] === "number" && p["feePaid"] > 0) {
-              myEarnings += p["feePaid"];
-            }
+            const fee = typeof p["feePaid"] === "number" && p["feePaid"] > 0 ? p["feePaid"] : 0;
+            myEarnings += fee;
+            highlights.push({ tick: ev.tick, type: "artifact_run", actor: ev.actor, target, ...(fee > 0 ? { amount: fee } : {}) });
           }
           if ((ev.actor === actorTag || p["triggerActor"] === forId) && typeof p["payoutReceived"] === "number" && p["payoutReceived"] > 0) {
             myEarnings += p["payoutReceived"];
+            highlights.push({ tick: ev.tick, type: "payout", actor: ev.actor, target, amount: p["payoutReceived"] });
           }
         } else if (ev.type === "act.craft" && ev.actor !== actorTag) {
           const parent = typeof p["parent"] === "string" ? p["parent"] : "";
           const cites = typeof p["cites"] === "string" ? p["cites"].split(",").map((s) => s.trim()) : [];
           if ((parent.length > 0 && ownedIds.has(parent)) || cites.some((c) => ownedIds.has(c))) {
             myCitations += 1;
+            highlights.push({ tick: ev.tick, type: "citation", actor: ev.actor, target: typeof p["id"] === "string" ? p["id"] : undefined });
+          }
+        } else if (ev.type === "act.give" && ev.actor !== actorTag && p["target"] === forId) {
+          const amt = typeof p["amount"] === "number" && p["amount"] > 0 ? p["amount"] : 0;
+          if (amt > 0) {
+            myGifts += 1;
+            myEarnings += amt;
+            highlights.push({ tick: ev.tick, type: "gift", actor: ev.actor, amount: amt });
           }
         }
       }
@@ -172,7 +184,8 @@ export function publicRead(
         newArtifacts > 0 ||
         myArtifactRuns > 0 ||
         myCitations > 0 ||
-        myEarnings > 0,
+        myEarnings > 0 ||
+        myGifts > 0,
       unreadSpeech,
       openVotesNotCast,
       closingSoonVotes,
@@ -180,26 +193,32 @@ export function publicRead(
       myArtifactRuns,
       myCitations,
       myEarnings,
+      myGifts,
+      highlights: highlights.slice(-5).reverse(),
       newEvents,
       online: world.onlineCount,
     };
   }
   if (path === "/export.state.json") {
     const tip = events[events.length - 1];
+    const root = merkleRoot(events.map((e) => e.hash));
+    const standing = [...world.clerk.identities.values()]
+      .map((ident) => ({
+        id: ident.id,
+        name: world.identities.identities.get(ident.id)?.name ?? null,
+        ...publicStanding(world.standing.get(ident.id)),
+        currency: ident.currency,
+      }))
+      .sort((a, b) => b.fame - a.fame || (a.id < b.id ? -1 : 1));
+    const stateHash = sha256Hex(JSON.stringify({ tick: world.clerk.tick, tipSeq: tip?.seq ?? -1, tipHash: tip?.hash ?? null, merkleRoot: root, standing }));
     return {
       tick: world.clerk.tick,
       tipSeq: tip?.seq ?? -1,
       tipHash: tip?.hash ?? null,
-      merkleRoot: merkleRoot(events.map((e) => e.hash)),
+      merkleRoot: root,
+      stateHash,
       eventsCount: events.length,
-      standing: [...world.clerk.identities.values()]
-        .map((ident) => ({
-          id: ident.id,
-          name: world.identities.identities.get(ident.id)?.name ?? null,
-          ...publicStanding(world.standing.get(ident.id)),
-          currency: ident.currency,
-        }))
-        .sort((a, b) => b.fame - a.fame || (a.id < b.id ? -1 : 1)),
+      standing,
     };
   }
   if (path === "/artifacts") {

@@ -31,7 +31,7 @@ export interface ArtifactAutomation {
   onEvent?: string[];
 }
 
-export function validateArtifactAutomation(rawData: string): string | null {
+export function validateArtifactAutomation(rawData: string, currentTick?: number): string | null {
   if (rawData.trim().length === 0) return null;
   let parsed: unknown;
   try {
@@ -51,6 +51,9 @@ export function validateArtifactAutomation(rawData: string): string | null {
     const at = obj["atTick"];
     if (typeof at !== "number" || !Number.isInteger(at) || at < 1) {
       return "schedule 'atTick' must be an integer >= 1";
+    }
+    if (currentTick !== undefined && at <= currentTick) {
+      return `schedule 'atTick' (${at}) must be in the future (> current tick ${currentTick})`;
     }
   }
   return null;

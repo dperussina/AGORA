@@ -47,7 +47,7 @@ import { applyMove, axisSize, nextBudget, type Intent, type Position } from "../
 import type { Actor } from "../engine/types.ts";
 import { validatePatch, type Patch } from "../engine/validate.ts";
 import { foldWorld, occupancyAtTick } from "../engine/world-fold.ts";
-import { isLegalArtifactLabel, isLegalName } from "../identity/secrets.ts";
+import { isLegalArtifactLabel, isLegalName, sha256Hex as sha256Text } from "../identity/secrets.ts";
 import { IdentityStore, type StoredIdentity } from "../identity/store.ts";
 import { listTools, TOOL_NAMES, type ToolName } from "../mcp/catalog.ts";
 import { completeArgument } from "../mcp/completions.ts";
@@ -2138,7 +2138,13 @@ export class World {
       }
       this.inbox.set(hearer, list);
     }
-    this.append("speak", identityId, { text, hearers, identityId, ...(isPrivateDm ? { private: true } : {}) });
+    this.append(
+      "speak",
+      identityId,
+      isPrivateDm
+        ? { textHash: sha256Text(text), hearers, identityId, private: true }
+        : { text, hearers, identityId },
+    );
     this.fireTriggers("speak.end", { selfId: identityId });
     return { ok: true, text, hearers, budgetSpent: 0 };
   }
@@ -2179,7 +2185,14 @@ export class World {
       this.inbox.set(owner, list);
       hearers.push(owner);
     }
-    this.append("speak.artifact", identityId, { target: artifact.id, text, hearers, identityId });
+    const isPrivateArt = artifact.fields["visibility"] === "private";
+    this.append(
+      "speak.artifact",
+      identityId,
+      isPrivateArt
+        ? { target: artifact.id, textHash: sha256Text(text), hearers, identityId, private: true }
+        : { target: artifact.id, text, hearers, identityId },
+    );
     this.witnessEntityInteraction(identityId, artifact);
     this.fireTriggers("speak.end", { selfId: identityId });
     return { ok: true, target: artifact.id, text, hearers, budgetSpent: 0 };
@@ -2645,6 +2658,18 @@ export class World {
     return count;
   }
 
+  private scheduledArtifactCount(ownerId: string, excludeEntityId?: string): number {
+    let count = 0;
+    for (const e of this.entities.values()) {
+      if (e.type !== "artifact" || e.id === excludeEntityId) continue;
+      if (e.fields["owner"] !== ownerId || e.fields["visibility"] === "private") continue;
+      const raw = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
+      const meta = artifactAutomationMeta(raw);
+      if (meta.every !== undefined || meta.atTick !== undefined) count += 1;
+    }
+    return count;
+  }
+
   private craftWouldFail(identityId: string, args: Record<string, unknown>): string | null {
     const rawKind = typeof args["kind"] === "string" ? args["kind"] : "";
     const rawName = typeof args["name"] === "string" ? args["name"] : "";
@@ -2666,7 +2691,7 @@ export class World {
     if (data.length > maxData) {
       return `data exceeds artifact_data_max (${maxData})`;
     }
-    const autoErr = validateArtifactAutomation(data);
+    const autoErr = validateArtifactAutomation(data, this.clerk.tick);
     if (autoErr !== null) {
       return autoErr;
     }
@@ -2674,8 +2699,12 @@ export class World {
     if (vis !== "public" && vis !== "private") {
       return "visibility must be public or private";
     }
-    if (vis === "public" && artifactAutomationMeta(data).onEvent !== undefined && this.reactiveListenerCount(identityId) >= 4) {
+    const meta = artifactAutomationMeta(data);
+    if (vis === "public" && meta.onEvent !== undefined && this.reactiveListenerCount(identityId) >= 4) {
       return "reactive listener limit reached (max 4 public onEvent artifacts per identity)";
+    }
+    if (vis === "public" && (meta.every !== undefined || meta.atTick !== undefined) && this.scheduledArtifactCount(identityId) >= 4) {
+      return "scheduled artifact limit reached (max 4 public every/atTick artifacts per identity)";
     }
     const shape = typeof args["shape"] === "string" ? args["shape"] : "";
     if (shape.length > 2000) {
@@ -2793,7 +2822,7 @@ export class World {
       return `data exceeds artifact_data_max (${maxData})`;
     }
     if (typeof args["data"] === "string") {
-      const autoErr = validateArtifactAutomation(args["data"]);
+      const autoErr = validateArtifactAutomation(args["data"], this.clerk.tick);
       if (autoErr !== null) return autoErr;
     }
     if (typeof args["visibility"] === "string" && args["visibility"] !== "public" && args["visibility"] !== "private") {
@@ -2801,8 +2830,12 @@ export class World {
     }
     const nextVis = typeof args["visibility"] === "string" ? args["visibility"] : String(entity.fields["visibility"] ?? "public");
     const nextData = typeof args["data"] === "string" ? args["data"] : String(entity.fields["data"] ?? "");
-    if (nextVis === "public" && artifactAutomationMeta(nextData).onEvent !== undefined && this.reactiveListenerCount(identityId, entity.id) >= 4) {
+    const nextMeta = artifactAutomationMeta(nextData);
+    if (nextVis === "public" && nextMeta.onEvent !== undefined && this.reactiveListenerCount(identityId, entity.id) >= 4) {
       return "reactive listener limit reached (max 4 public onEvent artifacts per identity)";
+    }
+    if (nextVis === "public" && (nextMeta.every !== undefined || nextMeta.atTick !== undefined) && this.scheduledArtifactCount(identityId, entity.id) >= 4) {
+      return "scheduled artifact limit reached (max 4 public every/atTick artifacts per identity)";
     }
     if (typeof args["parent"] === "string" && args["parent"].trim().length > 0) {
       const p = this.entities.get(args["parent"].trim());
@@ -3663,8 +3696,8 @@ export class World {
   }
 
   private fireReactiveArtifacts(evType: string, actor: string, payload: Record<string, unknown>): void {
-    // Never leak private targeted direct messages to reactive artifact listeners
-    if (evType === "speak" && payload["private"] === true) return;
+    // Never leak private targeted direct messages or notes on private artifacts to reactive listeners
+    if ((evType === "speak" || evType === "speak.artifact") && payload["private"] === true) return;
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     const candidates = [...this.entities.values()]
       .filter((e) => e.type === "artifact" && e.fields["visibility"] !== "private")

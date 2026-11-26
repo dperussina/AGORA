@@ -343,13 +343,29 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(digest.myArtifactRuns).toBe(1);
     expect(digest.myEarnings).toBe(15);
 
-    // 3. /export.state.json includes standing/fame totals + merkleRoot
+    // 3. /export.state.json includes standing/fame totals + merkleRoot + stateHash
     const stateExport = publicRead(world, "/export.state.json", new URLSearchParams()) as {
       merkleRoot: string;
+      stateHash: string;
       standing: Array<{ id: string; fame: number }>;
     };
     expect(typeof stateExport.merkleRoot).toBe("string");
+    expect(stateExport.stateHash).toMatch(/^[0-9a-f]{64}$/);
     expect(stateExport.standing.some((s) => s.id === ada.identityId)).toBe(true);
+
+    // 3b. Direct coin gift wakes Ada in /digest with myGifts + myEarnings + highlights
+    const tipBeforeGift = world.log.tip()!.seq;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "give", immediate: true, target: ada.identityId, amount: 7 } }), bob.sessionToken);
+    const giftDigest = publicRead(world, "/digest", new URLSearchParams({ for: ada.identityId, since: String(tipBeforeGift) })) as {
+      shouldWake: boolean;
+      myGifts: number;
+      myEarnings: number;
+      highlights: Array<{ type: string; amount?: number }>;
+    };
+    expect(giftDigest.shouldWake).toBe(true);
+    expect(giftDigest.myGifts).toBe(1);
+    expect(giftDigest.myEarnings).toBe(7);
+    expect(giftDigest.highlights.some((h) => h.type === "gift" && h.amount === 7)).toBe(true);
 
     // 4. Artifact name/kind rejects BiDi override and null bytes
     const bidiCraft = call(
@@ -403,10 +419,57 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ).result as { outcome: { id: string } };
     const spyId = spyCraft.outcome.id;
 
-    // Bob sends a private targeted DM to Ada -> listener MUST NOT receive it!
+    // Bob sends a private targeted DM to Ada -> listener MUST NOT receive it AND plaintext MUST NOT appear in public log!
     call(world, req("tools/call", { name: "speak", arguments: { target: ada.identityId, text: "TOP_SECRET_DM" } }), bob.sessionToken);
     const spyAfterDm = JSON.parse(String(world.entities.get(spyId)?.fields["data"])) as { state: { heard: string[] } };
     expect(spyAfterDm.state.heard).toEqual([]);
+    expect(JSON.stringify(world.log.events())).not.toContain("TOP_SECRET_DM");
+    const adaObs = call(world, req("tools/call", { name: "observe", arguments: {} }), ada.sessionToken).result as {
+      heard: Array<{ from: string; text: string }>;
+    };
+    expect(adaObs.heard.some((m) => m.text === "TOP_SECRET_DM")).toBe(true);
+
+    // Private artifact note MUST NOT leak to speak.artifact listeners OR public log plaintext
+    const privArt = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "mailbox", name: "Private Diary", visibility: "private", data: "init" } }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const artSpy = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "script", name: "Art Spy", data: JSON.stringify({ onEvent: ["speak.artifact"], state: { saw: 0 }, code: "state.saw += 1; return { reply: 'saw', state };" }) },
+      }),
+      bob.sessionToken,
+    ).result as { outcome: { id: string } };
+    call(world, req("tools/call", { name: "speak", arguments: { target: privArt.outcome.id, text: "PRIVATE_DIARY_SECRET" } }), ada.sessionToken);
+    const artSpyData = JSON.parse(String(world.entities.get(artSpy.outcome.id)?.fields["data"])) as { state: { saw: number } };
+    expect(artSpyData.state.saw).toBe(0);
+    expect(world.log.events().some((e) => e.type === "speak.artifact" && JSON.stringify(e.payload).includes("PRIVATE_DIARY_SECRET"))).toBe(false);
+
+    // Scheduled artifact cap (max 4 public every/atTick per identity) + past atTick rejected
+    const pastAt = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "script", name: "Past Clock", data: JSON.stringify({ atTick: 0, code: "return { reply: 'x' };" }) } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(pastAt.accepted).toBe(false);
+    for (let i = 0; i < 4; i += 1) {
+      const okS = call(
+        world,
+        req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "script", name: `Sched ${i + 1}`, data: JSON.stringify({ every: 5, code: "return { silent: true };" }) } }),
+        bob.sessionToken,
+      ).result as { accepted: boolean };
+      expect(okS.accepted).toBe(true);
+    }
+    const fifthSched = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "script", name: "Sched 5", data: JSON.stringify({ every: 5, code: "return { silent: true };" }) } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(fifthSched.accepted).toBe(false);
+    expect(fifthSched.reason).toContain("scheduled artifact limit");
 
     // Bob speaks publicly -> listener fires AND delivers reply into Bob's inbox!
     call(world, req("tools/call", { name: "speak", arguments: { broadcast: true, text: "PUBLIC_HELLO" } }), bob.sessionToken);
