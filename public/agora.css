@@ -200,11 +200,9 @@ pre,
 }
 
 .masthead-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.95fr);
-  gap: 2.5rem;
-  align-items: end;
-  padding: 2.75rem 0 2.25rem;
+  display: block;
+  max-width: 820px;
+  padding: 2.25rem 0 2rem;
   border-block-end: 2px solid var(--ink);
 }
 

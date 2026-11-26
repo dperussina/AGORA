@@ -9,7 +9,7 @@ const SEED_VERBS = new Set(["craft", "depict", "dismantle", "edit", "give", "mar
 let continent = null;
 let lattice3d = null;
 let timeline = null;
-let stageMode = "continent";
+let stageMode = "timeline";
 
 const state = {
   filter: "all",
@@ -164,48 +164,9 @@ function pulseHeartbeat() {
 
 /* Live 2D Architectural SVG Projection (Zero WebGL) */
 function renderBlueprint() {
-  const anchorsG = $("lattice-anchors");
-  const artifactsG = $("lattice-artifacts");
-  const agentsG = $("lattice-agents");
-  if (!anchorsG || !artifactsG || !agentsG) return;
-
-  const toX = (x) => 16 + (Math.max(0, Math.min(63, Number(x) || 0)) / 63) * 288;
-  const toY = (y) => 16 + (Math.max(0, Math.min(63, Number(y) || 0)) / 63) * 188;
-
   const anchors = state.map.anchors || [];
-  const namedCount = anchors.filter((a) => a.name).length;
-
-  anchorsG.innerHTML = anchors
-    .map((a) => {
-      const cx = toX(a.centre?.x);
-      const cy = toY(a.centre?.y);
-      const isNamed = Boolean(a.name);
-      return `<g>
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${isNamed ? 5.5 : 3}" fill="none" stroke="${isNamed ? "#111214" : "rgba(17,18,20,0.28)"}" stroke-width="${isNamed ? 1.4 : 1}" />
-        ${isNamed ? `<text x="${(cx + 8).toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-family="IBM Plex Mono, monospace" font-size="8" fill="#111214">${esc(a.name)}</text>` : ""}
-      </g>`;
-    })
-    .join("");
-
   const arts = state.artifacts.filter((a) => a.position);
-  artifactsG.innerHTML = arts
-    .map((a) => {
-      const cx = toX(a.position.x);
-      const cy = toY(a.position.y);
-      return `<rect x="${(cx - 2.6).toFixed(1)}" y="${(cy - 2.6).toFixed(1)}" width="5.2" height="5.2" fill="#1d4ed8" opacity="0.88"><title>${esc(a.name || a.id)} (${esc(a.kind)})</title></rect>`;
-    })
-    .join("");
-
   const bodies = state.liveBodies ?? state.map.bodies ?? [];
-  agentsG.innerHTML = bodies
-    .map((b) => {
-      const cx = toX(b.position?.x);
-      const cy = toY(b.position?.y);
-      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3.6" fill="#d9381e"><title>${esc(actorLabel(b.id))}</title></circle>`;
-    })
-    .join("");
-
-  $("blueprint-legend").textContent = `${bodies.length} BODIES · ${arts.length} ARTIFACTS · ${namedCount} NAMED`;
   const countsEl = $("lattice-counts");
   if (countsEl) {
     countsEl.textContent = `${bodies.length} AGENTS · ${arts.length} ARTIFACTS · ${(state.map.drifts || []).length} DRIFTS`;
@@ -531,19 +492,19 @@ function setStageMode(mode) {
   if ($("continent-controls")) $("continent-controls").hidden = !isCont;
   if ($("timeline-controls")) $("timeline-controls").hidden = !isTl;
   if ($("lattice-controls")) $("lattice-controls").hidden = !is3d;
-  if ($("sec-3d")) $("sec-3d").textContent = isCont ? "Live Continent Map" : is3d ? "Live 3D Lattice" : "Live Experiment Timeline";
+  if ($("sec-3d")) $("sec-3d").textContent = isCont ? "Live Continent Map" : is3d ? "Neural Synapse Brain" : "Live Experiment Timeline";
   if ($("stage-kicker")) {
     $("stage-kicker").textContent = isCont
       ? "00 / ISOMETRIC CONTINENT · LIVE RTS MAP"
       : is3d
-        ? "00 / SPATIAL OBSERVATORY · 64 × 64 × 64"
+        ? "00 / NEURAL CORTEX · SYNAPTIC FIRING NETWORK"
         : "00 / EXPERIMENT TIMELINE · MULTI-AGENT TELEMETRY";
   }
   if ($("lattice-hover")) {
     $("lattice-hover").textContent = isCont
       ? "Drag to pan continent · Scroll to zoom · Click any unit, building, or hub to inspect"
       : is3d
-        ? "Drag to orbit · Scroll to zoom · Click any inhabitant, artifact, or landmark to inspect"
+        ? "Drag to orbit cortex · Scroll to zoom · Dormant neurons light up when synapses fire · Click any node to inspect"
         : "Drag horizontally to scrub history · Click ▶ Replay to watch animated playback · Click any node to inspect";
   }
   continent?.stop();
@@ -1014,6 +975,7 @@ async function backfillEvents() {
   renderStream();
   renderWire();
   if (timeline) timeline.setData(state.events, state.artifacts);
+  if (lattice3d && typeof lattice3d.setEvents === "function") lattice3d.setEvents(state.events);
 }
 
 function handleLiveEvent(ev, isReplay = false) {
@@ -1427,7 +1389,7 @@ function wireControls() {
 
 async function boot() {
   wireControls();
-  setStageMode("continent");
+  setStageMode("timeline");
   await Promise.all([
     refreshCitizens(),
     refreshPulseAndResearch(),

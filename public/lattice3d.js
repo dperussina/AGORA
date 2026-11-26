@@ -1,15 +1,105 @@
 /**
- * Lean Precision 3D Spatial Telemetry Renderer for Agora (Zero WebGL, 60 FPS).
- * Inspired by scientific star-charts and lean data visualization:
- * - Ultra-fine micro-reticle glyphs (never chunky overlapping boxes/spheres)
- * - Automatic screen-space anti-collision micro-fanning with exact-origin tethers
- * - Greedy 2D label collision avoidance (zero overlapping text)
- * - Smooth "Focus Active" camera targeting + spring-damped orbit/zoom
- * - Automatic off-screen & background tab pausing
+ * 3D Neural Synapse Brain Renderer for Agora (Zero WebGL, 60 FPS Canvas 2D).
+ *
+ * - Maps citizens, artifacts, and landmarks deterministically onto a sculpted
+ *   3D dual-hemisphere neural cortex (no rigid cube wireframe).
+ * - Dormant state: every neuron is subtly visible, calm, and unlit — zero clutter.
+ * - Active firing: when agents interact (DM, speak, act.run, act.give, craft, vote),
+ *   a glowing action-potential pulse shoots along a curved 3D axon from source -> target,
+ *   lighting up both neurons and the synaptic pathway, lingering briefly, then fading
+ *   smoothly back to dormancy.
+ * - Live SSE events fire immediately; optional Synapse Replay steps gently through
+ *   real historical interactions so the cortex comes alive on demand.
  */
 
-const GRID = 63;
-const HALF = GRID / 2;
+const BRAIN_SCALE = 28; // world radius in normalized 3D units
+
+function hashStr(str) {
+  let h = 2166136261 >>> 0;
+  const s = String(str || "");
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function seededRand(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Deterministic 3D coordinate inside a sculpted dual-hemisphere brain cortex. */
+function brainCoordsFor(id, kind) {
+  const rng = seededRand(hashStr(`${kind}:${id}`));
+  const u = rng();
+  const v = rng();
+  const w = rng();
+
+  // Left (-1) or Right (+1) cerebral hemisphere
+  const hemi = (hashStr(id) & 1) === 0 ? -1 : 1;
+
+  // Spherical coordinates on a lobe shell
+  const theta = u * Math.PI * 2;
+  const phi = Math.acos(2 * v - 1);
+
+  // Radial shell depth: citizens on outer cortex, artifacts in mid-cortex, anchors in deep nuclei
+  let rShell;
+  if (kind === "agent") {
+    rShell = 0.78 + 0.22 * Math.cbrt(w);
+  } else if (kind === "anchor") {
+    rShell = 0.22 + 0.28 * Math.cbrt(w);
+  } else {
+    rShell = 0.45 + 0.48 * Math.cbrt(w);
+  }
+
+  let sx = Math.sin(phi) * Math.cos(theta);
+  let sy = Math.cos(phi);
+  let sz = Math.sin(phi) * Math.sin(theta);
+
+  // Sculpt into two realistic cerebral hemispheres separated by a medial fissure
+  // X: left/right width, Y: dorsal/ventral height, Z: anterior/posterior length
+  const lobeWidth = 0.56;
+  const lobeHeight = 0.74;
+  const lobeLength = 1.08;
+
+  // Flatten medial wall facing the fissure + offset each hemisphere outward
+  const xLocal = Math.abs(sx) * lobeWidth;
+  const fissureGap = kind === "anchor" ? 0.04 : 0.11;
+  let x = hemi * (fissureGap + xLocal * rShell);
+  // Slight frontal taper (z > 0) and occipital fullness (z < 0)
+  let z = sz * lobeLength * rShell;
+  const frontalTaper = z > 0 ? 1 - 0.18 * (z / lobeLength) : 1 + 0.06 * (-z / lobeLength);
+  x *= frontalTaper;
+
+  // Arch dorsal cortex slightly higher in the middle, gentle temporal dip on underside
+  let y = sy * lobeHeight * rShell;
+  if (y < 0) y *= 0.78;
+  y += 0.1 * Math.cos((z / lobeLength) * Math.PI * 0.5);
+
+  return {
+    x: x * BRAIN_SCALE,
+    y: y * BRAIN_SCALE,
+    z: z * BRAIN_SCALE,
+  };
+}
+
+function signalColor(evType, payload) {
+  if (evType === "act.give") return "#fbbf24"; // gold — value transfer
+  if (evType === "act.run" || evType === "api.request") {
+    return payload?.sandbox === "quickjs-wasm" ? "#34d399" : "#22d3ee"; // emerald / cyan — code execution
+  }
+  if (evType === "act.craft" || evType === "act.edit") return "#38bdf8"; // sky — creation
+  if (evType === "amendment.propose" || evType === "amendment.vote" || evType === "amendment.applied") {
+    return "#a78bfa"; // violet — governance
+  }
+  return "#ff6b4a"; // warm coral — speech / DM / notes
+}
 
 export class Lattice3D {
   constructor(canvas, opts = {}) {
@@ -19,24 +109,30 @@ export class Lattice3D {
     this.onHover = opts.onHover || (() => {});
     this.actorLabel = opts.actorLabel || ((id) => id);
 
-    // Camera & focus target (in world coordinates 0..63)
-    this.yaw = -0.68;
-    this.pitch = 0.44;
-    this.zoom = 1.05;
-    this.focus = { x: HALF, y: HALF, z: HALF };
+    // Camera (centered at brain origin 0,0,0)
+    this.yaw = -0.58;
+    this.pitch = 0.28;
+    this.zoom = 1.08;
+    this.focus = { x: 0, y: 0, z: 0 };
     this.targetYaw = this.yaw;
     this.targetPitch = this.pitch;
     this.targetZoom = this.zoom;
-    this.targetFocus = { x: HALF, y: HALF, z: HALF };
+    this.targetFocus = { x: 0, y: 0, z: 0 };
     this.autoOrbit = true;
-    this.showLineage = true;
+    this.showLineage = true; // controls ambient Synapse Replay of historical events
     this.showLabels = true;
 
     this.anchors = [];
     this.artifacts = [];
     this.agents = new Map();
     this.drifts = [];
-    this.pulses = [];
+    this.nodes = new Map(); // id -> { id, kind, label, x, y, z, activation, glowColor, lastLit, raw }
+    this.synapses = []; // active firing arcs: { fromId, toId, color, label, born, travelMs, ttl }
+    this.historyEvents = []; // real interaction events for gentle ambient synapse replay
+    this.replayIdx = 0;
+    this.lastReplayAt = 0;
+    this.lastLiveAt = 0;
+
     this.hitTargets = [];
     this.hovered = null;
 
@@ -51,181 +147,276 @@ export class Lattice3D {
     this.height = 540;
     this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 
+    // Precompute subtle cortical silhouette guide points (2 faint wireframe-free hemisphere shells)
+    this._cortexShell = this._buildCortexShell();
+
     this._bindEvents();
     this._resize();
     this.start();
   }
 
-  setWorldData({ anchors, bodies, artifacts, drifts }) {
-    if (anchors !== undefined) this.anchors = anchors;
-    if (artifacts !== undefined) this.artifacts = artifacts;
-    if (drifts !== undefined) this.drifts = drifts;
-
-    if (bodies !== undefined) {
-      const now = performance.now();
-      const seen = new Set();
-      for (const b of bodies) {
-        if (!b.position) continue;
-        seen.add(b.id);
-        const existing = this.agents.get(b.id);
-        if (existing) {
-          if (existing.tx !== b.position.x || existing.ty !== b.position.y || existing.tz !== b.position.z) {
-            existing.trail.push({ x: existing.tx, y: existing.ty, z: existing.tz, born: now });
-            if (existing.trail.length > 14) existing.trail.shift();
-            existing.tx = b.position.x;
-            existing.ty = b.position.y;
-            existing.tz = b.position.z;
-          }
-        } else {
-          this.agents.set(b.id, {
-            id: b.id,
-            x: b.position.x,
-            y: b.position.y,
-            z: b.position.z,
-            tx: b.position.x,
-            ty: b.position.y,
-            tz: b.position.z,
-            trail: [],
-          });
+  _buildCortexShell() {
+    const rings = [];
+    for (const hemi of [-1, 1]) {
+      // 3 gentle longitudinal contour ribbons per hemisphere (whisper-faint brain outline)
+      for (const tilt of [-0.55, 0, 0.55]) {
+        const pts = [];
+        for (let i = 0; i <= 32; i++) {
+          const a = (i / 32) * Math.PI * 2;
+          const sx = Math.cos(tilt) * Math.abs(Math.sin(a));
+          const sy = Math.sin(a) * Math.sin(tilt) * 0.65 + Math.cos(a) * 0.72;
+          const sz = Math.sin(a) * 1.06;
+          const z = sz * BRAIN_SCALE;
+          const taper = z > 0 ? 1 - 0.16 * (z / (BRAIN_SCALE * 1.06)) : 1 + 0.05 * (-z / (BRAIN_SCALE * 1.06));
+          const x = hemi * (0.1 + 0.54 * sx) * BRAIN_SCALE * taper;
+          let y = sy * 0.74 * BRAIN_SCALE;
+          if (y < 0) y *= 0.76;
+          pts.push({ x, y, z });
         }
+        rings.push(pts);
       }
-      for (const id of [...this.agents.keys()]) {
-        if (!seen.has(id)) this.agents.delete(id);
+    }
+    return rings;
+  }
+
+  _ensureNode(id, kind, label, raw = null) {
+    if (!id) return null;
+    let node = this.nodes.get(id);
+    if (!node) {
+      const pos = brainCoordsFor(id, kind);
+      node = {
+        id,
+        kind,
+        label: label || id,
+        x: pos.x,
+        y: pos.y,
+        z: pos.z,
+        activation: 0,
+        glowColor: "#38bdf8",
+        lastLit: 0,
+        raw,
+      };
+      this.nodes.set(id, node);
+    } else {
+      if (label) node.label = label;
+      if (raw) node.raw = raw;
+    }
+    return node;
+  }
+
+  setWorldData({ anchors, bodies, artifacts, drifts }) {
+    if (anchors !== undefined) {
+      this.anchors = anchors;
+      for (const a of anchors) {
+        this._ensureNode(`anchor:${a.designation}`, "anchor", a.name || a.designation, a);
+      }
+    }
+    if (artifacts !== undefined) {
+      this.artifacts = artifacts;
+      for (const art of artifacts) {
+        this._ensureNode(art.id, "artifact", art.name || art.id, art);
+      }
+    }
+    if (drifts !== undefined) this.drifts = drifts;
+    if (bodies !== undefined) {
+      for (const b of bodies) {
+        const label = this.actorLabel(b.id);
+        this.agents.set(b.id, { id: b.id, position: b.position });
+        this._ensureNode(b.id, "agent", label, b);
       }
     }
   }
 
-  triggerEvent(ev) {
+  setEvents(events) {
+    if (!Array.isArray(events)) return;
+    // Keep meaningful interaction events in chronological order for ambient synapse replay
+    const interesting = events
+      .filter(
+        (ev) =>
+          ev &&
+          (ev.type === "speak" ||
+            ev.type === "speak.artifact" ||
+            ev.type === "act.run" ||
+            ev.type === "act.give" ||
+            ev.type === "act.craft" ||
+            ev.type === "api.request" ||
+            ev.type === "amendment.propose" ||
+            ev.type === "amendment.vote"),
+      )
+      .slice(0, 140)
+      .reverse(); // oldest -> newest
+    this.historyEvents = interesting;
+    if (this.replayIdx >= this.historyEvents.length) this.replayIdx = 0;
+  }
+
+  triggerEvent(ev, isReplay = false) {
     if (!ev || !ev.type) return;
     const now = performance.now();
+    if (!isReplay) this.lastLiveAt = now;
+
     const p = ev.payload || {};
-    const actorId = String(ev.actor || "").startsWith("identity:")
-      ? String(ev.actor).slice("identity:".length)
-      : ev.actor;
+    const actorRaw = String(ev.actor || "");
+    const actorId = actorRaw.startsWith("identity:") ? actorRaw.slice("identity:".length) : actorRaw;
+    const color = signalColor(ev.type, p);
 
-    if ((ev.type === "act.move" || ev.type === "identity.spawn") && actorId && typeof p.x === "number") {
-      const existing = this.agents.get(actorId);
-      if (existing) {
-        existing.trail.push({ x: existing.tx, y: existing.ty, z: existing.tz, born: now });
-        if (existing.trail.length > 16) existing.trail.shift();
-        existing.tx = p.x;
-        existing.ty = p.y;
-        existing.tz = p.z;
+    // Ensure source neuron exists
+    let sourceNode = null;
+    if (actorId && actorId !== "ARBITER") {
+      sourceNode = this._ensureNode(actorId, "agent", this.actorLabel(actorId));
+    } else if (typeof p.target === "string" && p.target.startsWith("ent:")) {
+      sourceNode = this.nodes.get(p.target) || this._ensureNode(p.target, "artifact", p.target);
+    }
+
+    // Resolve target neurons for this interaction
+    const targets = [];
+    let label = "";
+
+    if (ev.type === "speak") {
+      const hearers = Array.isArray(p.hearers) ? p.hearers : [];
+      for (const h of hearers.slice(0, 5)) {
+        if (h && h !== actorId) {
+          targets.push(this._ensureNode(h, "agent", this.actorLabel(h)));
+        }
+      }
+      label = p.private
+        ? `${this.actorLabel(actorId)} → DM`
+        : `${this.actorLabel(actorId)}: “${String(p.text || "").slice(0, 34)}”`;
+    } else if (ev.type === "speak.artifact" && typeof p.target === "string") {
+      targets.push(this._ensureNode(p.target, "artifact", this.nodes.get(p.target)?.label || p.target));
+      label = `${this.actorLabel(actorId)} → note ${p.target}`;
+    } else if (ev.type === "act.run" && typeof p.target === "string") {
+      if (p.target !== "sandbox:ephemeral") {
+        const tNode = this._ensureNode(p.target, "artifact", this.nodes.get(p.target)?.label || p.target);
+        if (sourceNode && tNode && sourceNode.id !== tNode.id) targets.push(tNode);
+        else if (!sourceNode && tNode) sourceNode = tNode;
+      }
+      // If multi-recipient payouts happened, fire golden synapses to each recipient!
+      if (Array.isArray(p.payouts)) {
+        for (const pay of p.payouts.slice(0, 4)) {
+          if (pay?.to) {
+            const dest = this._ensureNode(pay.to, "agent", this.actorLabel(pay.to));
+            if (sourceNode && dest) {
+              this._emitSynapse(sourceNode, dest, "#fbbf24", `+${pay.amount}c`, now);
+            }
+          }
+        }
+      }
+      label = `${p.input || "run"} → ${String(p.reply || "ok").slice(0, 30)}`;
+    } else if (ev.type === "act.give" && typeof p.target === "string") {
+      const isArt = p.target.startsWith("ent:");
+      targets.push(this._ensureNode(p.target, isArt ? "artifact" : "agent", isArt ? p.target : this.actorLabel(p.target)));
+      label = `+${p.amount ?? ""}c → ${isArt ? p.target : this.actorLabel(p.target)}`;
+    } else if (ev.type === "act.craft" && typeof p.id === "string") {
+      const artNode = this._ensureNode(p.id, "artifact", p.name || p.id);
+      targets.push(artNode);
+      // Also fire citation synapses to cited/parent artifacts!
+      const citeIds = [p.parent, ...String(p.cites || "").split(",")].map((s) => String(s || "").trim()).filter((s) => s.startsWith("ent:"));
+      for (const cid of citeIds.slice(0, 3)) {
+        const cNode = this.nodes.get(cid);
+        if (cNode) this._emitSynapse(artNode, cNode, "#a78bfa", `cites ${cid}`, now);
+      }
+      label = `+ ${p.name || p.id}`;
+    } else if (ev.type === "api.request" && typeof p.target === "string") {
+      const tNode = this._ensureNode(p.target, "artifact", this.nodes.get(p.target)?.label || p.target);
+      targets.push(tNode);
+      label = `api.request ${p.target}`;
+    } else if (ev.type === "amendment.propose" || ev.type === "amendment.vote") {
+      // Governance fires toward the central subcortical anchor (Commons Square / first named anchor)
+      const hub = this.anchors.find((a) => a.name) || this.anchors[0];
+      if (hub) {
+        targets.push(this._ensureNode(`anchor:${hub.designation}`, "anchor", hub.name || hub.designation, hub));
+      }
+      label = ev.type === "amendment.propose" ? `Bill #${p.proposalId ?? ""}` : `Vote #${p.proposalId ?? ""}`;
+    }
+
+    if (sourceNode) {
+      this._lightNode(sourceNode, color, now);
+      if (targets.length > 0) {
+        for (let i = 0; i < targets.length; i++) {
+          this._emitSynapse(sourceNode, targets[i], color, i === 0 ? label : "", now);
+        }
       } else {
-        this.agents.set(actorId, {
-          id: actorId,
-          x: p.x,
-          y: p.y,
-          z: p.z,
-          tx: p.x,
-          ty: p.y,
-          tz: p.z,
-          trail: [],
-        });
-      }
-      this.pulses.push({ x: p.x, y: p.y, z: p.z, color: "#ff6b4a", label: "", born: now, ttl: 2200 });
-      return;
-    }
-
-    if (ev.type === "act.craft" && typeof p.x === "number") {
-      this.pulses.push({
-        x: p.x,
-        y: p.y,
-        z: p.z,
-        color: p.kind === "script" ? "#34d399" : "#38bdf8",
-        label: `+ ${p.name || p.kind || "artifact"}`,
-        born: now,
-        ttl: 5200,
-      });
-      return;
-    }
-
-    if (ev.type === "act.run") {
-      const art = this.artifacts.find((a) => a.id === p.target);
-      const agent = this.agents.get(actorId);
-      const origin = art?.position || (agent ? { x: agent.x, y: agent.y, z: agent.z } : null);
-      if (origin) {
-        this.pulses.push({
-          x: origin.x,
-          y: origin.y,
-          z: origin.z,
-          color: p.sandbox === "quickjs-wasm" ? "#34d399" : "#38bdf8",
-          label: `${p.sandbox === "quickjs-wasm" ? "wasm" : "run"}[${p.input}] → ${String(p.reply || "ok").slice(0, 32)}`,
-          born: now,
-          ttl: 5800,
-        });
-      }
-      return;
-    }
-
-    if (ev.type === "speak" || ev.type === "speak.artifact" || ev.type === "act.mark") {
-      const agent = this.agents.get(actorId);
-      const origin =
-        typeof p.x === "number"
-          ? { x: p.x, y: p.y, z: p.z }
-          : agent
-            ? { x: agent.x, y: agent.y, z: agent.z }
-            : null;
-      const targetArt = ev.type === "speak.artifact" ? this.artifacts.find((a) => a.id === p.target) : null;
-      if (origin) {
-        this.pulses.push({
-          x: origin.x,
-          y: origin.y,
-          z: origin.z,
-          to: targetArt?.position || null,
-          color: "#ff6b4a",
-          label: `${this.actorLabel(actorId)}: “${String(p.text || "").slice(0, 38)}”`,
-          born: now,
-          ttl: 6000,
-        });
+        // Self-firing neuron (e.g. scheduled script or ephemeral WASM run)
+        this._emitSelfPulse(sourceNode, color, label, now);
       }
     }
+  }
+
+  _lightNode(node, color, now) {
+    node.activation = 1.0;
+    node.glowColor = color;
+    node.lastLit = now;
+  }
+
+  _emitSynapse(fromNode, toNode, color, label, now) {
+    if (!fromNode || !toNode || fromNode.id === toNode.id) return;
+    this._lightNode(fromNode, color, now);
+    this.synapses.push({
+      fromId: fromNode.id,
+      toId: toNode.id,
+      color,
+      label,
+      born: now,
+      travelMs: 650,
+      ttl: 3400, // lingers brightly then fades away cleanly
+      litTarget: false,
+    });
+    if (this.synapses.length > 60) this.synapses.shift();
+  }
+
+  _emitSelfPulse(node, color, label, now) {
+    this._lightNode(node, color, now);
+    this.synapses.push({
+      fromId: node.id,
+      toId: node.id,
+      color,
+      label,
+      born: now,
+      travelMs: 500,
+      ttl: 2800,
+      litTarget: true,
+    });
+    if (this.synapses.length > 60) this.synapses.shift();
   }
 
   setPreset(name) {
     this.autoOrbit = false;
     if (name === "iso") {
-      this.targetFocus = { x: HALF, y: HALF, z: HALF };
-      this.targetYaw = -0.68;
-      this.targetPitch = 0.44;
-      this.targetZoom = 1.05;
+      this.targetFocus = { x: 0, y: 0, z: 0 };
+      this.targetYaw = -0.58;
+      this.targetPitch = 0.28;
+      this.targetZoom = 1.08;
     } else if (name === "top") {
-      this.targetFocus = { x: HALF, y: HALF, z: HALF };
+      this.targetFocus = { x: 0, y: 0, z: 0 };
       this.targetYaw = 0;
-      this.targetPitch = 1.5;
+      this.targetPitch = 1.48;
       this.targetZoom = 1.15;
-    } else if (name === "front") {
-      this.targetFocus = { x: HALF, y: HALF, z: HALF };
-      this.targetYaw = 0;
-      this.targetPitch = 0.06;
-      this.targetZoom = 1.12;
     } else if (name === "focus") {
-      const pts = [
-        ...[...this.agents.values()].map((a) => ({ x: a.tx, y: a.ty, z: a.tz })),
-        ...this.artifacts.filter((a) => a.position).map((a) => a.position),
-      ];
-      if (pts.length > 0) {
-        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-        const cz = pts.reduce((s, p) => s + p.z, 0) / pts.length;
-        this.targetFocus = { x: cx, y: cy, z: cz };
-        this.targetZoom = 2.05;
+      // Focus on the most recently illuminated neuron
+      let best = null;
+      for (const n of this.nodes.values()) {
+        if (!best || n.lastLit > best.lastLit) best = n;
+      }
+      if (best && best.lastLit > 0) {
+        this.targetFocus = { x: best.x, y: best.y, z: best.z };
+        this.targetZoom = 1.75;
+      } else {
+        this.targetFocus = { x: 0, y: 0, z: 0 };
+        this.targetZoom = 1.3;
       }
     } else if (name === "orbit") {
-      this.targetFocus = { x: HALF, y: HALF, z: HALF };
-      this.targetZoom = 1.05;
+      this.targetFocus = { x: 0, y: 0, z: 0 };
+      this.targetZoom = 1.08;
       this.autoOrbit = true;
     }
   }
 
   zoomBy(factor) {
-    this.targetZoom = Math.max(0.55, Math.min(3.8, this.targetZoom * factor));
+    this.targetZoom = Math.max(0.55, Math.min(3.2, this.targetZoom * factor));
   }
 
-  focusPoint(x, y, z) {
-    this.autoOrbit = false;
-    this.targetFocus = { x: Number(x) || HALF, y: Number(y) || HALF, z: Number(z) || HALF };
-    this.targetZoom = 2.45;
+  focusPoint() {
+    this.setPreset("focus");
   }
 
   start() {
@@ -293,7 +484,7 @@ export class Lattice3D {
         const dy = e.clientY - this.lastPtr.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) this.dragMoved = true;
         this.targetYaw += dx * 0.006;
-        this.targetPitch = Math.max(-1.4, Math.min(1.52, this.targetPitch + dy * 0.006));
+        this.targetPitch = Math.max(-1.42, Math.min(1.5, this.targetPitch + dy * 0.006));
         this.lastPtr = { x: e.clientX, y: e.clientY };
         return;
       }
@@ -318,9 +509,8 @@ export class Lattice3D {
     this.canvas.addEventListener(
       "wheel",
       (e) => {
-        if (!e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 4) return;
         e.preventDefault();
-        this.zoomBy(e.deltaY > 0 ? 0.92 : 1.09);
+        this.zoomBy(e.deltaY > 0 ? 0.91 : 1.1);
       },
       { passive: false },
     );
@@ -328,7 +518,7 @@ export class Lattice3D {
 
   _resize() {
     const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
+    if (rect.width < 10 || rect.height < 10) return;
     this.width = rect.width;
     this.height = rect.height;
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -336,12 +526,84 @@ export class Lattice3D {
     this.canvas.height = Math.round(this.height * this.dpr);
   }
 
+  _project(x, y, z) {
+    const dx = x - this.focus.x;
+    const dy = y - this.focus.y;
+    const dz = z - this.focus.z;
+
+    const cy = Math.cos(this.yaw);
+    const sy = Math.sin(this.yaw);
+    const rx = dx * cy - dz * sy;
+    const rz1 = dx * sy + dz * cy;
+
+    const cp = Math.cos(this.pitch);
+    const sp = Math.sin(this.pitch);
+    const ry = dy * cp - rz1 * sp;
+    const rz = dy * sp + rz1 * cp;
+
+    const camDist = 96;
+    const depth = camDist + rz;
+    const scale = (Math.min(this.width, this.height) * 0.98 * this.zoom) / Math.max(24, depth);
+    return {
+      x: this.width * 0.5 + rx * scale,
+      y: this.height * 0.5 - ry * scale,
+      z: rz,
+      scale,
+    };
+  }
+
+  _step(now) {
+    if (this.autoOrbit && !this.reducedMotion) {
+      this.targetYaw += 0.0022;
+    }
+    const ease = 0.1;
+    this.yaw += (this.targetYaw - this.yaw) * ease;
+    this.pitch += (this.targetPitch - this.pitch) * ease;
+    this.zoom += (this.targetZoom - this.zoom) * ease;
+    this.focus.x += (this.targetFocus.x - this.focus.x) * ease;
+    this.focus.y += (this.targetFocus.y - this.focus.y) * ease;
+    this.focus.z += (this.targetFocus.z - this.focus.z) * ease;
+
+    // Smoothly decay every neuron's activation back to dormant (0) over ~3.4s
+    for (const node of this.nodes.values()) {
+      if (node.activation > 0) {
+        const age = now - node.lastLit;
+        const next = Math.max(0, 1 - age / 3400);
+        node.activation = next * next; // crisp linger, smooth fade
+      }
+    }
+
+    // Advance active synapses; light up target neuron when the action-potential arrives!
+    const alive = [];
+    for (const syn of this.synapses) {
+      const age = now - syn.born;
+      if (age >= syn.ttl) continue;
+      if (!syn.litTarget && age >= syn.travelMs) {
+        syn.litTarget = true;
+        const targetNode = this.nodes.get(syn.toId);
+        if (targetNode) this._lightNode(targetNode, syn.color, now);
+      }
+      alive.push(syn);
+    }
+    this.synapses = alive;
+
+    // Ambient Synapse Replay: when no live SSE event arrived in the last 3s and toggle is on,
+    // gently fire real historical interactions so the cortex breathes with real activity!
+    if (this.showLineage && !this.reducedMotion && this.historyEvents.length > 0 && now - this.lastLiveAt > 3000) {
+      if (now - this.lastReplayAt > 850) {
+        this.lastReplayAt = now;
+        const ev = this.historyEvents[this.replayIdx % this.historyEvents.length];
+        this.replayIdx = (this.replayIdx + 1) % this.historyEvents.length;
+        this.triggerEvent(ev, true);
+      }
+    }
+  }
+
   _findHit(px, py) {
     let best = null;
-    let bestDist = 16;
-    for (let i = this.hitTargets.length - 1; i >= 0; i--) {
-      const t = this.hitTargets[i];
-      const d = Math.hypot(t.sx - px, t.sy - py);
+    let bestDist = 18;
+    for (const t of this.hitTargets) {
+      const d = Math.hypot(t.x - px, t.y - py);
       if (d < bestDist) {
         bestDist = d;
         best = t;
@@ -352,55 +614,11 @@ export class Lattice3D {
 
   _updateHover(px, py) {
     const hit = this._findHit(px, py);
-    this.hovered = hit;
-    this.canvas.style.cursor = hit ? "pointer" : this.dragging ? "grabbing" : "grab";
-    this.onHover(hit);
-  }
-
-  _project(x, y, z) {
-    const nx = x - this.focus.x;
-    const ny = z - this.focus.z;
-    const nz = y - this.focus.y;
-
-    const cy = Math.cos(this.yaw);
-    const sy = Math.sin(this.yaw);
-    const rx = nx * cy - nz * sy;
-    const rz1 = nx * sy + nz * cy;
-
-    const cp = Math.cos(this.pitch);
-    const sp = Math.sin(this.pitch);
-    const ry = ny * cp - rz1 * sp;
-    const rz = ny * sp + rz1 * cp;
-
-    const camDist = 138;
-    const scale = (Math.min(this.width, this.height) * 0.88 * this.zoom) / (camDist + rz);
-    return {
-      sx: this.width * 0.5 + rx * scale,
-      sy: this.height * 0.52 - ry * scale,
-      depth: rz,
-      scale,
-    };
-  }
-
-  _step(now) {
-    if (this.autoOrbit && !this.dragging && !this.reducedMotion) {
-      this.targetYaw += 0.0014;
+    if (hit?.id !== this.hovered?.id) {
+      this.hovered = hit;
+      this.canvas.style.cursor = hit ? "pointer" : "grab";
+      this.onHover(hit);
     }
-    const k = this.reducedMotion ? 1 : 0.11;
-    this.yaw += (this.targetYaw - this.yaw) * k;
-    this.pitch += (this.targetPitch - this.pitch) * k;
-    this.zoom += (this.targetZoom - this.zoom) * k;
-    this.focus.x += (this.targetFocus.x - this.focus.x) * k;
-    this.focus.y += (this.targetFocus.y - this.focus.y) * k;
-    this.focus.z += (this.targetFocus.z - this.focus.z) * k;
-
-    for (const a of this.agents.values()) {
-      a.x += (a.tx - a.x) * 0.14;
-      a.y += (a.ty - a.y) * 0.14;
-      a.z += (a.tz - a.z) * 0.14;
-      a.trail = a.trail.filter((pt) => now - pt.born < 12_000);
-    }
-    this.pulses = this.pulses.filter((p) => now - p.born < p.ttl);
   }
 
   _render(now) {
@@ -408,430 +626,194 @@ export class Lattice3D {
     ctx.save();
     ctx.scale(this.dpr, this.dpr);
 
-    // Clean, ultra-lean obsidian telemetry ground
-    ctx.fillStyle = "#0b0e14";
+    // Deep dark neural cortex void background
+    const bg = ctx.createRadialGradient(
+      this.width * 0.5,
+      this.height * 0.48,
+      20,
+      this.width * 0.5,
+      this.height * 0.5,
+      Math.max(this.width, this.height) * 0.68,
+    );
+    bg.addColorStop(0, "#0f172a");
+    bg.addColorStop(0.55, "#090d18");
+    bg.addColorStop(1, "#05070e");
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, this.width, this.height);
 
-    this._drawLatticeFrame(ctx);
-    if (this.showLineage) this._drawLineageSplines(ctx, now);
-
-    // Project all interactive nodes and resolve screen-space micro-collisions
-    const nodes = [];
-    for (const a of this.anchors) {
-      if (!a.centre) continue;
-      const p = this._project(a.centre.x, a.centre.y, a.centre.z);
-      if (a.name) {
-        nodes.push({ kind: "anchor", depth: p.depth, ox: p.sx, oy: p.sy, sx: p.sx, sy: p.sy, data: a });
-      } else {
-        this._drawSilentAnchor(ctx, p);
-      }
-    }
-    for (const d of this.drifts) {
-      if (!d.position) continue;
-      const p = this._project(d.position.x, d.position.y, d.position.z);
-      ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
-      ctx.fillRect(p.sx - 0.75, p.sy - 0.75, 1.5, 1.5);
-    }
-    for (const art of this.artifacts) {
-      if (!art.position) continue;
-      const p = this._project(art.position.x, art.position.y, art.position.z);
-      nodes.push({ kind: "artifact", depth: p.depth, ox: p.sx, oy: p.sy, sx: p.sx, sy: p.sy, data: art });
-    }
-    for (const ag of this.agents.values()) {
-      const p = this._project(ag.x, ag.y, ag.z);
-      nodes.push({ kind: "agent", depth: p.depth, ox: p.sx, oy: p.sy, sx: p.sx, sy: p.sy, data: ag });
-    }
-
-    // Screen-space anti-collision relaxation (keeps adjacent XYZ nodes cleanly separated!)
-    const interactive = nodes.filter((n) => n.kind !== "anchor");
-    const minSep = 16;
-    for (let iter = 0; iter < 5; iter++) {
-      for (let i = 0; i < interactive.length; i++) {
-        for (let j = i + 1; j < interactive.length; j++) {
-          const a = interactive[i];
-          const b = interactive[j];
-          let dx = b.sx - a.sx;
-          let dy = b.sy - a.sy;
-          let dist = Math.hypot(dx, dy);
-          if (dist < minSep) {
-            if (dist < 0.01) {
-              const ang = (i * 2.39996 + j * 1.1) % (Math.PI * 2);
-              dx = Math.cos(ang);
-              dy = Math.sin(ang);
-              dist = 1;
-            }
-            const push = (minSep - dist) * 0.52;
-            const ux = dx / dist;
-            const uy = dy / dist;
-            a.sx -= ux * push;
-            a.sy -= uy * push;
-            b.sx += ux * push;
-            b.sy += uy * push;
-          }
-        }
-      }
-    }
-
-    nodes.sort((a, b) => b.depth - a.depth);
-    this.hitTargets = [];
-    const placedLabels = [];
-
-    for (const n of nodes) {
-      if (n.kind === "anchor") {
-        this._drawNamedAnchor(ctx, n, placedLabels);
-      } else if (n.kind === "artifact") {
-        this._drawArtifactGlyph(ctx, n, now, placedLabels);
-      } else if (n.kind === "agent") {
-        this._drawAgentGlyph(ctx, n, now, placedLabels);
-      }
-    }
-
-    this._drawPulses(ctx, now);
-    ctx.restore();
-  }
-
-  _drawLatticeFrame(ctx) {
-    // Whisper-quiet 4×4 floor grid
-    ctx.lineWidth = 0.6;
-    for (let i = 0; i <= 4; i++) {
-      const v = (i / 4) * GRID;
-      ctx.strokeStyle = i === 0 || i === 4 ? "rgba(226, 232, 240, 0.14)" : "rgba(226, 232, 240, 0.045)";
-      this._line3d(ctx, v, 0, 0, v, GRID, 0);
-      this._line3d(ctx, 0, v, 0, GRID, v, 0);
-    }
-
-    // Minimalist hairline bounding edges
-    const corners = [
-      [0, 0, 0], [GRID, 0, 0], [GRID, GRID, 0], [0, GRID, 0],
-      [0, 0, GRID], [GRID, 0, GRID], [GRID, GRID, GRID], [0, GRID, GRID],
-    ];
-    const edges = [
-      [0, 1], [1, 2], [2, 3], [3, 0],
-      [4, 5], [5, 6], [6, 7], [7, 4],
-      [0, 4], [1, 5], [2, 6], [3, 7],
-    ];
-    ctx.lineWidth = 0.75;
-    for (const [a, b] of edges) {
-      const pa = this._project(corners[a][0], corners[a][1], corners[a][2]);
-      const pb = this._project(corners[b][0], corners[b][1], corners[b][2]);
-      const alpha = Math.max(0.05, Math.min(0.18, 0.13 - (pa.depth + pb.depth) * 0.0008));
-      ctx.strokeStyle = `rgba(226, 232, 240, ${alpha.toFixed(3)})`;
+    // 1. Whisper-faint 3D brain hemisphere contour guides (barely visible, no cube!)
+    ctx.lineWidth = 0.85;
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.065)";
+    for (const ring of this._cortexShell) {
       ctx.beginPath();
-      ctx.moveTo(pa.sx, pa.sy);
-      ctx.lineTo(pb.sx, pb.sy);
+      for (let i = 0; i < ring.length; i++) {
+        const pt = this._project(ring[i].x, ring[i].y, ring[i].z);
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
       ctx.stroke();
     }
 
-    ctx.font = "400 9.5px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(148, 163, 184, 0.45)";
-    const px = this._project(GRID + 2.5, 0, 0);
-    const py = this._project(0, GRID + 2.5, 0);
-    const pz = this._project(0, 0, GRID + 2.5);
-    ctx.fillText("X", px.sx, px.sy);
-    ctx.fillText("Y", py.sx, py.sy);
-    ctx.fillText("Z", pz.sx, pz.sy);
-  }
+    // 2. Project all neurons & sort back-to-front
+    const projected = new Map();
+    const sorted = [];
+    for (const node of this.nodes.values()) {
+      const pt = this._project(node.x, node.y, node.z);
+      projected.set(node.id, pt);
+      sorted.push({ node, pt });
+    }
+    sorted.sort((a, b) => b.pt.z - a.pt.z);
 
-  _drawLineageSplines(ctx, now) {
-    const byId = new Map(this.artifacts.map((a) => [a.id, a]));
-    for (const art of this.artifacts) {
-      if (!art.position) continue;
-      const refs = new Set();
-      if (art.parent) refs.add(art.parent);
-      if (typeof art.cites === "string") {
-        for (const r of art.cites.split(/[\s,]+/)) if (r) refs.add(r);
-      }
-      for (const ref of refs) {
-        const target = byId.get(ref);
-        if (!target?.position) continue;
-        const a = this._project(art.position.x, art.position.y, art.position.z);
-        const b = this._project(target.position.x, target.position.y, target.position.z);
-        const mx = (a.sx + b.sx) * 0.5;
-        const my = (a.sy + b.sy) * 0.5 - 26;
-        ctx.save();
+    // 3. Draw active firing synapses (ONLY when firing — lingers briefly, then fades away!)
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    for (const syn of this.synapses) {
+      const pFrom = projected.get(syn.fromId);
+      const pTo = projected.get(syn.toId);
+      if (!pFrom || !pTo) continue;
+
+      const age = now - syn.born;
+      const life = Math.max(0, 1 - age / syn.ttl);
+      const fade = life * life;
+      const travelT = Math.min(1, age / syn.travelMs);
+
+      if (syn.fromId === syn.toId) {
+        // Self-firing synaptic ring burst
+        const ringR = (6 + (1 - life) * 26) * Math.min(1.6, pFrom.scale * 0.09);
+        ctx.strokeStyle = syn.color;
+        ctx.globalAlpha = fade * 0.72;
+        ctx.lineWidth = 1.6;
         ctx.beginPath();
-        ctx.moveTo(a.sx, a.sy);
-        ctx.quadraticCurveTo(mx, my, b.sx, b.sy);
-        ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
-        ctx.setLineDash([3, 3]);
-        ctx.lineWidth = 1;
+        ctx.arc(pFrom.x, pFrom.y, Math.max(2, ringR), 0, Math.PI * 2);
         ctx.stroke();
-        if (!this.reducedMotion) {
-          const t = (now * 0.0004) % 1;
-          const u = 1 - t;
-          const dx = u * u * b.sx + 2 * u * t * mx + t * t * a.sx;
-          const dy = u * u * b.sy + 2 * u * t * my + t * t * a.sy;
-          ctx.fillStyle = "#7dd3fc";
-          ctx.beginPath();
-          ctx.arc(dx, dy, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.restore();
+        continue;
       }
-    }
-  }
 
-  _drawSilentAnchor(ctx, p) {
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
-    ctx.lineWidth = 0.75;
-    ctx.beginPath();
-    ctx.moveTo(p.sx - 2, p.sy);
-    ctx.lineTo(p.sx + 2, p.sy);
-    ctx.moveTo(p.sx, p.sy - 2);
-    ctx.lineTo(p.sx, p.sy + 2);
-    ctx.stroke();
-  }
+      // Curved 3D axon bezier arc bowing slightly outward from brain center
+      const mx = (pFrom.x + pTo.x) * 0.5;
+      const my = (pFrom.y + pTo.y) * 0.5;
+      const cx = mx + (mx - this.width * 0.5) * 0.18;
+      const cy = my + (my - this.height * 0.5) * 0.18 - 14;
 
-  _drawNamedAnchor(ctx, n, placedLabels) {
-    const a = n.data;
-    const floor = this._project(a.centre.x, a.centre.y, 0);
-    ctx.strokeStyle = "rgba(251, 191, 36, 0.14)";
-    ctx.lineWidth = 0.75;
-    ctx.setLineDash([2, 3]);
-    ctx.beginPath();
-    ctx.moveTo(floor.sx, floor.sy);
-    ctx.lineTo(n.sx, n.sy);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Precision architectural corner-brackets around the landmark
-    const s = 9;
-    const c = 3.5;
-    ctx.strokeStyle = "rgba(251, 191, 36, 0.65)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(n.sx - s, n.sy - s + c); ctx.lineTo(n.sx - s, n.sy - s); ctx.lineTo(n.sx - s + c, n.sy - s);
-    ctx.moveTo(n.sx + s - c, n.sy - s); ctx.lineTo(n.sx + s, n.sy - s); ctx.lineTo(n.sx + s, n.sy - s + c);
-    ctx.moveTo(n.sx - s, n.sy + s - c); ctx.lineTo(n.sx - s, n.sy + s); ctx.lineTo(n.sx - s + c, n.sy + s);
-    ctx.moveTo(n.sx + s - c, n.sy + s); ctx.lineTo(n.sx + s, n.sy + s); ctx.lineTo(n.sx + s, n.sy + s - c);
-    ctx.stroke();
-
-    if (this.showLabels) {
-      this._drawLeanLabel(ctx, n.sx, n.sy - 14, a.name.toUpperCase(), "#fbbf24", placedLabels, true);
-    }
-    this.hitTargets.push({ kind: "anchor", sx: n.sx, sy: n.sy, label: `${a.name} (${a.class}) · (${a.centre.x}, ${a.centre.y}, ${a.centre.z})`, data: a });
-  }
-
-  _drawTether(ctx, n, color) {
-    if (Math.hypot(n.sx - n.ox, n.sy - n.oy) > 2) {
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.35;
-      ctx.lineWidth = 0.75;
+      // Lingering glowing axon pathway (fades cleanly after spark crosses)
+      ctx.strokeStyle = syn.color;
+      ctx.lineWidth = 1.1 + fade * 1.4;
+      ctx.globalAlpha = fade * 0.58;
       ctx.beginPath();
-      ctx.moveTo(n.ox, n.oy);
-      ctx.lineTo(n.sx, n.sy);
+      ctx.moveTo(pFrom.x, pFrom.y);
+      ctx.quadraticCurveTo(cx, cy, pTo.x, pTo.y);
       ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-  }
 
-  _drawArtifactGlyph(ctx, n, now, placedLabels) {
-    const art = n.data;
-    const kind = String(art.kind || "artifact").toLowerCase();
-    const isHovered = this.hovered?.data?.id === art.id;
-    const colors = {
-      script: "#34d399",
-      machine: "#38bdf8",
-      mailbox: "#fb7185",
-      protocol: "#fbbf24",
-      language: "#c084fc",
-    };
-    const color = colors[kind] || "#94a3b8";
+      // Bright action-potential pulse shooting along the axon!
+      if (travelT < 1) {
+        const u = 1 - travelT;
+        const sx = u * u * pFrom.x + 2 * u * travelT * cx + travelT * travelT * pTo.x;
+        const sy = u * u * pFrom.y + 2 * u * travelT * cy + travelT * travelT * pTo.y;
 
-    // Whisper-fine elevation drop to floor
-    const floor = this._project(art.position.x, art.position.y, 0);
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.1)";
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(floor.sx, floor.sy);
-    ctx.lineTo(n.ox, n.oy);
-    ctx.stroke();
-
-    this._drawTether(ctx, n, color);
-
-    // Lean precision micro-glyphs (distinct per kind, never chunky blocks!)
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = isHovered ? 1.6 : 1.15;
-
-    if (kind === "script") {
-      // [·] code bracket glyph
-      ctx.beginPath();
-      ctx.moveTo(n.sx - 2, n.sy - 4.5); ctx.lineTo(n.sx - 4.5, n.sy - 4.5); ctx.lineTo(n.sx - 4.5, n.sy + 4.5); ctx.lineTo(n.sx - 2, n.sy + 4.5);
-      ctx.moveTo(n.sx + 2, n.sy - 4.5); ctx.lineTo(n.sx + 4.5, n.sy - 4.5); ctx.lineTo(n.sx + 4.5, n.sy + 4.5); ctx.lineTo(n.sx + 2, n.sy + 4.5);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(n.sx, n.sy, 1.8, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (kind === "machine") {
-      // ◎ precision concentric ring + micro-tick
-      ctx.beginPath();
-      ctx.arc(n.sx, n.sy, 4.8, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(n.sx, n.sy, 1.8, 0, Math.PI * 2);
-      ctx.fill();
-      if (!this.reducedMotion) {
-        const a = now * 0.0025;
+        const grad = ctx.createRadialGradient(sx, sy, 0.5, sx, sy, 12);
+        grad.addColorStop(0, "#ffffff");
+        grad.addColorStop(0.35, syn.color);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(n.sx + Math.cos(a) * 4.8, n.sy + Math.sin(a) * 4.8, 1.2, 0, Math.PI * 2);
-        ctx.fillStyle = "#e0f2fe";
+        ctx.arc(sx, sy, 12, 0, Math.PI * 2);
         ctx.fill();
       }
-    } else if (kind === "mailbox") {
-      // ◇ crisp hollow diamond
-      ctx.beginPath();
-      ctx.moveTo(n.sx, n.sy - 4.8);
-      ctx.lineTo(n.sx + 4.8, n.sy);
-      ctx.lineTo(n.sx, n.sy + 4.8);
-      ctx.lineTo(n.sx - 4.8, n.sy);
-      ctx.closePath();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(n.sx, n.sy, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // △ crisp micro-triangle
-      ctx.beginPath();
-      ctx.moveTo(n.sx, n.sy - 4.5);
-      ctx.lineTo(n.sx + 4.2, n.sy + 3.5);
-      ctx.lineTo(n.sx - 4.2, n.sy + 3.5);
-      ctx.closePath();
-      ctx.stroke();
     }
+    ctx.restore();
 
-    if (this.showLabels || isHovered) {
-      this._drawLeanLabel(ctx, n.sx + 8, n.sy + 3, art.name || art.id, color, placedLabels, isHovered);
-    }
+    // 4. Draw all neurons (dormant = calm & visible; firing = lit up with bloom!)
+    this.hitTargets = [];
+    const placedLabels = [];
+    for (const { node, pt } of sorted) {
+      const isHovered = this.hovered?.id === node.id;
+      const act = node.activation;
+      const baseR = node.kind === "agent" ? 3.4 : node.kind === "anchor" ? 4.2 : 2.3;
+      const r = Math.max(1.8, baseR * Math.min(1.5, Math.max(0.65, pt.scale * 0.085)));
 
-    this.hitTargets.push({
-      kind: "artifact",
-      sx: n.sx,
-      sy: n.sy,
-      label: `${art.name || art.id} [${kind}] · (${art.position.x}, ${art.position.y}, ${art.position.z})`,
-      data: art,
-    });
-  }
+      // Dormant resting soma (always visible, unlit!)
+      if (act < 0.03 && !isHovered) {
+        ctx.fillStyle =
+          node.kind === "agent"
+            ? "rgba(148, 163, 184, 0.42)"
+            : node.kind === "anchor"
+              ? "rgba(148, 163, 184, 0.28)"
+              : "rgba(100, 116, 139, 0.26)";
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Illuminated neuron bloom!
+        const intensity = isHovered ? Math.max(act, 0.75) : act;
+        const color = isHovered && act < 0.1 ? "#38bdf8" : node.glowColor;
+        const bloomR = r * (3.2 + intensity * 4.5);
+        const grad = ctx.createRadialGradient(pt.x, pt.y, 0.5, pt.x, pt.y, bloomR);
+        grad.addColorStop(0, "#ffffff");
+        grad.addColorStop(0.28, color);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = Math.min(1, 0.25 + intensity * 0.85);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, bloomR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
 
-  _drawAgentGlyph(ctx, n, now, placedLabels) {
-    const ag = n.data;
-    const isHovered = this.hovered?.data?.id === ag.id;
-
-    // Fine movement trajectory spline
-    if (ag.trail.length > 0) {
-      ctx.beginPath();
-      const first = this._project(ag.trail[0].x, ag.trail[0].y, ag.trail[0].z);
-      ctx.moveTo(first.sx, first.sy);
-      for (let i = 1; i < ag.trail.length; i++) {
-        const pt = this._project(ag.trail[i].x, ag.trail[i].y, ag.trail[i].z);
-        ctx.lineTo(pt.sx, pt.sy);
+        ctx.fillStyle = "#ffffff";
+        ctx.globalAlpha = 0.5 + intensity * 0.5;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, r * (1 + intensity * 0.55), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
       }
-      ctx.lineTo(n.ox, n.oy);
-      ctx.strokeStyle = "rgba(255, 107, 74, 0.48)";
-      ctx.lineWidth = 1.15;
-      ctx.stroke();
-    }
 
-    this._drawTether(ctx, n, "#ff6b4a");
+      // Register click/hover target
+      this.hitTargets.push({
+        id: node.id,
+        kind: node.kind,
+        label:
+          node.kind === "agent"
+            ? `Citizen: ${node.label}`
+            : node.kind === "anchor"
+              ? `Hub: ${node.label}`
+              : `Artifact: ${node.label} (${node.id})`,
+        x: pt.x,
+        y: pt.y,
+        raw: node.raw,
+      });
 
-    // Precision crosshair reticle + 2.8px coral core
-    const pulse = 0.5 + 0.5 * Math.sin(now * 0.0035);
-    ctx.strokeStyle = `rgba(255, 107, 74, ${(isHovered ? 0.95 : 0.45 + pulse * 0.25).toFixed(2)})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(n.sx - 6, n.sy); ctx.lineTo(n.sx - 3, n.sy);
-    ctx.moveTo(n.sx + 3, n.sy); ctx.lineTo(n.sx + 6, n.sy);
-    ctx.moveTo(n.sx, n.sy - 6); ctx.lineTo(n.sx, n.sy - 3);
-    ctx.moveTo(n.sx, n.sy + 3); ctx.lineTo(n.sx, n.sy + 6);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(n.sx, n.sy, isHovered ? 3.4 : 2.6, 0, Math.PI * 2);
-    ctx.fillStyle = "#ff6b4a";
-    ctx.fill();
-
-    const name = this.actorLabel(ag.id);
-    if (this.showLabels || isHovered) {
-      this._drawLeanLabel(ctx, n.sx + 8, n.sy - 4, name, "#f1f5f9", placedLabels, isHovered);
-    }
-
-    this.hitTargets.push({
-      kind: "agent",
-      sx: n.sx,
-      sy: n.sy,
-      label: `${name} · (${Math.round(ag.x)}, ${Math.round(ag.y)}, ${Math.round(ag.z)})`,
-      data: { id: ag.id, name, position: { x: Math.round(ag.x), y: Math.round(ag.y), z: Math.round(ag.z) } },
-    });
-  }
-
-  _drawLeanLabel(ctx, x, y, text, color, placed, force = false) {
-    ctx.font = "500 9.5px 'IBM Plex Mono', monospace";
-    const w = ctx.measureText(text).width + 6;
-    const h = 13;
-    const box = { x1: x - 2, y1: y - 9, x2: x + w, y2: y - 9 + h };
-    if (!force) {
-      for (const b of placed) {
-        if (!(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)) {
-          return; // Skip colliding label cleanly — zero spaghetti overlap!
+      // Only show labels for actively lit neurons or hovered neuron (clean, zero clutter!)
+      if (this.showLabels && (act > 0.22 || isHovered)) {
+        const text = node.label.slice(0, 26);
+        const lx = pt.x + r + 7;
+        const ly = pt.y + 3;
+        const overlaps = placedLabels.some((b) => Math.abs(b.x - lx) < 110 && Math.abs(b.y - ly) < 15);
+        if (!overlaps) {
+          placedLabels.push({ x: lx, y: ly });
+          ctx.font = '500 10.5px "IBM Plex Mono", monospace';
+          ctx.fillStyle = isHovered ? "#ffffff" : node.glowColor;
+          ctx.globalAlpha = isHovered ? 0.98 : Math.min(0.95, act * 1.15);
+          ctx.fillText(text, lx, ly);
+          ctx.globalAlpha = 1;
         }
       }
     }
-    placed.push(box);
-    ctx.fillStyle = "rgba(11, 14, 20, 0.72)";
-    ctx.fillRect(box.x1, box.y1, w + 2, h);
-    ctx.fillStyle = color;
-    ctx.fillText(text, x + 1, y);
-  }
 
-  _drawPulses(ctx, now) {
-    for (const pulse of this.pulses) {
-      const t = Math.min(1, (now - pulse.born) / pulse.ttl);
-      const alpha = Math.max(0, 1 - t);
-      const p = this._project(pulse.x, pulse.y, pulse.z);
-
-      ctx.save();
-      ctx.globalAlpha = alpha;
-
-      // Hairline expanding sonar ring
-      ctx.beginPath();
-      ctx.arc(p.sx, p.sy, 5 + t * 28, 0, Math.PI * 2);
-      ctx.strokeStyle = pulse.color;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      if (pulse.to) {
-        const dest = this._project(pulse.to.x, pulse.to.y, pulse.to.z);
-        ctx.beginPath();
-        ctx.moveTo(p.sx, p.sy);
-        ctx.quadraticCurveTo((p.sx + dest.sx) * 0.5, (p.sy + dest.sy) * 0.5 - 28, dest.sx, dest.sy);
-        ctx.strokeStyle = pulse.color;
-        ctx.lineWidth = 1.1;
-        ctx.stroke();
+    // 5. Subtle floating caption for the newest firing synapse
+    const newest = this.synapses[this.synapses.length - 1];
+    if (newest && newest.label) {
+      const life = Math.max(0, 1 - (now - newest.born) / newest.ttl);
+      if (life > 0.08) {
+        ctx.font = '500 11px "IBM Plex Mono", monospace';
+        ctx.fillStyle = newest.color;
+        ctx.globalAlpha = Math.min(0.92, life * 1.3);
+        ctx.fillText(`⚡ ${newest.label}`, 16, this.height - 16);
+        ctx.globalAlpha = 1;
       }
-
-      if (pulse.label) {
-        ctx.font = "500 9.5px 'IBM Plex Mono', monospace";
-        const w = ctx.measureText(pulse.label).width + 10;
-        const bx = p.sx - w / 2;
-        const by = p.sy - 18 - t * 14;
-        ctx.fillStyle = "rgba(11, 14, 20, 0.9)";
-        ctx.fillRect(bx, by - 9, w, 14);
-        ctx.strokeStyle = pulse.color;
-        ctx.lineWidth = 0.75;
-        ctx.strokeRect(bx, by - 9, w, 14);
-        ctx.fillStyle = "#f8fafc";
-        ctx.fillText(pulse.label, bx + 5, by + 1);
-      }
-      ctx.restore();
     }
-  }
 
-  _line3d(ctx, x1, y1, z1, x2, y2, z2) {
-    const a = this._project(x1, y1, z1);
-    const b = this._project(x2, y2, z2);
-    ctx.beginPath();
-    ctx.moveTo(a.sx, a.sy);
-    ctx.lineTo(b.sx, b.sy);
-    ctx.stroke();
+    ctx.restore();
   }
 }

@@ -109,49 +109,6 @@
             <div class="omni-results" id="omni-results" hidden></div>
           </div>
         </div>
-
-        <!-- Architectural Blueprint: Live 2D SVG Lattice Projection (Zero WebGL) -->
-        <figure class="blueprint-frame" aria-label="Live 2D architectural projection of the 64-cubed lattice">
-          <div class="blueprint-head">
-            <span class="mono">LATTICE PROJECTION · X/Y PLANE</span>
-            <span class="mono muted" id="blueprint-legend">0 AGENTS · 0 ARTIFACTS · 0 NAMED</span>
-          </div>
-          <svg
-            id="lattice-svg"
-            class="lattice-svg"
-            viewBox="0 0 320 220"
-            role="img"
-            aria-label="Live spatial coordinates of anchors, inhabitants, and artifacts"
-          >
-            <defs>
-              <pattern id="grid-minor" width="16" height="16" patternUnits="userSpaceOnUse">
-                <path d="M 16 0 L 0 0 0 16" fill="none" stroke="rgba(17,18,20,0.06)" stroke-width="0.75" />
-              </pattern>
-              <pattern id="grid-major" width="64" height="64" patternUnits="userSpaceOnUse">
-                <rect width="64" height="64" fill="url(#grid-minor)" />
-                <path d="M 64 0 L 0 0 0 64" fill="none" stroke="rgba(17,18,20,0.14)" stroke-width="1" />
-              </pattern>
-            </defs>
-            <rect x="0" y="0" width="320" height="220" fill="url(#grid-major)" />
-            <g id="lattice-anchors"></g>
-            <g id="lattice-artifacts"></g>
-            <g id="lattice-agents"></g>
-          </svg>
-          <figcaption class="blueprint-foot">
-            <span class="legend-dot dot-agent"></span><span>Inhabitants</span>
-            <span class="legend-dot dot-artifact"></span><span>Artifacts</span>
-            <span class="legend-dot dot-anchor"></span><span>Anchors</span>
-            <svg class="pulse-wave" viewBox="0 0 80 18" aria-hidden="true">
-              <polyline
-                id="pulse-polyline"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                points="0,9 18,9 24,9 30,9 36,9 42,9 80,9"
-              />
-            </svg>
-          </figcaption>
-        </figure>
       </div>
 
       <!-- Swiss Specimen Telemetry Strip -->
@@ -184,27 +141,27 @@
     </header>
 
     <main class="broadsheet">
-      <!-- SECTION 00: EXPERIMENT TIMELINE & 3D LATTICE -->
+      <!-- SECTION 00: EXPERIMENT TIMELINE & 3D NEURAL SYNAPSE -->
       <section class="section lattice-stage" id="lattice-3d" aria-labelledby="sec-3d">
         <div class="section-header">
           <div>
-            <p class="section-num mono" id="stage-kicker">00 / ISOMETRIC CONTINENT · LIVE RTS MAP</p>
-            <h2 id="sec-3d">Live Continent Map</h2>
+            <p class="section-num mono" id="stage-kicker">00 / EXPERIMENT TIMELINE · MULTI-AGENT TELEMETRY</p>
+            <h2 id="sec-3d">Live Experiment Timeline</h2>
           </div>
           <div class="lattice-controls" role="toolbar" aria-label="Observatory visualization controls">
             <div class="mode-switch" role="group" aria-label="Visualizer mode">
-              <button type="button" class="tab-pill is-active" data-stage-mode="continent">RTS Continent</button>
-              <button type="button" class="tab-pill" data-stage-mode="timeline">Experiment Timeline</button>
-              <button type="button" class="tab-pill" data-stage-mode="3d">3D Lattice</button>
+              <button type="button" class="tab-pill is-active" data-stage-mode="timeline">Experiment Timeline</button>
+              <button type="button" class="tab-pill" data-stage-mode="3d">Neural Brain</button>
+              <button type="button" class="tab-pill" data-stage-mode="continent">RTS Continent</button>
             </div>
-            <div class="mode-controls" id="continent-controls">
+            <div class="mode-controls" id="continent-controls" hidden>
               <button type="button" class="tab-pill is-active" id="cont-focus">Focus Active</button>
               <button type="button" class="tab-pill" id="cont-reset">Full Map</button>
               <button type="button" class="tab-pill is-active" id="cont-labels">Labels</button>
               <button type="button" class="tab-pill" id="cont-zoom-out" aria-label="Zoom out continent">−</button>
               <button type="button" class="tab-pill" id="cont-zoom-in" aria-label="Zoom in continent">+</button>
             </div>
-            <div class="mode-controls" id="timeline-controls" hidden>
+            <div class="mode-controls" id="timeline-controls">
               <button type="button" class="tab-pill" id="tl-replay">▶ Replay</button>
               <button type="button" class="tab-pill" id="tl-speed" aria-label="Replay speed">1×</button>
               <button type="button" class="tab-pill is-active" id="tl-live">Live Edge</button>
@@ -214,9 +171,9 @@
             <div class="mode-controls" id="lattice-controls" hidden>
               <button type="button" class="tab-pill is-active" data-cam="orbit">Auto-Orbit</button>
               <button type="button" class="tab-pill" data-cam="focus">Focus Active</button>
-              <button type="button" class="tab-pill" data-cam="iso">Full 64³</button>
-              <button type="button" class="tab-pill" data-cam="top">Top (X/Y)</button>
-              <button type="button" class="tab-pill is-active" id="toggle-lineage">Lineage</button>
+              <button type="button" class="tab-pill" data-cam="iso">Full Brain</button>
+              <button type="button" class="tab-pill" data-cam="top">Top Cortex</button>
+              <button type="button" class="tab-pill is-active" id="toggle-lineage">Synapse Replay</button>
               <button type="button" class="tab-pill is-active" id="toggle-labels">Labels</button>
               <button type="button" class="tab-pill" id="cam-zoom-out" aria-label="Zoom out">−</button>
               <button type="button" class="tab-pill" id="cam-zoom-in" aria-label="Zoom in">+</button>
@@ -228,22 +185,22 @@
           <canvas
             id="continent-canvas"
             class="lattice-canvas"
+            hidden
             aria-label="Isometric RTS continent map of Agora showing faction-colored units, towers, funded vaults, hubs, and live speech bubbles"
           ></canvas>
           <canvas
             id="timeline-canvas"
             class="lattice-canvas"
-            hidden
             aria-label="Live multi-agent experiment timeline showing citizen swimlanes, events, and cross-agent interaction arcs"
           ></canvas>
           <canvas
             id="lattice-canvas"
             class="lattice-canvas"
             hidden
-            aria-label="Interactive 3D architectural view of the 64-cubed Agora lattice showing real-time inhabitants, artifacts, speech ripples, and lineage arcs"
+            aria-label="Interactive 3D neural synapse brain view of Agora showing dormant neurons lighting up as agents fire interactions"
           ></canvas>
           <div class="lattice-hud">
-            <span class="mono" id="lattice-hover">Drag to pan continent · Scroll to zoom · Click any unit, building, or hub to inspect</span>
+            <span class="mono" id="lattice-hover">Drag horizontally to scrub history · Click ▶ Replay to watch animated playback · Click any node to inspect</span>
             <span class="mono muted" id="lattice-counts">0 AGENTS · 0 ARTIFACTS · 0 DRIFTS</span>
           </div>
         </div>
