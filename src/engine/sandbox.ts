@@ -252,24 +252,62 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
       if (typeof obj["payout"] === "number" && Number.isInteger(obj["payout"]) && obj["payout"] > 0) {
         payout = obj["payout"];
       }
-      if (Array.isArray(obj["payouts"])) {
-        for (const item of obj["payouts"].slice(0, 8)) {
-          if (item !== null && typeof item === "object" && !Array.isArray(item)) {
-            const pItem = item as Record<string, unknown>;
-            if (typeof pItem["to"] === "string" && pItem["to"].length > 0 && typeof pItem["amount"] === "number" && Number.isInteger(pItem["amount"]) && pItem["amount"] > 0) {
-              payouts.push({ to: pItem["to"], amount: pItem["amount"] });
-            }
+      if (obj["payouts"] !== undefined) {
+        if (!Array.isArray(obj["payouts"])) {
+          return { ok: false, reason: "payouts must be an array of { to, amount }" };
+        }
+        if (obj["payouts"].length > 8) {
+          return { ok: false, reason: "payouts exceeds maximum of 8 recipients per run" };
+        }
+        for (const item of obj["payouts"]) {
+          if (item === null || typeof item !== "object" || Array.isArray(item)) {
+            return { ok: false, reason: "each payout must be an object { to, amount }" };
           }
+          const pItem = item as Record<string, unknown>;
+          if (typeof pItem["to"] !== "string" || pItem["to"].trim().length === 0) {
+            return { ok: false, reason: "payout requires non-empty string 'to'" };
+          }
+          if (
+            typeof pItem["amount"] !== "number" ||
+            !Number.isFinite(pItem["amount"]) ||
+            !Number.isSafeInteger(pItem["amount"]) ||
+            pItem["amount"] <= 0
+          ) {
+            return { ok: false, reason: `payout amount must be a positive integer (got ${String(pItem["amount"])})` };
+          }
+          payouts.push({ to: pItem["to"].trim(), amount: pItem["amount"] });
         }
       }
-      if (Array.isArray(obj["notify"])) {
-        for (const item of obj["notify"].slice(0, 4)) {
-          if (item !== null && typeof item === "object" && !Array.isArray(item)) {
-            const nItem = item as Record<string, unknown>;
-            if (typeof nItem["to"] === "string" && nItem["to"].length > 0 && typeof nItem["text"] === "string" && nItem["text"].trim().length > 0) {
-              notify.push({ to: nItem["to"], text: nItem["text"].trim().slice(0, 240) });
-            }
+      if (obj["notify"] !== undefined) {
+        if (!Array.isArray(obj["notify"])) {
+          return { ok: false, reason: "notify must be an array of { to, text }" };
+        }
+        if (obj["notify"].length > 4) {
+          return { ok: false, reason: "notify exceeds maximum of 4 recipients per run" };
+        }
+        for (const item of obj["notify"]) {
+          if (item === null || typeof item !== "object" || Array.isArray(item)) {
+            return { ok: false, reason: "each notify entry must be an object { to, text }" };
           }
+          const nItem = item as Record<string, unknown>;
+          if (typeof nItem["to"] !== "string" || nItem["to"].trim().length === 0) {
+            return { ok: false, reason: "notify requires non-empty string 'to'" };
+          }
+          if (typeof nItem["text"] !== "string") {
+            return { ok: false, reason: "notify requires string 'text'" };
+          }
+          const clean = nItem["text"]
+            .replace(/[\r\n\t]+/g, " ")
+            .replace(/[\u0000-\u001F\u007F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "")
+            .trim()
+            .slice(0, 240);
+          if (clean.length === 0) {
+            return { ok: false, reason: "notify text must be non-empty after sanitizing control characters" };
+          }
+          if (/\[private\s+dm/i.test(clean)) {
+            return { ok: false, reason: "notify text cannot impersonate private DM placeholders" };
+          }
+          notify.push({ to: nItem["to"].trim(), text: clean });
         }
       }
       if (obj["state"] !== null && typeof obj["state"] === "object" && !Array.isArray(obj["state"])) {
@@ -410,14 +448,28 @@ function buildHarness(
       }
       return H.map(x => ("00000000" + x.toString(16)).slice(-8)).join("");
     };
+    const __deepFreeze = (obj) => {
+      if (obj === null || typeof obj !== "object") return obj;
+      Object.freeze(obj);
+      for (const k of Object.keys(obj)) {
+        const v = obj[k];
+        if (v !== null && typeof v === "object" && !Object.isFrozen(v)) __deepFreeze(v);
+      }
+      return obj;
+    };
+    const __hasOwn = Object.prototype.hasOwnProperty;
     const world = Object.freeze({
       callerPos: __env.world.callerPos,
       anchors: __env.world.anchors,
       artifacts: __env.world.artifacts,
-      artifact: (id) => __env.world.artifacts[String(id)] || null,
+      artifact: (id) => {
+        const k = String(id);
+        return __env.world.artifacts && __hasOwn.call(__env.world.artifacts, k) ? __env.world.artifacts[k] : null;
+      },
       state: (id) => {
-        const st = __env.world.states && __env.world.states[String(id)];
-        return st ? JSON.parse(JSON.stringify(st)) : null;
+        const k = String(id);
+        const st = __env.world.states && __hasOwn.call(__env.world.states, k) ? __env.world.states[k] : null;
+        return st ? __deepFreeze(JSON.parse(JSON.stringify(st))) : null;
       },
       anchor: (q) => __env.world.anchors.find((a) => a.designation === q || a.name === q) || null,
       dist: (a, b) => (a && b ? Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z)) : Infinity),

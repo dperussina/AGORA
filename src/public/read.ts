@@ -259,7 +259,20 @@ export function publicRead(
     }
 
     const wakeReasons: string[] = [];
-    if (unreadSpeech > 0) wakeReasons.push(`${unreadSpeech} unread message(s)`);
+    if (forId !== null) {
+      const unreadItems = world.unreadInboxSlice(forId);
+      const notifyItems = unreadItems.filter((m) => m.kind === "notify");
+      const dmItems = unreadItems.filter((m) => m.private === true || m.kind === "dm");
+      const otherSpeech = unreadItems.length - notifyItems.length - dmItems.length;
+      for (const n of notifyItems.slice(-3)) {
+        wakeReasons.push(`notify from ${n.from}: ${n.text.replace(/^\[[^\]]+\]\s*/, "").slice(0, 120)}`);
+      }
+      const dmCount = Math.max(dmItems.length, loggedDmsSince);
+      if (dmCount > 0) wakeReasons.push(`${dmCount} unread private DM(s)`);
+      if (otherSpeech > 0) wakeReasons.push(`${otherSpeech} unread message(s)`);
+    } else if (unreadSpeech > 0) {
+      wakeReasons.push(`${unreadSpeech} unread message(s)`);
+    }
     if (myArtifactRuns > 0) wakeReasons.push(`${myArtifactRuns} run(s) on your artifacts`);
     if (myCitations > 0) wakeReasons.push(`${myCitations} new citation(s)`);
     if (myEarnings > 0) wakeReasons.push(`+${myEarnings} coin earned`);

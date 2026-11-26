@@ -156,8 +156,11 @@ export class World {
   private entitySeq = 0;
   readonly standing = new Map<string, Standing>();
   readonly ledger: LedgerRow[] = [];
-  readonly inbox = new Map<string, Array<{ from: string; text: string; tick: number; private?: boolean }>>();
+  readonly inbox = new Map<string, Array<{ from: string; text: string; tick: number; private?: boolean; kind?: string }>>();
   private readonly heardCursor = new Map<string, number>();
+  readonly webhooks = new Map<string, { url: string; secret?: string; events: string[]; createdAt: number }>();
+  private readonly webhookLastSent = new Map<string, number>();
+  readonly artifactSubscribers = new Map<string, Set<string>>();
   private readonly clientTelemetry = new Map<string, number>();
   private runningArtifactTriggers = false;
   private readonly dmHmacKey = randomBytes(32);
@@ -1193,6 +1196,9 @@ export class World {
     const unread = heardAll.slice(cursor);
     const heard = unread.slice(-heardLimit);
     this.heardCursor.set(identityId, heardAll.length);
+    if (heard.length > 0) {
+      this.persist();
+    }
 
     return {
       tick: present,
@@ -1380,7 +1386,15 @@ export class World {
       const beforeCount = this.log.events().length;
       this.resolveIntent(intent);
       const emitted = this.log.events().slice(beforeCount);
-      const actEvent = [...emitted].reverse().find((ev) => ev.type === `act.${verb}` || ev.type === `act.${verb}_failed`);
+      const actorTag = `identity:${identityId}`;
+      const actEvent =
+        emitted.find(
+          (ev) =>
+            (ev.type === `act.${verb}` || ev.type === `act.${verb}_failed`) &&
+            ev.actor === actorTag &&
+            ev.payload["reactive"] !== true,
+        ) ??
+        emitted.find((ev) => ev.type === `act.${verb}` || ev.type === `act.${verb}_failed`);
       const failed = actEvent?.type.endsWith("_failed") === true;
       return {
         accepted: !failed,
@@ -1826,7 +1840,7 @@ export class World {
     return Math.max(0, total - cursor);
   }
 
-  unreadMessagesPreview(identityId: string, limit = 3): Array<{ from: string; text: string; tick: number; private?: boolean }> {
+  unreadMessagesPreview(identityId: string, limit = 3): Array<{ from: string; text: string; tick: number; private?: boolean; kind?: string }> {
     const all = this.inbox.get(identityId) ?? [];
     const cursor = this.heardCursor.get(identityId) ?? 0;
     return all.slice(cursor).slice(-limit).map((m) => ({
@@ -1834,7 +1848,14 @@ export class World {
       text: m.private ? "[private DM — authenticate and call observe() to read]" : m.text.slice(0, 160),
       tick: m.tick,
       ...(m.private ? { private: true } : {}),
+      ...(m.kind ? { kind: m.kind } : {}),
     }));
+  }
+
+  unreadInboxSlice(identityId: string): Array<{ from: string; text: string; tick: number; private?: boolean; kind?: string }> {
+    const all = this.inbox.get(identityId) ?? [];
+    const cursor = this.heardCursor.get(identityId) ?? 0;
+    return all.slice(cursor);
   }
 
   private inspectArtifactQuery(target: string): Json {
@@ -2203,7 +2224,12 @@ export class World {
     }
     for (const hearer of hearers.sort()) {
       const list = this.inbox.get(hearer) ?? [];
-      list.push({ from: identityId, text, tick: this.clerk.tick, ...(isPrivateDm ? { private: true } : {}) });
+      list.push({
+        from: identityId,
+        text,
+        tick: this.clerk.tick,
+        ...(isPrivateDm ? { private: true, kind: "dm" } : { kind: "speech" }),
+      });
       if (list.length > 500) {
         const dropped = list.length - 500;
         list.splice(0, dropped);
@@ -2211,6 +2237,12 @@ export class World {
         this.heardCursor.set(hearer, Math.max(0, cur - dropped));
       }
       this.inbox.set(hearer, list);
+      if (isPrivateDm) {
+        this.fireWebhook(hearer, "dm", "New private DM received (call observe() to read)", "private");
+      }
+    }
+    if (isPrivateDm) {
+      this.persist();
     }
     this.append(
       "speak",
@@ -2264,6 +2296,7 @@ export class World {
       this.inbox.set(owner, list);
       hearers.push(owner);
     }
+    this.recordArtifactSubscriber(artifact.id, identityId);
     this.append("speak.artifact", identityId, { target: artifact.id, text, hearers, identityId });
     this.witnessEntityInteraction(identityId, artifact);
     this.fireTriggers("speak.end", { selfId: identityId });
@@ -3045,12 +3078,14 @@ export class World {
     if (amount !== undefined) {
       if (this.clerk.identities.has(target)) {
         this.moveCurrency(intent.identityId, target, amount);
+        this.fireWebhook(target, "gift", `Received +${amount} coin from ${intent.identityId}`, intent.identityId);
       } else {
         const ent = this.entities.get(target)!;
         const sender = this.clerk.identities.get(intent.identityId)!;
         sender.currency -= amount;
         const nextVal = (typeof ent.fields["currency"] === "number" ? ent.fields["currency"] : 0) + amount;
         ent.fields["currency"] = nextVal;
+        this.recordArtifactSubscriber(ent.id, intent.identityId);
         this.append("effect.set_field", intent.identityId, { id: ent.id, field: "currency", value: nextVal });
       }
     }
@@ -3090,9 +3125,24 @@ export class World {
     }
     const target = String(args["target"]);
     const entity = this.entities.get(target)!;
+    const treasury = typeof entity.fields["currency"] === "number" ? entity.fields["currency"] : 0;
+    let refundedCurrency = 0;
+    if (treasury > 0) {
+      const ownerId = typeof entity.fields["owner"] === "string" ? entity.fields["owner"] : intent.identityId;
+      const owner = this.clerk.identities.get(ownerId) ?? this.clerk.identities.get(intent.identityId);
+      if (owner !== undefined) {
+        owner.currency += treasury;
+        refundedCurrency = treasury;
+      }
+    }
     this.entities.delete(target);
+    this.artifactSubscribers.delete(target);
     this.append("effect.destroy", intent.identityId, { id: target, type: entity.type });
-    this.append("act.dismantle", intent.identityId, { target, identityId: intent.identityId });
+    this.append("act.dismantle", intent.identityId, {
+      target,
+      identityId: intent.identityId,
+      ...(refundedCurrency > 0 ? { refundedCurrency } : {}),
+    });
     this.fireTriggers("act.end", {
       selfId: intent.identityId,
       verb: "dismantle",
@@ -3138,6 +3188,7 @@ export class World {
         input,
         arg,
         treasury: 0,
+        world: this.sandboxWorldView(identityId),
       });
       return res.ok ? null : res.reason;
     }
@@ -3182,6 +3233,14 @@ export class World {
       for (const p of res.payouts) {
         if (!this.clerk.identities.has(p.to)) {
           return `unknown payout recipient (${p.to})`;
+        }
+      }
+      for (const n of res.notify) {
+        if (!this.identities.identities.has(n.to)) {
+          return `unknown notify recipient (${n.to})`;
+        }
+        if (!this.canArtifactNotify(entity, n.to, identityId)) {
+          return `notify recipient (${n.to}) has not subscribed or interacted with ${entity.id}`;
         }
       }
       return null;
@@ -3248,6 +3307,19 @@ export class World {
       if (!res.ok) {
         this.append("act.run_failed", intent.identityId, { target: "sandbox:ephemeral", input, reason: res.reason });
         return;
+      }
+      for (const n of res.notify) {
+        if (n.to !== intent.identityId) {
+          this.append("act.run_failed", intent.identityId, {
+            target: "sandbox:ephemeral",
+            input,
+            reason: `ephemeral inline scripts can only notify self (${intent.identityId}), not ${n.to}`,
+          });
+          return;
+        }
+      }
+      for (const n of res.notify) {
+        this.deliverInbox(n.to, "sandbox:ephemeral", `[sandbox:ephemeral] ${n.text}`, "notify");
       }
       this.append("act.run", intent.identityId, {
         target: "sandbox:ephemeral",
@@ -3339,6 +3411,20 @@ export class World {
           if (dest !== undefined) dest.currency += p.amount;
         }
       }
+      for (const n of res.notify) {
+        if (!this.identities.identities.has(n.to)) {
+          this.append("act.run_failed", intent.identityId, { target, input, reason: `unknown notify recipient (${n.to})` });
+          return;
+        }
+        if (!this.canArtifactNotify(entity, n.to, intent.identityId)) {
+          this.append("act.run_failed", intent.identityId, {
+            target,
+            input,
+            reason: `notify recipient (${n.to}) has not subscribed or interacted with ${entity.id}`,
+          });
+          return;
+        }
+      }
       if (res.fee > 0 || totalPayout > 0) {
         entity.fields["currency"] = treasury;
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: "currency", value: treasury });
@@ -3347,10 +3433,9 @@ export class World {
         entity.fields["data"] = res.nextData;
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: "data", value: res.nextData });
       }
+      this.recordArtifactSubscriber(entity.id, intent.identityId);
       for (const n of res.notify) {
-        if (this.identities.identities.has(n.to)) {
-          this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`);
-        }
+        this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`, "notify");
       }
       this.append("act.run", intent.identityId, {
         target: entity.id,
@@ -3824,6 +3909,21 @@ export class World {
         if (ran >= 8) break;
         const rawData = typeof entity.fields["data"] === "string" ? entity.fields["data"] : "";
         const meta = artifactAutomationMeta(rawData);
+        if (meta.atTick !== undefined) {
+          const left = meta.atTick - tick;
+          if (left === 15 || left === 5) {
+            const owner = typeof entity.fields["owner"] === "string" ? entity.fields["owner"] : "";
+            const artName = String(entity.fields["name"] ?? entity.id).slice(0, 60);
+            if (owner) {
+              this.fireWebhook(owner, "deadline", `Deadline on ${entity.id} (${artName}) in ${left} ticks`, entity.id);
+            }
+            for (const sub of this.artifactSubscribers.get(entity.id) ?? []) {
+              if (sub !== owner) {
+                this.fireWebhook(sub, "deadline", `Deadline on ${entity.id} (${artName}) in ${left} ticks`, entity.id);
+              }
+            }
+          }
+        }
         const dueEvery = meta.every !== undefined && tick % meta.every === 0;
         const dueAt = meta.atTick !== undefined && tick === meta.atTick;
         if (!dueEvery && !dueAt) continue;
@@ -3893,15 +3993,23 @@ export class World {
         world: this.sandboxWorldView(actorId),
       });
       if (!res.ok) return;
-      if (res.nextData !== undefined && res.nextData.length <= maxData && res.nextData !== rawData) {
+      if (res.nextData !== undefined && res.nextData.length > maxData) return;
+      // Atomic check: validate payouts BEFORE committing any state change!
+      const totalAutoPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
+      if (totalAutoPayout > 0) {
+        if (treasury < totalAutoPayout) return;
+        for (const p of res.payouts) {
+          if (!this.clerk.identities.has(p.to)) return;
+        }
+      }
+      if (res.nextData !== undefined && res.nextData !== rawData) {
         entity.fields["data"] = res.nextData;
         this.append("effect.set_field", "ARBITER", { id: entity.id, field: "data", value: res.nextData });
       }
       if (res.silent) return;
       let payoutReceived = 0;
       const paidList: Array<{ to: string; amount: number }> = [];
-      const totalAutoPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
-      if (totalAutoPayout > 0 && treasury >= totalAutoPayout) {
+      if (totalAutoPayout > 0) {
         if (res.payout > 0 && recipient !== undefined) {
           treasury -= res.payout;
           recipient.currency += res.payout;
@@ -3921,8 +4029,8 @@ export class World {
         }
       }
       for (const n of res.notify) {
-        if (this.identities.identities.has(n.to)) {
-          this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`);
+        if (this.identities.identities.has(n.to) && this.canArtifactNotify(entity, n.to)) {
+          this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`, "notify");
         }
       }
       if (recipient !== undefined && (res.reply.length > 0 || payoutReceived > 0)) {
@@ -3930,6 +4038,7 @@ export class World {
           actorId,
           entity.id,
           `[trigger ${entity.id}] ${res.reply}${payoutReceived > 0 ? ` (+${payoutReceived} coin)` : ""}`,
+          "trigger",
         );
       }
       this.append("act.run", "ARBITER", {
@@ -4018,7 +4127,7 @@ export class World {
             parsed["state"] && typeof parsed["state"] === "object" && !Array.isArray(parsed["state"])
               ? (parsed["state"] as Record<string, unknown>)
               : (parsed["machine"] as Record<string, unknown> | undefined)?.["state"];
-          if (st && typeof st === "object" && !Array.isArray(st) && JSON.stringify(st).length <= 4_000) {
+          if (st && typeof st === "object" && !Array.isArray(st) && JSON.stringify(st).length <= 16_000) {
             states[e.id] = st as Record<string, unknown>;
           }
         } catch {
@@ -4034,9 +4143,9 @@ export class World {
     };
   }
 
-  private deliverInbox(hearer: string, from: string, text: string): void {
+  private deliverInbox(hearer: string, from: string, text: string, kind: string = "speech"): void {
     const list = this.inbox.get(hearer) ?? [];
-    list.push({ from, text, tick: this.clerk.tick });
+    list.push({ from, text, tick: this.clerk.tick, kind });
     if (list.length > 500) {
       const dropped = list.length - 500;
       list.splice(0, dropped);
@@ -4044,6 +4153,144 @@ export class World {
       this.heardCursor.set(hearer, Math.max(0, cur - dropped));
     }
     this.inbox.set(hearer, list);
+    if (kind === "notify") {
+      this.fireWebhook(hearer, "notify", text, from);
+      this.persist();
+    }
+  }
+
+  private recordArtifactSubscriber(artifactId: string, identityId: string): void {
+    let set = this.artifactSubscribers.get(artifactId);
+    if (set === undefined) {
+      set = new Set<string>();
+      this.artifactSubscribers.set(artifactId, set);
+    }
+    set.add(identityId);
+  }
+
+  private canArtifactNotify(entity: Entity, to: string, callerId?: string): boolean {
+    if (entity.fields["owner"] === to) return true;
+    if (callerId !== undefined && callerId === to) return true;
+    const subs = this.artifactSubscribers.get(entity.id);
+    if (subs?.has(to)) return true;
+    // Also honor historical interactions from the log (for artifacts interacted with before upgrade)
+    const actorTag = `identity:${to}`;
+    for (const ev of this.log.events().slice(-600)) {
+      if (ev.actor === actorTag) {
+        const p = ev.payload as Record<string, unknown>;
+        if (p["target"] === entity.id || p["parent"] === entity.id) {
+          this.recordArtifactSubscriber(entity.id, to);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  authenticateBearer(authorization?: string): StoredIdentity | null {
+    const token = parseBearer(authorization);
+    if (token === undefined) return null;
+    return this.identities.authenticate(token, Date.now());
+  }
+
+  registerWebhook(
+    identityId: string,
+    url: string,
+    secret?: string,
+    events?: string[],
+  ): { ok: true; webhook: { url: string; events: string[]; hasSecret: boolean } } | { ok: false; reason: string } {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return { ok: false, reason: "invalid webhook url" };
+    }
+    const allowLocal = process.env["AGORA_ALLOW_LOCAL_WEBHOOKS"] === "1";
+    if (parsed.protocol !== "https:" && !(allowLocal && parsed.protocol === "http:")) {
+      return { ok: false, reason: "webhook url must use https://" };
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (!allowLocal) {
+      if (
+        host === "localhost" ||
+        host === "::1" ||
+        host.endsWith(".local") ||
+        host.endsWith(".internal") ||
+        /^127\./.test(host) ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^169\.254\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+        /^0\./.test(host) ||
+        /^(fc|fd|fe80)/i.test(host)
+      ) {
+        return { ok: false, reason: "webhook url cannot target localhost or private network addresses" };
+      }
+    }
+    const allowedCategories = new Set(["dm", "notify", "deadline", "vote", "gift"]);
+    const cleanEvents =
+      Array.isArray(events) && events.length > 0
+        ? events.filter((e): e is string => typeof e === "string" && allowedCategories.has(e))
+        : ["dm", "notify", "deadline", "vote", "gift"];
+    if (cleanEvents.length === 0) {
+      return { ok: false, reason: "events must include at least one of: dm, notify, deadline, vote, gift" };
+    }
+    const cleanSecret = typeof secret === "string" && secret.trim().length > 0 ? secret.trim().slice(0, 128) : undefined;
+    this.webhooks.set(identityId, {
+      url: parsed.toString(),
+      ...(cleanSecret ? { secret: cleanSecret } : {}),
+      events: [...new Set(cleanEvents)],
+      createdAt: Date.now(),
+    });
+    this.persist();
+    return { ok: true, webhook: { url: parsed.toString(), events: [...new Set(cleanEvents)], hasSecret: cleanSecret !== undefined } };
+  }
+
+  getWebhook(identityId: string): { url: string; events: string[]; hasSecret: boolean } | null {
+    const wh = this.webhooks.get(identityId);
+    if (wh === undefined) return null;
+    return { url: wh.url, events: wh.events, hasSecret: typeof wh.secret === "string" && wh.secret.length > 0 };
+  }
+
+  deleteWebhook(identityId: string): boolean {
+    const existed = this.webhooks.delete(identityId);
+    if (existed) this.persist();
+    return existed;
+  }
+
+  fireWebhook(identityId: string, category: string, reason: string, source?: string): void {
+    const wh = this.webhooks.get(identityId);
+    if (wh === undefined || !wh.events.includes(category)) return;
+    const cooldownMs = Number(process.env["AGORA_WEBHOOK_COOLDOWN_MS"] ?? 15_000);
+    const now = Date.now();
+    const last = this.webhookLastSent.get(identityId) ?? 0;
+    if (cooldownMs > 0 && now - last < cooldownMs) return;
+    this.webhookLastSent.set(identityId, now);
+    const origin = publicOrigin();
+    const body = JSON.stringify({
+      event: "wake",
+      identityId,
+      tick: this.clerk.tick,
+      category,
+      reason: reason.slice(0, 240),
+      ...(source ? { source } : {}),
+      digestUrl: `${origin}/digest?for=${encodeURIComponent(identityId)}`,
+    });
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "user-agent": "Agora-WakePush/1.0",
+    };
+    if (wh.secret) {
+      headers["x-agora-signature"] = `sha256=${hmacSha256Hex(Buffer.from(wh.secret, "utf8"), body)}`;
+    }
+    void fetch(wh.url, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => {
+      // Best-effort async wake push; never crash or block tick loop
+    });
   }
 
   get onlineCount(): number {
@@ -4104,6 +4351,10 @@ export class World {
       dormant: this.dormant,
       everTicked: this.everTicked,
       record: [...this.record],
+      inbox: [...this.inbox.entries()],
+      heardCursor: [...this.heardCursor.entries()],
+      webhooks: [...this.webhooks.entries()],
+      artifactSubscribers: [...this.artifactSubscribers.entries()].map(([id, set]) => [id, [...set]]),
     };
   }
 
@@ -4177,6 +4428,30 @@ export class World {
     this.everTicked = snapshot.everTicked === true;
     this.record.length = 0;
     this.record.push(...snapshot.record);
+    this.inbox.clear();
+    if (Array.isArray(snapshot.inbox)) {
+      for (const [id, msgs] of snapshot.inbox) {
+        this.inbox.set(id, msgs);
+      }
+    }
+    this.heardCursor.clear();
+    if (Array.isArray(snapshot.heardCursor)) {
+      for (const [id, cur] of snapshot.heardCursor) {
+        this.heardCursor.set(id, cur);
+      }
+    }
+    this.webhooks.clear();
+    if (Array.isArray(snapshot.webhooks)) {
+      for (const [id, wh] of snapshot.webhooks) {
+        this.webhooks.set(id, wh);
+      }
+    }
+    this.artifactSubscribers.clear();
+    if (Array.isArray(snapshot.artifactSubscribers)) {
+      for (const [id, subs] of snapshot.artifactSubscribers) {
+        this.artifactSubscribers.set(id, new Set(subs));
+      }
+    }
     this.rebuildListenLog();
     this.lastAxisSizes = { x: 64, y: 64, z: 64 };
     this.anchors.length = 0;

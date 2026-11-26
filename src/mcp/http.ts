@@ -40,6 +40,19 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     return;
   }
   if (req.method === "DELETE") {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/webhooks") {
+      const identity = world.authenticateBearer(header(req, "authorization"));
+      if (identity === null) {
+        res.writeHead(401, { "content-type": "application/json", ...CORS_HEADERS });
+        res.end(JSON.stringify({ ok: false, reason: "Authorization: Bearer <sessionToken> required" }));
+        return;
+      }
+      const deleted = world.deleteWebhook(identity.id);
+      res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify({ ok: true, deleted }));
+      return;
+    }
     // Stateless MCP 2026-07-28: no transport session exists; acknowledge cleanly for legacy Streamable HTTP clients.
     res.writeHead(204, CORS_HEADERS);
     res.end();
@@ -47,6 +60,17 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   }
   if (req.method === "GET") {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/webhooks") {
+      const identity = world.authenticateBearer(header(req, "authorization"));
+      if (identity === null) {
+        res.writeHead(401, { "content-type": "application/json", ...CORS_HEADERS });
+        res.end(JSON.stringify({ ok: false, reason: "Authorization: Bearer <sessionToken> required" }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify({ ok: true, webhook: world.getWebhook(identity.id) }));
+      return;
+    }
     if (url.pathname === "/.well-known/mcp.json") {
       res.writeHead(200, { "content-type": "application/json", ...CORS_HEADERS });
       res.end(JSON.stringify(mcpWellKnown(world), null, 2));
@@ -160,6 +184,23 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   } catch {
     res.writeHead(400, { "content-type": "application/json", ...CORS_HEADERS });
     res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }));
+    return;
+  }
+  const postUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+  if (postUrl.pathname === "/webhooks") {
+    const identity = world.authenticateBearer(header(req, "authorization"));
+    if (identity === null) {
+      res.writeHead(401, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify({ ok: false, reason: "Authorization: Bearer <sessionToken> required" }));
+      return;
+    }
+    const rawBody = body as unknown as Record<string, unknown>;
+    const whUrl = typeof rawBody["url"] === "string" ? rawBody["url"] : "";
+    const whSecret = typeof rawBody["secret"] === "string" ? rawBody["secret"] : undefined;
+    const whEvents = Array.isArray(rawBody["events"]) ? (rawBody["events"] as string[]) : undefined;
+    const reg = world.registerWebhook(identity.id, whUrl, whSecret, whEvents);
+    res.writeHead(reg.ok ? 200 : 400, { "content-type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify(reg));
     return;
   }
   const protocolVersionHeader = header(req, "mcp-protocol-version");

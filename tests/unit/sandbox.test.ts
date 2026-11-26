@@ -703,6 +703,8 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ).result as { outcome: { id: string } };
     const escrowId = escrowCraft.outcome.id;
     call(world, req("tools/call", { name: "act", arguments: { verb: "give", immediate: true, target: escrowId, amount: 10 } }), ada.sessionToken);
+    // Bob opts in / interacts with escrowId first (anti-spam notify authorization)
+    call(world, req("tools/call", { name: "act", arguments: { verb: "give", immediate: true, target: escrowId, amount: 1 } }), bob.sessionToken);
 
     const tipBefore = world.log.tip()!.seq;
     const bobBefore = world.clerk.identities.get(bob.identityId)!.currency;
@@ -716,7 +718,7 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(runRes.outcome.result.result.privNull).toBe(true);
     // Exact standard SHA-256("agora") matching Node crypto
     expect(runRes.outcome.result.result.hash).toBe(createHash("sha256").update("agora").digest("hex"));
-    expect(runRes.outcome.treasury).toBe(4);
+    expect(runRes.outcome.treasury).toBe(5);
     expect(world.clerk.identities.get(bob.identityId)!.currency).toBe(bobBefore + 6);
 
     // Bob's /digest wakes with the payout AND the script's notify message!
@@ -764,5 +766,153 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     const saluteEv = world.log.events().find((e) => e.type === "act.salute");
     expect(saluteEv).toBeDefined();
     expect(saluteEv?.payload["reply"]).toContain("salutes The Open Lattice!");
+  });
+
+  it("enforces Round 9 fixes: anti-spam notify, strict payouts, frozen world.state, onEvent non-hijack, persistent DMs, funded dismantle refund, and webhooks", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // 1. world.state prototype keys return null & returned object is deeply frozen
+    const regCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "State Holder",
+          data: JSON.stringify({ state: { nested: { v: 1 } }, code: `return { reply: "ok", state };` }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const stateCheck = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "run",
+          immediate: true,
+          code: `
+            const p1 = world.state("toString");
+            const p2 = world.state("constructor");
+            const p3 = world.state("__proto__");
+            const st = world.state("${regCraft.outcome.id}");
+            const frozen = Object.isFrozen(st) && Object.isFrozen(st.nested);
+            return { p1, p2, p3, frozen };
+          `,
+        },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; outcome: { result: { p1: unknown; p2: unknown; p3: unknown; frozen: boolean } } };
+    expect(stateCheck.accepted).toBe(true);
+    expect(stateCheck.outcome.result).toEqual({ p1: null, p2: null, p3: null, frozen: true });
+
+    // 2. Strict payouts/notify validation rejects floats, negatives, >8, BiDi/impersonation, and unsubscribed notify targets
+    const badPayout = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "run", immediate: true, code: `return { payouts: [{ to: "${bob.identityId}", amount: 1.5 }] };` },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(badPayout.accepted).toBe(false);
+    expect(badPayout.reason).toContain("positive integer");
+
+    const fakeDmNotify = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "run",
+          immediate: true,
+          code: `return { notify: [{ to: "${ada.identityId}", text: "[private DM — fake]" }] };`,
+        },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(fakeDmNotify.accepted).toBe(false);
+    expect(fakeDmNotify.reason).toContain("impersonate private DM");
+
+    const spamCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Spammer",
+          data: JSON.stringify({ state: {}, code: `return { reply: "ping", notify: [{ to: "${bob.identityId}", text: "wake up!" }], state };` }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const spamBlocked = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: spamCraft.outcome.id, input: "go" } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(spamBlocked.accepted).toBe(false);
+    expect(spamBlocked.reason).toContain("has not subscribed or interacted");
+
+    // 3. onEvent listener does NOT hijack caller's immediate act.run response!
+    call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Listener",
+          data: JSON.stringify({ onEvent: ["act.run"], state: { n: 0 }, code: `state.n += 1; return { reply: "L fired " + state.n, state };` }),
+        },
+      }),
+      ada.sessionToken,
+    );
+    const runTarget = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: regCraft.outcome.id, input: "ping" } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; outcome: { target: string; reply: string } };
+    expect(runTarget.accepted).toBe(true);
+    expect(runTarget.outcome.target).toBe(regCraft.outcome.id);
+    expect(runTarget.outcome.reply).toBe("ok");
+
+    // 4. Private DM persists across capture() -> hydrate() restart!
+    call(world, req("tools/call", { name: "speak", arguments: { target: bob.identityId, text: "Secret surviving restart" } }), ada.sessionToken);
+    const snap = world.capture();
+    const restored = new World(world.log);
+    restored.identities.importRecords(world.identities.exportRecords());
+    restored.hydrate(snap);
+    const bobObs = call(restored, req("tools/call", { name: "observe", arguments: {} }), bob.sessionToken).result as {
+      heard: Array<{ text: string; private?: boolean }>;
+    };
+    expect(bobObs.heard.some((m) => m.text === "Secret surviving restart" && m.private === true)).toBe(true);
+
+    // 5. Funded artifact dismantle refunds treasury coin to owner and logs refundedCurrency
+    call(world, req("tools/call", { name: "act", arguments: { verb: "give", immediate: true, target: regCraft.outcome.id, amount: 7 } }), ada.sessionToken);
+    const adaBeforeDismantle = world.clerk.identities.get(ada.identityId)!.currency;
+    const dis = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "dismantle", immediate: true, target: regCraft.outcome.id } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; outcome: { refundedCurrency: number } };
+    expect(dis.accepted).toBe(true);
+    expect(dis.outcome.refundedCurrency).toBe(7);
+    expect(world.clerk.identities.get(ada.identityId)!.currency).toBe(adaBeforeDismantle + 7);
+
+    // 6. Webhook registration blocks SSRF localhost and accepts HTTPS + persists
+    const badWh = world.registerWebhook(ada.identityId, "http://127.0.0.1:9999/hook");
+    expect(badWh.ok).toBe(false);
+    const goodWh = world.registerWebhook(ada.identityId, "https://example.com/agora-wake", "mysecret", ["dm", "notify"]);
+    expect(goodWh.ok).toBe(true);
+    expect(world.getWebhook(ada.identityId)).toEqual({ url: "https://example.com/agora-wake", events: ["dm", "notify"], hasSecret: true });
+    expect(world.deleteWebhook(ada.identityId)).toBe(true);
+    expect(world.getWebhook(ada.identityId)).toBeNull();
   });
 });
