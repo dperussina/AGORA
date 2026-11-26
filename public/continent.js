@@ -667,50 +667,85 @@ export class ContinentView {
       ctx.restore();
     }
 
-    // 5. Depth-sort buildings (artifacts) + chibi Warcraft II units by Y coordinate
-    const drawables = [];
-    const coordCounts = new Map();
+    // 5. Cluster nearby artifacts by type (within ~4.5 cells) so hubs show ONE rich collective Gold Mine /
+    // Arcane Citadel / Guild Hall instead of cluttered overlapping duplicates — while solo artifacts stay solo!
+    const artCategory = (art) => {
+      if ((art.currency ?? 0) > 0) return "mine";
+      const k = String(art.kind || "").toLowerCase();
+      return k === "script" || k === "machine" ? "tower" : "cottage";
+    };
+    const clusters = [];
     for (const art of this.artifacts) {
       if (!art.position) continue;
-      const key = `${art.position.x},${art.position.y}`;
-      const idx = coordCounts.get(key) || 0;
-      coordCounts.set(key, idx + 1);
-      const angle = idx * 2.1;
-      const rad = idx === 0 ? 0 : Math.min(3.6, 1.45 + Math.floor(idx / 5) * 1.05);
-      const wx = art.position.x + Math.cos(angle) * rad;
-      const wy = art.position.y + Math.sin(angle) * rad;
-      drawables.push({ sortY: wy, type: "building", wx, wy, art });
+      const cat = artCategory(art);
+      const hit = clusters.find(
+        (c) => c.cat === cat && Math.hypot(c.wx - art.position.x, c.wy - art.position.y) <= 4.5,
+      );
+      if (hit) {
+        hit.items.push(art);
+        hit.totalGold += art.currency ?? 0;
+        const n = hit.items.length;
+        hit.wx = (hit.wx * (n - 1) + art.position.x) / n;
+        hit.wy = (hit.wy * (n - 1) + art.position.y) / n;
+      } else {
+        clusters.push({
+          cat,
+          wx: art.position.x,
+          wy: art.position.y,
+          totalGold: art.currency ?? 0,
+          items: [art],
+        });
+      }
     }
 
+    // Offset distinct cluster types at the exact same hub slightly so Mine, Tower, and Guild Hall sit side-by-side cleanly
+    const catOffsets = { mine: { dx: -2.1, dy: 1.2 }, tower: { dx: 2.1, dy: -1.1 }, cottage: { dx: 2.1, dy: 1.5 } };
+    const buildings = clusters
+      .map((c) => {
+        const off = c.items.length > 0 ? catOffsets[c.cat] || { dx: 0, dy: 0 } : { dx: 0, dy: 0 };
+        // Pick primary artifact (richest for mines, newest otherwise)
+        const primary = [...c.items].sort((a, b) => (b.currency ?? 0) - (a.currency ?? 0))[0];
+        return {
+          ...c,
+          primary,
+          wx: c.wx + off.dx,
+          wy: c.wy + off.dy,
+        };
+      })
+      .sort((a, b) => a.wy - b.wy);
+
+    // LAYER A: Render ALL buildings first so characters are NEVER hidden behind any building!
+    for (const b of buildings) {
+      const p = this._project(b.wx, b.wy);
+      if (p.x < -100 || p.x > this.width + 100 || p.y < -100 || p.y > this.height + 100) continue;
+      this._drawBuildingCluster(ctx, p.x, p.y, b, now);
+    }
+
+    // LAYER B: Render ALL AI characters UP FRONT (depth-sorted among themselves only)
     const unitCounts = new Map();
+    const units = [];
     for (const ag of this.agents) {
       const u = this.unitPos.get(ag.id) || { x: ag.position?.x ?? 32, y: ag.position?.y ?? 32, moving: false, celebrateUntil: 0, facing: 1 };
       const key = `${Math.round(u.x)},${Math.round(u.y)}`;
       const idx = unitCounts.get(key) || 0;
       unitCounts.set(key, idx + 1);
       const angle = idx * 1.9 + 0.5;
-      const rad = idx === 0 ? 0 : 1.3;
-      const wx = u.x + Math.cos(angle) * rad;
-      const wy = u.y + Math.sin(angle) * rad;
-      drawables.push({
-        sortY: wy + 0.2,
-        type: "unit",
-        wx,
-        wy,
+      const rad = idx === 0 ? 0 : 1.35;
+      units.push({
+        wx: u.x + Math.cos(angle) * rad,
+        wy: u.y + Math.sin(angle) * rad,
         ag,
         moving: u.moving,
         celebrating: now < (u.celebrateUntil || 0),
         facing: u.facing || 1,
       });
     }
+    units.sort((a, b) => a.wy - b.wy);
 
-    drawables.sort((a, b) => a.sortY - b.sortY);
-
-    for (const item of drawables) {
+    for (const item of units) {
       const p = this._project(item.wx, item.wy);
       if (p.x < -90 || p.x > this.width + 90 || p.y < -90 || p.y > this.height + 90) continue;
-      if (item.type === "building") this._drawBuilding(ctx, p.x, p.y, item.art, now);
-      else this._drawUnit(ctx, p.x, p.y, item.ag, item.moving, item.celebrating, item.facing, now);
+      this._drawUnit(ctx, p.x, p.y, item.ag, item.moving, item.celebrating, item.facing, now);
     }
 
     // 6. Floating Arcane Drifts (cute WC2 wisps)
@@ -965,144 +1000,166 @@ export class ContinentView {
     });
   }
 
-  _drawBuilding(ctx, x, y, art, now) {
+  _drawBuildingCluster(ctx, x, y, cluster, now) {
     const z = this.zoom;
-    const kind = String(art.kind || "").toLowerCase();
-    const funded = (art.currency ?? 0) > 0;
+    const art = cluster.primary;
+    const count = cluster.items.length;
+    const scale = count >= 5 ? 1.32 : count >= 2 ? 1.15 : 1.0;
+    const s = z * scale;
     const isHovered = this.hovered?.data?.id === art.id;
 
     // Ground shadow
     ctx.beginPath();
-    ctx.ellipse(x + 2 * z, y + 4 * z, 14 * z, 7.5 * z, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + 2 * s, y + 4 * s, 15 * s, 8 * s, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
     ctx.fill();
 
-    if (funded) {
-      // Iconic Warcraft II GOLD MINE!
-      // Rocky golden-streaked mound
+    if (cluster.cat === "mine") {
+      // Collective Warcraft II GOLD MINE (scales up into a Grand Royal Gold Mine when multiple bounties cluster!)
       ctx.fillStyle = "#78716c";
       ctx.strokeStyle = "#1c1917";
       ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.moveTo(x - 16 * z, y + 6 * z);
-      ctx.lineTo(x - 10 * z, y - 10 * z);
-      ctx.lineTo(x + 2 * z, y - 14 * z);
-      ctx.lineTo(x + 14 * z, y - 7 * z);
-      ctx.lineTo(x + 17 * z, y + 6 * z);
+      ctx.moveTo(x - 17 * s, y + 6 * s);
+      ctx.lineTo(x - 11 * s, y - 10 * s);
+      ctx.lineTo(x + 2 * s, y - 15 * s);
+      ctx.lineTo(x + 15 * s, y - 8 * s);
+      ctx.lineTo(x + 18 * s, y + 6 * s);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      // Timber-framed dark mine tunnel entrance
+      // Timber-framed mine tunnel
       ctx.fillStyle = "#1c1917";
-      ctx.fillRect(x - 6 * z, y - 4 * z, 12 * z, 10 * z);
+      ctx.fillRect(x - 6 * s, y - 4 * s, 12 * s, 10 * s);
       ctx.strokeStyle = "#92400e";
-      ctx.lineWidth = 2.4 * z;
-      ctx.strokeRect(x - 6 * z, y - 4 * z, 12 * z, 10 * z);
+      ctx.lineWidth = 2.4 * s;
+      ctx.strokeRect(x - 6 * s, y - 4 * s, 12 * s, 10 * s);
 
-      // Glowing gold ore piles spilling out of the mine!
+      // Rich gold ore piles proportional to how many vaults/bounties are in this area!
       ctx.fillStyle = "#fbbf24";
       ctx.beginPath();
-      ctx.arc(x - 9 * z, y + 5 * z, Math.max(1, 3.8 * z), 0, Math.PI * 2);
-      ctx.arc(x + 8 * z, y + 5 * z, Math.max(1, 4.2 * z), 0, Math.PI * 2);
-      ctx.arc(x + 3 * z, y + 6 * z, Math.max(1, 3 * z), 0, Math.PI * 2);
+      ctx.arc(x - 10 * s, y + 5 * s, Math.max(1, 4 * s), 0, Math.PI * 2);
+      ctx.arc(x + 9 * s, y + 5 * s, Math.max(1, 4.4 * s), 0, Math.PI * 2);
+      if (count >= 2) {
+        ctx.arc(x - 14 * s, y + 6 * s, Math.max(1, 3.2 * s), 0, Math.PI * 2);
+        ctx.arc(x + 14 * s, y + 6 * s, Math.max(1, 3.5 * s), 0, Math.PI * 2);
+      }
       ctx.fill();
 
       const twk = 0.5 + 0.5 * Math.sin(now * 0.008 + Math.abs(x));
-      drawFourPointStar(ctx, x + 9 * z, y - 12 * z, 4.2 * z, "#fef08a", 0.5 + 0.5 * twk);
+      drawFourPointStar(ctx, x + 10 * s, y - 13 * s, 4.4 * s, "#fef08a", 0.5 + 0.5 * twk);
 
-      // Gold badge
-      if (z >= 0.8 || isHovered) {
-        const badge = `${art.currency}g`;
+      // Collective gold badge (e.g. "36g · 3" for clustered vaults, or "12g" for solo)
+      if (z >= 0.75 || isHovered) {
+        const badge = count > 1 ? `${cluster.totalGold}g (${count})` : `${cluster.totalGold}g`;
         ctx.font = `700 ${Math.max(8, Math.round(9 * z))}px 'IBM Plex Mono', monospace`;
         const bw = ctx.measureText(badge).width;
-        ctx.fillStyle = "rgba(24, 18, 12, 0.88)";
+        ctx.fillStyle = "rgba(24, 18, 12, 0.9)";
         ctx.strokeStyle = "#d4a64a";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(x - bw * 0.5 - 4, y - 26 * z, bw + 8, 13, 3);
+        ctx.roundRect(x - bw * 0.5 - 4, y - 27 * s, bw + 8, 13, 3);
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = "#fde047";
-        ctx.fillText(badge, x - bw * 0.5, y - 16.5 * z);
+        ctx.fillText(badge, x - bw * 0.5, y - 17.5 * s);
       }
-    } else if (kind === "script" || kind === "machine") {
-      // Classic Warcraft II STONE MAGE TOWER!
-      const bob = Math.sin(now * 0.005 + Math.abs(x)) * 2 * z;
-      // Stone turret cylinder
+    } else if (cluster.cat === "tower") {
+      // Warcraft II Stone Mage Tower (grows a twin Arcane Citadel turret when 3+ scripts cluster!)
+      const bob = Math.sin(now * 0.005 + Math.abs(x)) * 2 * s;
       ctx.fillStyle = "#94a3b8";
       ctx.strokeStyle = "#1e293b";
       ctx.lineWidth = 1.2;
-      ctx.fillRect(x - 7.5 * z, y - 16 * z, 15 * z, 21 * z);
-      ctx.strokeRect(x - 7.5 * z, y - 16 * z, 15 * z, 21 * z);
-      // Battlement parapet
+      ctx.fillRect(x - 7.5 * s, y - 16 * s, 15 * s, 21 * s);
+      ctx.strokeRect(x - 7.5 * s, y - 16 * s, 15 * s, 21 * s);
+      if (count >= 3) {
+        // Side wizard turret for collective arcane clusters
+        ctx.fillRect(x + 7.5 * s, y - 10 * s, 7 * s, 15 * s);
+        ctx.strokeRect(x + 7.5 * s, y - 10 * s, 7 * s, 15 * s);
+        ctx.fillStyle = "#2563eb";
+        ctx.beginPath();
+        ctx.moveTo(x + 11 * s, y - 18 * s);
+        ctx.lineTo(x + 16 * s, y - 10 * s);
+        ctx.lineTo(x + 6 * s, y - 10 * s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
       ctx.fillStyle = "#cbd5e1";
-      ctx.fillRect(x - 9 * z, y - 19 * z, 18 * z, 4 * z);
-      ctx.strokeRect(x - 9 * z, y - 19 * z, 18 * z, 4 * z);
-      // Tall pointed blue wizard spire roof
+      ctx.fillRect(x - 9 * s, y - 19 * s, 18 * s, 4 * s);
+      ctx.strokeRect(x - 9 * s, y - 19 * s, 18 * s, 4 * s);
       ctx.fillStyle = "#1d4ed8";
       ctx.beginPath();
-      ctx.moveTo(x, y - 31 * z);
-      ctx.lineTo(x + 9.5 * z, y - 19 * z);
-      ctx.lineTo(x - 9.5 * z, y - 19 * z);
+      ctx.moveTo(x, y - 31 * s);
+      ctx.lineTo(x + 9.5 * s, y - 19 * s);
+      ctx.lineTo(x - 9.5 * s, y - 19 * s);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      // Glowing cyan lancet window + floating arcane orb
       ctx.fillStyle = "#38bdf8";
-      ctx.fillRect(x - 2 * z, y - 11 * z, 4 * z, 7 * z);
-      drawFourPointStar(ctx, x, y - 34 * z + bob, 4.5 * z, "#7dd3fc", 0.95);
+      ctx.fillRect(x - 2 * s, y - 11 * s, 4 * s, 7 * s);
+      drawFourPointStar(ctx, x, y - 34 * s + bob, 4.5 * s, "#7dd3fc", 0.95);
+      if (count > 1 && (z >= 0.9 || isHovered)) {
+        const badge = `${count} scripts`;
+        ctx.font = `600 ${Math.max(7.5, Math.round(8 * z))}px 'IBM Plex Mono', monospace`;
+        const bw = ctx.measureText(badge).width;
+        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+        ctx.fillRect(x - bw * 0.5 - 3, y + 6 * s, bw + 6, 11);
+        ctx.fillStyle = "#7dd3fc";
+        ctx.fillText(badge, x - bw * 0.5, y + 6 * s + 8.5);
+      }
     } else {
-      // Classic Warcraft II Medieval Cottage / Farmstead!
+      // Warcraft II Medieval Cottage / Guild Hall (scales into a Guild Hall when multiple lore/guides cluster!)
       ctx.fillStyle = "#e7dcc8";
       ctx.strokeStyle = "#292524";
       ctx.lineWidth = 1.2;
-      ctx.fillRect(x - 9 * z, y - 7 * z, 18 * z, 12 * z);
-      ctx.strokeRect(x - 9 * z, y - 7 * z, 18 * z, 12 * z);
-      // Timber cross-beams
+      ctx.fillRect(x - 9 * s, y - 7 * s, 18 * s, 12 * s);
+      ctx.strokeRect(x - 9 * s, y - 7 * s, 18 * s, 12 * s);
       ctx.strokeStyle = "#78350f";
-      ctx.lineWidth = 1.4 * z;
+      ctx.lineWidth = 1.4 * s;
       ctx.beginPath();
-      ctx.moveTo(x - 9 * z, y - 1 * z);
-      ctx.lineTo(x + 9 * z, y - 1 * z);
+      ctx.moveTo(x - 9 * s, y - 1 * s);
+      ctx.lineTo(x + 9 * s, y - 1 * s);
       ctx.stroke();
-      // Warm thatched / terracotta roof
-      ctx.fillStyle = "#b45309";
+      ctx.fillStyle = count >= 3 ? "#9f1239" : "#b45309";
       ctx.strokeStyle = "#451a03";
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.moveTo(x, y - 17 * z);
-      ctx.lineTo(x + 11.5 * z, y - 6 * z);
-      ctx.lineTo(x - 11.5 * z, y - 6 * z);
+      ctx.moveTo(x, y - 17 * s);
+      ctx.lineTo(x + 11.5 * s, y - 6 * s);
+      ctx.lineTo(x - 11.5 * s, y - 6 * s);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      // Lit golden window & wooden door
       ctx.fillStyle = "#78350f";
-      ctx.fillRect(x - 5.5 * z, y - 1 * z, 4.5 * z, 6 * z);
+      ctx.fillRect(x - 5.5 * s, y - 1 * s, 4.5 * s, 6 * s);
       ctx.fillStyle = "#fef08a";
-      ctx.fillRect(x + 2 * z, y - 4.5 * z, 4 * z, 4 * z);
-      // Safe positive-radius chimney smoke puff
+      ctx.fillRect(x + 2 * s, y - 4.5 * s, 4 * s, 4 * s);
       const puff = (((now * 0.00055 + Math.abs(x) * 0.1) % 1) + 1) % 1;
       ctx.fillStyle = `rgba(248, 250, 252, ${(1 - puff) * 0.45})`;
       ctx.beginPath();
-      ctx.arc(x + 5 * z, y - 15 * z - puff * 10 * z, Math.max(0.5, (1.5 + puff * 2.5) * z), 0, Math.PI * 2);
+      ctx.arc(x + 5 * s, y - 15 * s - puff * 10 * s, Math.max(0.5, (1.5 + puff * 2.5) * s), 0, Math.PI * 2);
       ctx.fill();
     }
 
     if (isHovered) {
-      // Classic Warcraft II bright green building selection box!
       ctx.strokeStyle = "#4ade80";
       ctx.lineWidth = 1.8;
-      ctx.strokeRect(x - 18 * z, y - 22 * z, 36 * z, 30 * z);
+      ctx.strokeRect(x - 19 * s, y - 23 * s, 38 * s, 32 * s);
     }
+
+    const label =
+      count > 1
+        ? `${cluster.cat === "mine" ? `Gold Mine (${count} funded bounties · ${cluster.totalGold}g)` : `${count} ${cluster.cat}s`} — Top: ${art.name || art.id}`
+        : `${art.name || art.id} (${art.kind}${cluster.totalGold > 0 ? ` · ${cluster.totalGold}g` : ""}) — Click to inspect`;
 
     this.hitTargets.push({
       kind: "artifact",
       x,
-      y: y - 6 * z,
+      y: y - 6 * s,
       data: art,
-      label: `${art.name || art.id} (${art.kind}${funded ? ` · ${art.currency}g` : ""}) — Click to inspect`,
+      label,
     });
   }
 
