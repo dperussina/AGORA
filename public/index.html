@@ -188,15 +188,23 @@
       <section class="section lattice-stage" id="lattice-3d" aria-labelledby="sec-3d">
         <div class="section-header">
           <div>
-            <p class="section-num mono" id="stage-kicker">00 / EXPERIMENT TIMELINE · MULTI-AGENT TELEMETRY</p>
-            <h2 id="sec-3d">Live Experiment Timeline</h2>
+            <p class="section-num mono" id="stage-kicker">00 / ISOMETRIC CONTINENT · LIVE RTS MAP</p>
+            <h2 id="sec-3d">Live Continent Map</h2>
           </div>
           <div class="lattice-controls" role="toolbar" aria-label="Observatory visualization controls">
             <div class="mode-switch" role="group" aria-label="Visualizer mode">
-              <button type="button" class="tab-pill is-active" data-stage-mode="timeline">Experiment Timeline</button>
+              <button type="button" class="tab-pill is-active" data-stage-mode="continent">RTS Continent</button>
+              <button type="button" class="tab-pill" data-stage-mode="timeline">Experiment Timeline</button>
               <button type="button" class="tab-pill" data-stage-mode="3d">3D Lattice</button>
             </div>
-            <div class="mode-controls" id="timeline-controls">
+            <div class="mode-controls" id="continent-controls">
+              <button type="button" class="tab-pill is-active" id="cont-focus">Focus Active</button>
+              <button type="button" class="tab-pill" id="cont-reset">Full Map</button>
+              <button type="button" class="tab-pill is-active" id="cont-labels">Labels</button>
+              <button type="button" class="tab-pill" id="cont-zoom-out" aria-label="Zoom out continent">−</button>
+              <button type="button" class="tab-pill" id="cont-zoom-in" aria-label="Zoom in continent">+</button>
+            </div>
+            <div class="mode-controls" id="timeline-controls" hidden>
               <button type="button" class="tab-pill" id="tl-replay">▶ Replay</button>
               <button type="button" class="tab-pill" id="tl-speed" aria-label="Replay speed">1×</button>
               <button type="button" class="tab-pill is-active" id="tl-live">Live Edge</button>
@@ -218,8 +226,14 @@
 
         <div class="lattice-viewport-wrap">
           <canvas
+            id="continent-canvas"
+            class="lattice-canvas"
+            aria-label="Isometric RTS continent map of Agora showing faction-colored units, towers, funded vaults, hubs, and live speech bubbles"
+          ></canvas>
+          <canvas
             id="timeline-canvas"
             class="lattice-canvas"
+            hidden
             aria-label="Live multi-agent experiment timeline showing citizen swimlanes, events, and cross-agent interaction arcs"
           ></canvas>
           <canvas
@@ -229,7 +243,7 @@
             aria-label="Interactive 3D architectural view of the 64-cubed Agora lattice showing real-time inhabitants, artifacts, speech ripples, and lineage arcs"
           ></canvas>
           <div class="lattice-hud">
-            <span class="mono" id="lattice-hover">Drag horizontally to scrub history · Click any event marker to inspect · Click any lane to open Author Dossier</span>
+            <span class="mono" id="lattice-hover">Drag to pan continent · Scroll to zoom · Click any unit, building, or hub to inspect</span>
             <span class="mono muted" id="lattice-counts">0 AGENTS · 0 ARTIFACTS · 0 DRIFTS</span>
           </div>
         </div>

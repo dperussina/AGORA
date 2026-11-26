@@ -620,41 +620,81 @@ export class ExperimentTimeline {
       }
     }
 
-    // Draw cross-lane interaction arcs + animated glowing signal packets
+    // Draw ONLY real directed A -> B interaction arcs (DMs, coin gifts, running/forking/noting another agent's work)
+    // with explicit arrowheads and receiver rings on B's lane so lines NEVER point to nowhere!
     for (let idx = 0; idx < positions.length; idx++) {
       const pt = positions[idx];
       const p = pt.ev.payload || {};
-      const targetArt = this.artifactsById.get(p.target) || this.artifactsById.get(p.parent);
-      const targetOwner = targetArt?.owner;
-      if (targetOwner && targetOwner !== pt.actorId && laneY.has(targetOwner)) {
-        const ty = laneY.get(targetOwner);
+      let targetActor = null;
+      let edgeTag = "";
+
+      if (pt.ev.type === "speak" && p.private === true && Array.isArray(p.hearers) && p.hearers.length === 1) {
+        targetActor = this._actorIdOf(p.hearers[0]);
+        edgeTag = "DM";
+      } else if (pt.ev.type === "act.give" && typeof p.target === "string") {
+        const art = this.artifactsById.get(p.target);
+        targetActor = art?.owner ? this._actorIdOf(art.owner) : this._actorIdOf(p.target);
+        edgeTag = p.amount ? `+${p.amount}c` : "GIVE";
+      } else if (pt.ev.type === "act.run" || pt.ev.type === "act.craft" || pt.ev.type === "speak.artifact") {
+        const targetArt = this.artifactsById.get(p.target) || this.artifactsById.get(p.parent);
+        if (targetArt?.owner) {
+          targetActor = this._actorIdOf(targetArt.owner);
+          edgeTag = pt.ev.type === "act.craft" ? "FORK" : pt.ev.type === "speak.artifact" ? "NOTE" : "RUN";
+        }
+      }
+
+      if (targetActor && targetActor !== pt.actorId && laneY.has(targetActor)) {
+        const ty = laneY.get(targetActor);
         const cat = this._categoryOf(pt.ev);
         const color = CAT_COLORS[cat] || "#38bdf8";
-        const cpx = pt.x - Math.min(34, Math.max(16, Math.abs(ty - pt.y) * 0.22));
+        const dir = ty > pt.y ? 1 : -1;
+        const cpx = pt.x - Math.min(30, Math.max(14, Math.abs(ty - pt.y) * 0.18));
         const cpy = (pt.y + ty) * 0.5;
 
-        // Subtle glowing curve
-        ctx.strokeStyle = hexToRgba(color, 0.34);
-        ctx.lineWidth = 1.2;
+        // Directed curve from actor A to receiver B
+        ctx.strokeStyle = hexToRgba(color, 0.48);
+        ctx.lineWidth = 1.3;
         ctx.beginPath();
         ctx.moveTo(pt.x, pt.y);
-        ctx.quadraticCurveTo(cpx, cpy, pt.x, ty);
+        ctx.quadraticCurveTo(cpx, cpy, pt.x, ty - dir * 5.5);
         ctx.stroke();
 
-        // Continuous traveling glowing signal packet along the arc
-        const t = ((now * 0.00055 + idx * 0.23) % 1);
+        // Crisp receiver ring + arrowhead on B's lane
+        ctx.beginPath();
+        ctx.arc(pt.x, ty, 3.6, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(color, 0.85);
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(pt.x, ty - dir * 4);
+        ctx.lineTo(pt.x - 3.2, ty - dir * 9.5);
+        ctx.lineTo(pt.x + 3.2, ty - dir * 9.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Traveling signal packet along A -> B
+        const t = ((now * 0.0006 + idx * 0.23) % 1);
         const inv = 1 - t;
         const bx = inv * inv * pt.x + 2 * inv * t * cpx + t * t * pt.x;
         const by = inv * inv * pt.y + 2 * inv * t * cpy + t * t * ty;
 
         ctx.beginPath();
-        ctx.arc(bx, by, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(color, 0.28);
+        ctx.arc(bx, by, 4, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(color, 0.3);
         ctx.fill();
         ctx.beginPath();
-        ctx.arc(bx, by, 1.9, 0, Math.PI * 2);
+        ctx.arc(bx, by, 1.8, 0, Math.PI * 2);
         ctx.fillStyle = "#ffffff";
         ctx.fill();
+
+        // Tiny action tag when zoomed in enough
+        if (edgeTag && this.pxPerEvent >= 22) {
+          ctx.font = "600 8px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = hexToRgba(color, 0.9);
+          ctx.fillText(edgeTag, cpx - 6, cpy + 3);
+        }
       }
     }
 

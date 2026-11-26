@@ -1,3 +1,4 @@
+import { ContinentView } from "/continent.js";
 import { Lattice3D } from "/lattice3d.js";
 import { ExperimentTimeline } from "/timeline.js";
 
@@ -5,9 +6,10 @@ const MAX_STREAM = 100;
 const MAX_WIRE = 60;
 const SEED_VERBS = new Set(["craft", "depict", "dismantle", "edit", "give", "mark", "move", "run", "wait"]);
 
+let continent = null;
 let lattice3d = null;
 let timeline = null;
-let stageMode = "timeline";
+let stageMode = "continent";
 
 const state = {
   filter: "all",
@@ -207,6 +209,15 @@ function renderBlueprint() {
   const countsEl = $("lattice-counts");
   if (countsEl) {
     countsEl.textContent = `${bodies.length} AGENTS · ${arts.length} ARTIFACTS · ${(state.map.drifts || []).length} DRIFTS`;
+  }
+  if (continent) {
+    continent.setWorldData({
+      anchors,
+      agents: bodies,
+      artifacts: state.artifacts,
+      drifts: state.map.drifts || [],
+      onlineIds: state.identities.filter((c) => c.online).map((c) => c.id),
+    });
   }
   if (lattice3d) {
     lattice3d.setWorldData({
@@ -507,35 +518,46 @@ function pushDrawer(fn) {
 }
 
 function setStageMode(mode) {
-  stageMode = mode === "3d" ? "3d" : "timeline";
+  stageMode = mode === "3d" ? "3d" : mode === "timeline" ? "timeline" : "continent";
+  const isCont = stageMode === "continent";
+  const isTl = stageMode === "timeline";
   const is3d = stageMode === "3d";
   document.querySelectorAll("[data-stage-mode]").forEach((b) => {
     b.classList.toggle("is-active", b.dataset.stageMode === stageMode);
   });
-  if ($("timeline-canvas")) $("timeline-canvas").hidden = is3d;
+  if ($("continent-canvas")) $("continent-canvas").hidden = !isCont;
+  if ($("timeline-canvas")) $("timeline-canvas").hidden = !isTl;
   if ($("lattice-canvas")) $("lattice-canvas").hidden = !is3d;
-  if ($("timeline-controls")) $("timeline-controls").hidden = is3d;
+  if ($("continent-controls")) $("continent-controls").hidden = !isCont;
+  if ($("timeline-controls")) $("timeline-controls").hidden = !isTl;
   if ($("lattice-controls")) $("lattice-controls").hidden = !is3d;
-  if ($("sec-3d")) $("sec-3d").textContent = is3d ? "Live 3D Lattice" : "Live Experiment Timeline";
+  if ($("sec-3d")) $("sec-3d").textContent = isCont ? "Live Continent Map" : is3d ? "Live 3D Lattice" : "Live Experiment Timeline";
   if ($("stage-kicker")) {
-    $("stage-kicker").textContent = is3d
-      ? "00 / SPATIAL OBSERVATORY · 64 × 64 × 64"
-      : "00 / EXPERIMENT TIMELINE · MULTI-AGENT TELEMETRY";
+    $("stage-kicker").textContent = isCont
+      ? "00 / ISOMETRIC CONTINENT · LIVE RTS MAP"
+      : is3d
+        ? "00 / SPATIAL OBSERVATORY · 64 × 64 × 64"
+        : "00 / EXPERIMENT TIMELINE · MULTI-AGENT TELEMETRY";
   }
   if ($("lattice-hover")) {
-    $("lattice-hover").textContent = is3d
-      ? "Drag to orbit · Scroll to zoom · Click any inhabitant, artifact, or landmark to inspect"
-      : "Drag horizontally to scrub history · Click any event marker to inspect · Click any lane to open Author Dossier";
+    $("lattice-hover").textContent = isCont
+      ? "Drag to pan continent · Scroll to zoom · Click any unit, building, or hub to inspect"
+      : is3d
+        ? "Drag to orbit · Scroll to zoom · Click any inhabitant, artifact, or landmark to inspect"
+        : "Drag horizontally to scrub history · Click ▶ Replay to watch animated playback · Click any node to inspect";
   }
-  if (is3d && lattice3d) {
+  continent?.stop();
+  timeline?.stop();
+  lattice3d?.stop();
+  if (isCont && continent) {
+    continent._resize();
+    continent.start();
+  } else if (is3d && lattice3d) {
     lattice3d._resize();
     lattice3d.start();
-    timeline?.stop();
-  } else if (timeline) {
+  } else if (isTl && timeline) {
     timeline._resize();
-    timeline.dirty = true;
     timeline.start();
-    lattice3d?.stop();
   }
 }
 
@@ -1002,6 +1024,7 @@ function handleLiveEvent(ev, isReplay = false) {
 
   if (!isReplay) {
     pulseHeartbeat();
+    if (continent) continent.triggerEvent(ev);
     if (lattice3d) lattice3d.triggerEvent(ev);
     if (timeline) timeline.pushLiveEvent(ev);
   }
@@ -1292,10 +1315,35 @@ function wireControls() {
     if (e.target === dialog) dialog.close();
   });
 
-  // Stage Mode Switcher (Experiment Timeline <-> 3D Lattice)
+  // Stage Mode Switcher (RTS Continent <-> Experiment Timeline <-> 3D Lattice)
   document.querySelectorAll("[data-stage-mode]").forEach((btn) => {
     btn.addEventListener("click", () => setStageMode(btn.dataset.stageMode));
   });
+
+  const contCanvas = $("continent-canvas");
+  if (contCanvas) {
+    const hoverEl = $("lattice-hover");
+    const contHint = "Drag to pan continent · Scroll to zoom · Click any unit, building, or hub to inspect";
+    continent = new ContinentView(contCanvas, {
+      actorLabel,
+      onHover: (hit) => {
+        if (stageMode === "continent" && hoverEl) hoverEl.textContent = hit ? hit.label : contHint;
+      },
+      onSelect: (hit) => {
+        if (hit.kind === "artifact") openArtifactInspector(hit.data, true);
+        else if (hit.kind === "agent") openAuthorDossier(hit.data.id, true);
+        else if (hit.kind === "anchor") openLandmarkDossier(hit.data, true);
+      },
+    });
+    $("cont-focus")?.addEventListener("click", () => continent.focusActive());
+    $("cont-reset")?.addEventListener("click", () => continent.resetView());
+    $("cont-labels")?.addEventListener("click", (e) => {
+      continent.showLabels = !continent.showLabels;
+      e.currentTarget.classList.toggle("is-active", continent.showLabels);
+    });
+    $("cont-zoom-in")?.addEventListener("click", () => continent.zoomBy(1.2));
+    $("cont-zoom-out")?.addEventListener("click", () => continent.zoomBy(0.84));
+  }
 
   const tlCanvas = $("timeline-canvas");
   if (tlCanvas) {
@@ -1379,7 +1427,7 @@ function wireControls() {
 
 async function boot() {
   wireControls();
-  setStageMode("timeline");
+  setStageMode("continent");
   await Promise.all([
     refreshCitizens(),
     refreshPulseAndResearch(),
