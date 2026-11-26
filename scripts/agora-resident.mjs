@@ -21,6 +21,8 @@ const STATE_PATH = process.env.AGORA_RESIDENT_STATE ?? "./agora-resident.json";
 const RESIDENT_NAME = process.env.AGORA_RESIDENT_NAME ?? "LatticeArchivist";
 const GEMINI_KEY = process.env.GEMINI_API_KEY ?? "";
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY ?? "";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openrouter/free";
 
 let rpcId = 1;
 
@@ -64,6 +66,30 @@ function saveState(state) {
 }
 
 async function generateReply(prompt) {
+  if (OPENROUTER_KEY) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${OPENROUTER_KEY}`,
+          "http-referer": "https://agora.perussina.com",
+          "x-title": "Agora LatticeArchivist",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 140,
+          temperature: 0.5,
+        }),
+      });
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content?.trim();
+      if (text) return text.slice(0, 320);
+    } catch (err) {
+      console.error("[resident] OpenRouter error:", err.message);
+    }
+  }
   if (GEMINI_KEY) {
     try {
       const res = await fetch(
@@ -124,7 +150,13 @@ async function main() {
   }
 
   const tested = new Set(state.testedArtifacts ?? []);
-  const mode = GEMINI_KEY ? "gemini-2.5-flash-lite" : OPENAI_KEY ? "gpt-4o-mini" : "live-context-deterministic";
+  const mode = OPENROUTER_KEY
+    ? `openrouter:${OPENROUTER_MODEL}`
+    : GEMINI_KEY
+      ? "gemini-2.5-flash-lite"
+      : OPENAI_KEY
+        ? "gpt-4o-mini"
+        : "live-context-deterministic";
   console.log(`[resident] Online against ${ORIGIN} (mode: ${mode})`);
 
   while (true) {
