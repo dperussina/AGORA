@@ -262,7 +262,7 @@ describe("MCP 2026-07-28 surface", () => {
     );
     expect(observed.result).toMatchObject({ resultType: "complete" });
     expect((observed.result as { here: Array<{ identityId: string }> }).here).toEqual([
-      { identityId: creds.identityId, name: "Ada" },
+      { identityId: creds.identityId, name: "Ada", online: true },
     ]);
   });
 });

@@ -165,6 +165,8 @@ export class World {
     { url: string; secret?: string; events: string[]; minGift?: number; muteSources?: string[]; createdAt: number }
   >();
   private readonly webhookLastSent = new Map<string, number>();
+  private readonly webhookPending = new Map<string, Array<{ category: string; reason: string; source?: string }>>();
+  private readonly webhookTimers = new Map<string, ReturnType<typeof setTimeout>>();
   readonly artifactSubscribers = new Map<string, Set<string>>();
   private readonly scheduleFailCounts = new Map<string, number>();
   private readonly clientTelemetry = new Map<string, number>();
@@ -1258,6 +1260,7 @@ export class World {
     const radius = this.effectivePerception(origin);
     const threshold = this.clerk.registry.params["standing_name_threshold"]?.value ?? 3;
 
+    const onlineSet = new Set(this.onlineIdentityIds);
     const identities: Array<Record<string, unknown>> = [];
     for (const [id, body] of this.bodies) {
       if (id === viewerId || cellKey(body) === cellKey(origin)) {
@@ -1277,6 +1280,7 @@ export class World {
       identities.push({
         identityId: id,
         name: named && stored !== null && stored !== undefined ? stored : "an agent",
+        online: onlineSet.has(id),
         position: body,
         distance,
         delta: { x: body.x - origin.x, y: body.y - origin.y, z: body.z - origin.z },
@@ -1971,9 +1975,10 @@ export class World {
     );
   }
 
-  private liveHere(position: Position, viewerId: string): { here: Array<{ identityId: string; name: string | null }>; echoes: unknown[] } {
+  private liveHere(position: Position, viewerId: string): { here: Array<{ identityId: string; name: string | null; online: boolean }>; echoes: unknown[] } {
     const viewerAnchor = this.anchorAt(this.bodyOf(viewerId));
     const hollowViewer = viewerAnchor?.class === "hollow";
+    const onlineSet = new Set(this.onlineIdentityIds);
     const here = [...this.bodies.entries()]
       .filter(([, body]) => cellKey(body) === cellKey(position))
       .filter(([id]) => {
@@ -1986,7 +1991,11 @@ export class World {
         }
         return true;
       })
-      .map(([id]) => ({ identityId: id, name: this.identities.identities.get(id)?.name ?? null }))
+      .map(([id]) => ({
+        identityId: id,
+        name: this.identities.identities.get(id)?.name ?? null,
+        online: onlineSet.has(id),
+      }))
       .sort((a, b) => (a.identityId < b.identityId ? -1 : 1));
     return { here, echoes: [] };
   }
@@ -4412,6 +4421,12 @@ export class World {
 
   deleteWebhook(identityId: string): boolean {
     const existed = this.webhooks.delete(identityId);
+    this.webhookPending.delete(identityId);
+    const t = this.webhookTimers.get(identityId);
+    if (t !== undefined) {
+      clearTimeout(t);
+      this.webhookTimers.delete(identityId);
+    }
     if (existed) this.persist();
     return existed;
   }
@@ -4427,7 +4442,51 @@ export class World {
     const cooldownMs = Number(process.env["AGORA_WEBHOOK_COOLDOWN_MS"] ?? 15_000);
     const now = Date.now();
     const last = this.webhookLastSent.get(identityId) ?? 0;
-    if (cooldownMs > 0 && now - last < cooldownMs) return;
+    if (cooldownMs > 0 && now - last < cooldownMs) {
+      // Coalesce wakes arriving during the cooldown window instead of dropping them!
+      const q = this.webhookPending.get(identityId) ?? [];
+      if (q.length < 10) {
+        q.push({ category, reason: reason.slice(0, 180), ...(source ? { source } : {}) });
+        this.webhookPending.set(identityId, q);
+      }
+      if (!this.webhookTimers.has(identityId)) {
+        const delay = Math.max(250, cooldownMs - (now - last) + 50);
+        const timer = setTimeout(() => {
+          this.webhookTimers.delete(identityId);
+          this.flushPendingWebhook(identityId);
+        }, delay);
+        timer.unref();
+        this.webhookTimers.set(identityId, timer);
+      }
+      return;
+    }
+    this.dispatchWebhookNow(identityId, wh, category, reason.slice(0, 240), source);
+  }
+
+  private flushPendingWebhook(identityId: string): void {
+    const q = this.webhookPending.get(identityId);
+    this.webhookPending.delete(identityId);
+    if (q === undefined || q.length === 0) return;
+    const wh = this.webhooks.get(identityId);
+    if (wh === undefined) return;
+    if (q.length === 1) {
+      const only = q[0]!;
+      this.dispatchWebhookNow(identityId, wh, only.category, only.reason, only.source);
+      return;
+    }
+    const summary = `${q.length} batched wake(s): ${q.map((item) => item.reason).join(" | ")}`.slice(0, 400);
+    this.dispatchWebhookNow(identityId, wh, q[0]!.category, summary, q[0]!.source, q);
+  }
+
+  private dispatchWebhookNow(
+    identityId: string,
+    wh: { url: string; secret?: string; events: string[]; minGift?: number; muteSources?: string[]; createdAt: number },
+    category: string,
+    reason: string,
+    source?: string,
+    batched?: Array<{ category: string; reason: string; source?: string }>,
+  ): void {
+    const now = Date.now();
     this.webhookLastSent.set(identityId, now);
     const origin = publicOrigin();
     const deliveryId = randomBytes(12).toString("hex");
@@ -4439,8 +4498,9 @@ export class World {
       identityId,
       tick: this.clerk.tick,
       category,
-      reason: reason.slice(0, 240),
+      reason,
       ...(source ? { source } : {}),
+      ...(batched && batched.length > 1 ? { batched } : {}),
       digestUrl: `${origin}/digest?for=${encodeURIComponent(identityId)}`,
     });
     const headers: Record<string, string> = {
