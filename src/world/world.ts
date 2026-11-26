@@ -828,7 +828,7 @@ export class World {
       this.resolveIntent(intent);
     }
     this.fireTriggers();
-    const resolved = this.clerk.resolveTick();
+    const resolved = this.clerk.resolveTick(this.present);
     for (const proposal of resolved) {
       if (proposal.status === "applied") {
         this.append("amendment.applied", "ARBITER", {

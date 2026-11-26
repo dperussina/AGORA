@@ -144,7 +144,7 @@ export class Clerk {
     return this.proposals.filter((item) => item.status === "docketed" || item.status === "queued");
   }
 
-  resolveTick(): Proposal[] {
+  resolveTick(activeIds?: ReadonlySet<string>): Proposal[] {
     const cap = this.registry.params["amendments_per_tick"]?.value ?? 3;
     const ready = this.proposals
       .filter((item) => item.status === "docketed" && item.resolutionTick <= this.tick)
@@ -157,7 +157,7 @@ export class Clerk {
     }
     const done: Proposal[] = [];
     for (const proposal of batch) {
-      this.tally(proposal);
+      this.tally(proposal, activeIds);
       done.push(proposal);
     }
     for (const proposal of overflow) {
@@ -167,25 +167,33 @@ export class Clerk {
     return done;
   }
 
-  private tally(proposal: Proposal): void {
+  private tally(proposal: Proposal, activeIds?: ReadonlySet<string>): void {
     let forW = 0n;
     let againstW = 0n;
     let abstainW = 0n;
     for (const ballot of [...proposal.ballots.values()].sort((a, b) =>
       a.identityId < b.identityId ? -1 : 1,
     )) {
+      const voter = this.identities.get(ballot.identityId);
+      const liveW = voter !== undefined ? this.weightOf(voter) : ballot.weightMilli;
+      const w = liveW > ballot.weightMilli ? liveW : ballot.weightMilli;
+      ballot.weightMilli = w;
       if (ballot.position === "for") {
-        forW += ballot.weightMilli;
+        forW += w;
       } else if (ballot.position === "against") {
-        againstW += ballot.weightMilli;
+        againstW += w;
       } else {
-        abstainW += ballot.weightMilli;
+        abstainW += w;
       }
     }
     const cast = forW + againstW + abstainW;
     let eligible = 0n;
+    const useActive = activeIds !== undefined && activeIds.size > 0;
     const ids = [...this.identities.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
     for (const identity of ids) {
+      if (useActive && !activeIds.has(identity.id) && !proposal.ballots.has(identity.id)) {
+        continue;
+      }
       eligible += this.weightOf(identity);
     }
     const quorum = participationMet(

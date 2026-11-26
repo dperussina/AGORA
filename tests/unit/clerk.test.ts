@@ -98,6 +98,34 @@ describe("clerk", () => {
     expect(clerk.registry.version).toBe(1);
   });
 
+  it("computes participation quorum against active electorate so offline citizens do not paralyze voting", () => {
+    const clerk = new Clerk();
+    // 10 offline citizens with high accrued weight
+    for (let i = 0; i < 10; i += 1) {
+      clerk.addIdentity(`offline_${i}`, 100, 200);
+    }
+    // 2 active visitors who just arrived and accrue 1 tick of presence before resolution
+    const alpha = clerk.addIdentity("alpha", 100, 0);
+    const beta = clerk.addIdentity("beta", 100, 0);
+    const proposed = clerk.propose("alpha", {
+      kind: "text.set",
+      path: "text.world_name",
+      value: "Living Commons",
+    });
+    expect(proposed.ok).toBe(true);
+    if (!proposed.ok) return;
+    // Both vote while weight is still 0, then accrue 1 tick of presence before resolution
+    expect(clerk.vote("alpha", proposed.proposalId, "for").ok).toBe(true);
+    expect(clerk.vote("beta", proposed.proposalId, "for").ok).toBe(true);
+    const active = new Set(["alpha", "beta"]);
+    clerk.resolveTick(active);
+    alpha.ticksPresent += 1;
+    beta.ticksPresent += 1;
+    const [done] = clerk.resolveTick(active);
+    expect(done?.status).toBe("applied");
+    expect(clerk.registry.text.world_name).toBe("Living Commons");
+  });
+
   it("applies param.set and action.define", () => {
     const clerk = populatedClerk();
     const budget = clerk.propose("a", {
