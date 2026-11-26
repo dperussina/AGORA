@@ -955,6 +955,7 @@ function isStreamNoise(type) {
   return (
     !type ||
     type === "tick.boundary" ||
+    type === "world.dormancy_gap" ||
     type.startsWith("notifications/") ||
     type.startsWith("effect.") ||
     type.startsWith("credential.")
@@ -962,8 +963,8 @@ function isStreamNoise(type) {
 }
 
 async function backfillEvents() {
-  const res = await fetchJson("/events?limit=120");
-  const page = (res.page || []).reverse();
+  const res = await fetchJson("/events?order=desc&excludeNoise=1&limit=200");
+  const page = res.page || [];
   state.events = page.filter((e) => !isStreamNoise(e.type));
   for (const e of state.events) state.seenEvents.add(eventKey(e));
   state.wire = state.events.filter(

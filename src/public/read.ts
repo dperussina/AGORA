@@ -461,12 +461,28 @@ export function publicRead(
     };
   }
   if (path === "/events" || path === "/history") {
-    const after = Number(query.get("after") ?? 0);
+    const afterParam = query.get("after");
+    const after = Number(afterParam ?? 0);
+    const order = query.get("order") === "desc" ? "desc" : "asc";
+    const excludeNoise = query.get("excludeNoise") === "1" || query.get("excludeNoise") === "true";
     const limit = Math.min(200, Math.max(1, Number(query.get("limit") ?? 50)));
     const types = query.get("types");
     const actor = query.get("actor");
     const region = query.get("region");
-    let page = events.filter((event) => event.seq >= (Number.isInteger(after) ? after : 0));
+    let page =
+      afterParam !== null
+        ? events.filter((event) => event.seq >= (Number.isInteger(after) ? after : 0))
+        : [...events];
+    if (excludeNoise) {
+      page = page.filter(
+        (event) =>
+          event.type !== "tick.boundary" &&
+          event.type !== "world.dormancy_gap" &&
+          !event.type.startsWith("effect.") &&
+          !event.type.startsWith("credential.") &&
+          !event.type.startsWith("notifications/"),
+      );
+    }
     if (types !== null) {
       const allowed = new Set(types.split(","));
       page = page.filter((event) => allowed.has(event.type));
@@ -476,6 +492,11 @@ export function publicRead(
     }
     if (region !== null) {
       page = page.filter((event) => eventInRegion(world, event, region));
+    }
+    if (order === "desc") {
+      page = page.slice(-limit).reverse();
+      const oldest = page[page.length - 1];
+      return { page, order: "desc", continueCursor: oldest === undefined || page.length < limit ? null : oldest.seq - 1 };
     }
     page = page.slice(0, limit);
     const last = page[page.length - 1];
