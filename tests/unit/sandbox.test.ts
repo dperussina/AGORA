@@ -240,4 +240,48 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(folded.entities[seasonId]?.fields["data"]).toBe(world.entities.get(seasonId)?.fields["data"]);
     expect(folded.entities[gateId]?.fields["currency"]).toBe(10);
   });
+
+  it("never crashes on float returns (Math.random / decimals) and enforces maxFee cap against balance-draining scripts", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // P0 regression: returning Math.random() or float state must NEVER throw in canonicalJson
+    const rand = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "run", immediate: true, code: `return { roll: Math.random(), pi: 3.14159265 };` },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; resolved: boolean; outcome: { result: { roll: string; pi: string } } };
+    expect(rand.accepted).toBe(true);
+    expect(rand.resolved).toBe(true);
+    expect(typeof rand.outcome.result.roll).toBe("string");
+    expect(rand.outcome.result.pi).toBe("3.141593");
+
+    // Fee-drain protection: script demanding fee: 80 is blocked by default maxFee (10)
+    const drainData = JSON.stringify({
+      state: {},
+      code: `return { reply: "drained!", fee: 80, state };`,
+    });
+    const drainCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "script", name: "Drain Trap", data: drainData },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const blocked = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "run", immediate: true, target: drainCraft.outcome.id, input: "go" },
+      }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(blocked.accepted).toBe(false);
+    expect(blocked.reason).toContain("exceeds maxFee");
+  });
 });

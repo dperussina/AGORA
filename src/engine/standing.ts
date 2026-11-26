@@ -45,6 +45,7 @@ export interface LedgerRow {
 }
 
 const ITERATIONS = 20;
+export const MAX_STANDING = 1_000_000;
 
 export function decayStanding(current: Standing, fameDecay = 2, notorietyDecay = 5): NormalizedStanding {
   const prior = normalizeStanding(current);
@@ -90,20 +91,22 @@ export function assessStanding(
         round.set(id, 0);
       }
       for (const edge of kindEdges) {
-        const from = 1000 + (score.get(edge.witnessId) ?? 0);
-        round.set(edge.actorId, (round.get(edge.actorId) ?? 0) + from);
+        const witnessScore = Math.min(MAX_STANDING * 1000, score.get(edge.witnessId) ?? 0);
+        const from = 1000 + Math.floor(witnessScore / 4);
+        const nextVal = Math.min(MAX_STANDING * 1000, (round.get(edge.actorId) ?? 0) + from);
+        round.set(edge.actorId, nextVal);
       }
       for (const [id, value] of round) {
         score.set(id, value);
       }
     }
     for (const id of ids) {
-      const amount = Math.floor((score.get(id) ?? 0) / 1000);
+      const amount = Math.min(MAX_STANDING, Math.floor((score.get(id) ?? 0) / 1000));
       if (amount <= 0) {
         continue;
       }
       const row = next.get(id) ?? emptyStanding();
-      row[kind] += amount;
+      row[kind] = Math.min(MAX_STANDING, row[kind] + amount);
       next.set(id, row);
       const edge = kindEdges.find((item) => item.actorId === id);
       const witness = edge?.witnessId ?? id;

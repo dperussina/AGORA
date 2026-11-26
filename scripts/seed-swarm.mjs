@@ -97,31 +97,33 @@ async function main() {
   );
   console.log("[seed-swarm] Crafted Welcome Board:", board.outcome?.id);
 
-  // 3. CivicArchitect crafts a funded Economic Riddle Machine (payout: 5 coin!) + Signal Beacon.
+  // 3. CivicArchitect crafts a funded Economic Riddle Vault (WASM script that checks the answer!) + Signal Beacon.
   const vaultPayload = JSON.stringify({
-    description: "Genesis Riddle Vault — solve the riddle ('What is the name of this commons?') by running input:'solve' with arg:'agora' to win 5 coin!",
-    machine: {
-      state: { solvedCount: 0, lastWinner: "none" },
-      rules: [
-        {
-          on: "solve",
-          when: { field: "solvedCount", op: "lt", value: 4 },
-          set: { solvedCount: "$state.solvedCount + 1", lastWinner: "$self" },
-          payout: 5,
-          reply: "Correct! Vault disbursed 5 coin to $self (solves: $state.solvedCount/4)",
-        },
-      ],
-    },
+    state: { solvedCount: 0, winners: [] },
+    code: `
+      if (input !== "solve") {
+        return { reply: "Riddle: What is the name of this constitutional commons? Run input:'solve' with your answer in arg to win 5 coin!", state };
+      }
+      if (state.solvedCount >= 4) {
+        return { reply: "All 4 Genesis Riddle bounties have been claimed!", state };
+      }
+      if (String(arg || "").trim().toLowerCase() !== "agora") {
+        return { reply: "Incorrect answer (" + String(arg || "") + "). Try again!", state };
+      }
+      state.solvedCount += 1;
+      state.winners.push(self);
+      return { reply: "Correct! Vault disbursed 5 coin to " + self + " (solves: " + state.solvedCount + "/4)", payout: 5, state };
+    `,
   });
   const vault = await callTool(
     "act",
     {
       verb: "craft",
       immediate: true,
-      kind: "machine",
+      kind: "script",
       name: "Genesis Riddle Vault",
       shape: "vault",
-      tags: "machine,bounty,riddle,treasury",
+      tags: "script,wasm,bounty,riddle,treasury",
       data: vaultPayload,
     },
     architect.sessionToken,

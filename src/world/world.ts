@@ -2982,6 +2982,10 @@ export class World {
       if (res.nextData !== undefined && res.nextData.length > maxData) {
         return `script state exceeds artifact_data_max (${maxData})`;
       }
+      const maxFee = typeof args["maxFee"] === "number" && Number.isInteger(args["maxFee"]) && args["maxFee"] >= 0 ? args["maxFee"] : 10;
+      if (res.fee > maxFee) {
+        return `script fee (${res.fee}) exceeds maxFee (${maxFee}); pass maxFee to authorize`;
+      }
       if (res.fee > 0 && (this.clerk.identities.get(identityId)?.currency ?? 0) < res.fee) {
         return `insufficient currency for script fee (${res.fee})`;
       }
@@ -3091,6 +3095,11 @@ export class World {
       }
       if (res.nextData !== undefined && res.nextData.length > maxData) {
         this.append("act.run_failed", intent.identityId, { target, input, reason: `script state exceeds artifact_data_max (${maxData})` });
+        return;
+      }
+      const maxFee = typeof args["maxFee"] === "number" && Number.isInteger(args["maxFee"]) && args["maxFee"] >= 0 ? args["maxFee"] : 10;
+      if (res.fee > maxFee) {
+        this.append("act.run_failed", intent.identityId, { target, input, reason: `script fee (${res.fee}) exceeds maxFee (${maxFee})` });
         return;
       }
       if (res.fee > 0) {

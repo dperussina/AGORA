@@ -103,8 +103,11 @@ export function isLegalName(name: string): string | null {
   if (/[\u0000-\u001f\u007f]/.test(name)) {
     return "name may not contain control characters";
   }
-  if (/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/.test(name)) {
+  if (/[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\u00ad\u034f\ufeff]/.test(name)) {
     return "name may not contain zero-width or bidi characters";
+  }
+  if (name !== name.trim() || /\s{2,}/.test(name)) {
+    return "name may not have leading, trailing, or repeated spaces";
   }
   if (/^(arbiter|steward)$/i.test(name.trim())) {
     return "name may not mimic Arbiter or Steward";

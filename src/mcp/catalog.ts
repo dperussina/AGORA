@@ -85,6 +85,7 @@ const ACT_PARAM_BASE = [
   "input",
   "arg",
   "code",
+  "maxFee",
   "visibility",
   "caption",
   "mime",

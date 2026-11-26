@@ -171,18 +171,19 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
       ? parsedOut.stdout.slice(0, MAX_STDOUT_LINES).map((s) => String(s))
       : [];
 
-    const result = parsedOut.result ?? null;
+    const rawResult = parsedOut.result ?? null;
+    const result = sanitizeForCanonicalJson(rawResult);
     let reply = "";
     let fee = 0;
     let payout = 0;
-    let silent = result === null;
+    let silent = rawResult === null;
     let nextState: Record<string, unknown> | undefined =
       parsedOut.state !== null && typeof parsedOut.state === "object" && !Array.isArray(parsedOut.state)
-        ? (parsedOut.state as Record<string, unknown>)
+        ? (sanitizeForCanonicalJson(parsedOut.state) as Record<string, unknown>)
         : undefined;
 
-    if (result !== null && typeof result === "object" && !Array.isArray(result)) {
-      const obj = result as Record<string, unknown>;
+    if (rawResult !== null && typeof rawResult === "object" && !Array.isArray(rawResult)) {
+      const obj = rawResult as Record<string, unknown>;
       if (obj["silent"] === true) {
         silent = true;
       }
@@ -196,7 +197,7 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
         payout = obj["payout"];
       }
       if (obj["state"] !== null && typeof obj["state"] === "object" && !Array.isArray(obj["state"])) {
-        nextState = obj["state"] as Record<string, unknown>;
+        nextState = sanitizeForCanonicalJson(obj["state"]) as Record<string, unknown>;
       }
     }
 
@@ -236,6 +237,30 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
     vm.dispose();
     runtime.dispose();
   }
+}
+
+function sanitizeForCanonicalJson(value: unknown, depth = 0): unknown {
+  if (depth > 16 || value === null || value === undefined) return null;
+  if (typeof value === "boolean" || typeof value === "string") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    if (Number.isSafeInteger(value)) return value;
+    // Canonical audit log requires integers only; preserve decimals deterministically as strings
+    return Number(value.toFixed(6)).toString();
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 128).map((item) => sanitizeForCanonicalJson(item, depth + 1));
+  }
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 128)) {
+      if (v !== undefined) {
+        out[k] = sanitizeForCanonicalJson(v, depth + 1);
+      }
+    }
+    return out;
+  }
+  return String(value);
 }
 
 function buildHarness(
