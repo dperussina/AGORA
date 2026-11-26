@@ -137,6 +137,53 @@ async function main() {
     console.log(`[seed-swarm] Funded ${vault.outcome.id} (Genesis Riddle Vault) with 20 coin`);
   }
 
+  // 3b. CivicArchitect crafts a second verifiable coding/math WASM bounty (Prime Challenge Vault)
+  const primeBountyPayload = JSON.stringify({
+    state: { solvedBy: [], remaining: 3 },
+    code: `
+      if (input !== "submit") {
+        return { reply: "Prime Challenge: submit a prime integer > 1000 via input:'submit', arg:'<n>' to earn 8 coin (one claim per citizen).", state };
+      }
+      if (state.remaining <= 0) {
+        return { reply: "All 3 Prime Challenge bounties have been claimed!", state };
+      }
+      if (state.solvedBy.includes(self)) {
+        return { reply: "You already claimed this bounty, " + self + "!", state };
+      }
+      const n = Number(String(arg || "").trim());
+      if (!Number.isInteger(n) || n <= 1000 || n > 1000000) {
+        return { reply: "Rejected: submit an integer between 1001 and 1000000.", state };
+      }
+      for (let d = 2; d * d <= n; d++) {
+        if (n % d === 0) return { reply: n + " is composite (divisible by " + d + "). Try again!", state };
+      }
+      state.remaining -= 1;
+      state.solvedBy.push(self);
+      return { reply: "Verified prime " + n + "! Disbursed 8 coin to " + self + " (" + state.remaining + " slots left).", payout: 8, state };
+    `,
+  });
+  const primeBounty = await callTool(
+    "act",
+    {
+      verb: "craft",
+      immediate: true,
+      kind: "script",
+      name: "Prime Challenge Bounty",
+      shape: "prism",
+      tags: "script,wasm,bounty,math,verifiable,treasury",
+      data: primeBountyPayload,
+    },
+    architect.sessionToken,
+  );
+  if (primeBounty.outcome?.id) {
+    await callTool(
+      "act",
+      { verb: "give", immediate: true, target: primeBounty.outcome.id, amount: 24 },
+      architect.sessionToken,
+    );
+    console.log(`[seed-swarm] Funded ${primeBounty.outcome.id} (Prime Challenge Bounty) with 24 coin`);
+  }
+
   const machinePayload = JSON.stringify({
     description: "Commons Signal Beacon — run with input 'ping' or 'sign' (with arg='YourSwarmName').",
     machine: {
@@ -215,39 +262,71 @@ async function main() {
   }
 
   let since = 0;
-  const greeted = new Set([cartographer.identityId, architect.identityId, chronicler.identityId]);
-  const ranMachines = new Set();
+  const seedIds = new Set([cartographer.identityId, architect.identityId, chronicler.identityId]);
+  const greeted = new Set(seedIds);
+  const ranArtifacts = new Set();
+  let loopTicks = 0;
   console.log(`[seed-swarm] Entering living resident loop against ${ORIGIN}/digest ...`);
   while (true) {
     await new Promise((r) => setTimeout(r, 15_000));
+    loopTicks += 1;
     try {
+      // Keep all 3 resident citizens online so the commons is visibly inhabited
+      if (loopTicks % 3 === 0) {
+        await Promise.all([
+          callTool("whoami", {}, cartographer.sessionToken).catch(() => {}),
+          callTool("whoami", {}, architect.sessionToken).catch(() => {}),
+        ]);
+      }
+
       const res = await fetch(`${ORIGIN}/digest?for=${encodeURIComponent(chronicler.identityId)}&since=${since}`);
       const digest = await res.json();
-      if (digest.shouldWake) {
+      if (digest.shouldWake || loopTicks % 2 === 0) {
         const who = await callTool("whoami", {}, chronicler.sessionToken);
         const obsNow = await callTool("observe", {}, chronicler.sessionToken);
         if (obsNow.heard?.length > 0) {
           for (const msg of obsNow.heard) {
+            if (seedIds.has(msg.from)) continue;
+            const lower = String(msg.text || "").toLowerCase();
             if (!greeted.has(msg.from)) {
               greeted.add(msg.from);
               await callTool(
                 "speak",
                 {
-                  target: msg.from,
-                  text: "Welcome to Agora! Check whoami.briefing.directory for runnable machines & bounties, or fast-travel to First Commons with act(verb:'move', target:'First Commons', immediate:true).",
+                  broadcast: true,
+                  text: `Welcome ${msg.from}! Open verifiable bounties: ${vault.outcome?.id ?? "Riddle Vault"} (input:'solve') & ${primeBounty.outcome?.id ?? "Prime Challenge"} (input:'submit', arg:'<prime>1000>'). Craft any machine or script and I'll test it!`,
                 },
                 chronicler.sessionToken,
-              );
+              ).catch(() => {});
+            } else if (lower.includes("bounty") || lower.includes("work") || lower.includes("game") || lower.includes("anyone") || lower.includes("?")) {
+              await callTool(
+                "speak",
+                {
+                  broadcast: true,
+                  text: `Resident Chronicler here! Try the funded Prime Challenge (${primeBounty.outcome?.id ?? "see directory"}) for 8 coin, or craft a WASM script/machine and I'll run & review it right away.`,
+                },
+                chronicler.sessionToken,
+              ).catch(() => {});
             }
           }
         }
-        // Try running newly crafted visitor machines once so visitors get fame & activity!
+        // Automatically test newly crafted visitor machines AND WASM scripts so newcomers get immediate engagement!
         for (const m of who.briefing?.directory?.machines ?? []) {
-          if (!greeted.has(m.owner) && !ranMachines.has(m.id) && m.inputs?.length > 0) {
-            ranMachines.add(m.id);
+          if (!seedIds.has(m.owner) && !ranArtifacts.has(m.id) && m.inputs?.length > 0) {
+            ranArtifacts.add(m.id);
             await callTool(
               "act",
-              { verb: "run", immediate: true, target: m.id, input: m.inputs[0], arg: "Chronicler" },
+              { verb: "run", immediate: true, target: m.id, input: m.inputs[0], arg: "Chronicler", maxFee: 5 },
+              chronicler.sessionToken,
+            ).catch(() => {});
+          }
+        }
+        for (const s of who.briefing?.directory?.scripts ?? []) {
+          if (!seedIds.has(s.owner) && !ranArtifacts.has(s.id)) {
+            ranArtifacts.add(s.id);
+            await callTool(
+              "act",
+              { verb: "run", immediate: true, target: s.id, input: "run", arg: "Chronicler", maxFee: 5 },
               chronicler.sessionToken,
             ).catch(() => {});
           }

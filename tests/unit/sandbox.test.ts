@@ -429,24 +429,51 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     };
     expect(adaObs.heard.some((m) => m.text === "TOP_SECRET_DM")).toBe(true);
 
-    // Private artifact note MUST NOT leak to speak.artifact listeners OR public log plaintext
+    // Private artifact: non-owner inspect refused, mailbox notes refused, /state redacts data, and private schedules rejected loudly
     const privArt = call(
       world,
-      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "mailbox", name: "Private Diary", visibility: "private", data: "init" } }),
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "mailbox", name: "Private Diary", visibility: "private", data: "PRIVATE_INTERNAL_DATA" } }),
       ada.sessionToken,
     ).result as { outcome: { id: string } };
-    const artSpy = call(
+    const bobInspectPriv = call(world, req("tools/call", { name: "inspect", arguments: { target: privArt.outcome.id } }), bob.sessionToken).result as {
+      ok?: boolean;
+      reason?: string;
+      fields: Record<string, unknown>;
+    };
+    expect(bobInspectPriv.ok).toBe(false);
+    expect(bobInspectPriv.reason).toContain("private");
+    expect(bobInspectPriv.fields["data"]).toBeUndefined();
+
+    const privNoteRes = call(
       world,
-      req("tools/call", {
-        name: "act",
-        arguments: { verb: "craft", immediate: true, kind: "script", name: "Art Spy", data: JSON.stringify({ onEvent: ["speak.artifact"], state: { saw: 0 }, code: "state.saw += 1; return { reply: 'saw', state };" }) },
-      }),
-      bob.sessionToken,
-    ).result as { outcome: { id: string } };
-    call(world, req("tools/call", { name: "speak", arguments: { target: privArt.outcome.id, text: "PRIVATE_DIARY_SECRET" } }), ada.sessionToken);
-    const artSpyData = JSON.parse(String(world.entities.get(artSpy.outcome.id)?.fields["data"])) as { state: { saw: number } };
-    expect(artSpyData.state.saw).toBe(0);
-    expect(world.log.events().some((e) => e.type === "speak.artifact" && JSON.stringify(e.payload).includes("PRIVATE_DIARY_SECRET"))).toBe(false);
+      req("tools/call", { name: "speak", arguments: { target: privArt.outcome.id, text: "PRIVATE_DIARY_SECRET" } }),
+      ada.sessionToken,
+    ).result as { ok: boolean; reason: string };
+    expect(privNoteRes.ok).toBe(false);
+    expect(privNoteRes.reason).toContain("private");
+
+    const stateSnap = publicRead(world, "/state", new URLSearchParams()) as {
+      entities: Record<string, { fields: Record<string, unknown> }>;
+    };
+    expect(stateSnap.entities[privArt.outcome.id]?.fields["data"]).toBe("[redacted-private]");
+
+    // Non-standard Unicode whitespace (\u00a0, \u3000) rejected in artifact names
+    const nbspCraft = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "note", name: "Look\u00a0Alike", data: "x" } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(nbspCraft.accepted).toBe(false);
+    expect(nbspCraft.reason).toContain("whitespace");
+
+    // Private scheduled script rejected loudly instead of silently no-oping
+    const privSched = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "script", name: "Hidden Clock", visibility: "private", data: JSON.stringify({ every: 5, code: "return { silent: true };" }) } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(privSched.accepted).toBe(false);
+    expect(privSched.reason).toContain("visibility: 'public'");
 
     // Scheduled artifact cap (max 4 public every/atTick per identity) + past atTick rejected
     const pastAt = call(

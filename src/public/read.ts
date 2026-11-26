@@ -1,6 +1,7 @@
 import { parseCellString } from "../engine/cell.ts";
 import type { Entity } from "../engine/effects.ts";
 import { chebyshev } from "../engine/geography.ts";
+import { canonicalJson } from "../engine/hash.ts";
 import { publicStanding } from "../engine/standing.ts";
 import { merkleRoot } from "../engine/segment.ts";
 import type { Position } from "../engine/tick.ts";
@@ -210,7 +211,9 @@ export function publicRead(
         currency: ident.currency,
       }))
       .sort((a, b) => b.fame - a.fame || (a.id < b.id ? -1 : 1));
-    const stateHash = sha256Hex(JSON.stringify({ tick: world.clerk.tick, tipSeq: tip?.seq ?? -1, tipHash: tip?.hash ?? null, merkleRoot: root, standing }));
+    const stateHash = sha256Hex(
+      canonicalJson({ tick: world.clerk.tick, tipSeq: tip?.seq ?? -1, tipHash: tip?.hash ?? null, merkleRoot: root, standing }),
+    );
     return {
       tick: world.clerk.tick,
       tipSeq: tip?.seq ?? -1,
@@ -393,11 +396,16 @@ export function publicRead(
   }
   if (path === "/state") {
     const tick = query.get("tick");
-    if (tick !== null) {
-      const sliced = events.filter((event) => event.tick <= Number(tick));
-      return { ...foldWorld(sliced) };
+    const folded = tick !== null ? foldWorld(events.filter((event) => event.tick <= Number(tick))) : foldWorld(events);
+    const entities: Record<string, unknown> = {};
+    for (const [id, ent] of Object.entries(folded.entities)) {
+      if (ent.fields["visibility"] === "private") {
+        entities[id] = { ...ent, fields: { ...ent.fields, data: "[redacted-private]" } };
+      } else {
+        entities[id] = ent;
+      }
     }
-    return { ...foldWorld(events) };
+    return { ...folded, entities };
   }
   if (path === "/snapshots") {
     const tip = events[events.length - 1];

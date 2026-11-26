@@ -100,6 +100,10 @@ export function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+export function hmacSha256Hex(key: Buffer, value: string): string {
+  return createHmac("sha256", key).update(value, "utf8").digest("hex");
+}
+
 export function isLegalArtifactLabel(value: string, field: string, maxLen: number): string | null {
   if (value.length > maxLen) {
     return `${field} too long (max ${maxLen})`;
@@ -109,6 +113,9 @@ export function isLegalArtifactLabel(value: string, field: string, maxLen: numbe
   }
   if (/[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\u00ad\u034f\ufeff]/.test(value)) {
     return `${field} may not contain zero-width or bidi characters`;
+  }
+  if (/[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/.test(value)) {
+    return `${field} may not contain non-standard whitespace characters`;
   }
   if (value !== value.trim() || /\s{2,}/.test(value)) {
     return `${field} may not have leading, trailing, or repeated spaces`;

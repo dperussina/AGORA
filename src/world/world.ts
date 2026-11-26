@@ -47,7 +47,7 @@ import { applyMove, axisSize, nextBudget, type Intent, type Position } from "../
 import type { Actor } from "../engine/types.ts";
 import { validatePatch, type Patch } from "../engine/validate.ts";
 import { foldWorld, occupancyAtTick } from "../engine/world-fold.ts";
-import { isLegalArtifactLabel, isLegalName, sha256Hex as sha256Text } from "../identity/secrets.ts";
+import { hmacSha256Hex, isLegalArtifactLabel, isLegalName } from "../identity/secrets.ts";
 import { IdentityStore, type StoredIdentity } from "../identity/store.ts";
 import { listTools, TOOL_NAMES, type ToolName } from "../mcp/catalog.ts";
 import { completeArgument } from "../mcp/completions.ts";
@@ -153,6 +153,7 @@ export class World {
   private readonly heardCursor = new Map<string, number>();
   private readonly clientTelemetry = new Map<string, number>();
   private runningArtifactTriggers = false;
+  private readonly dmHmacKey = randomBytes(32);
   readonly record: Array<{ tick: number; type: string; payload: Record<string, unknown> }> = [];
   readonly listenLog: Array<{ tick: number; type: string; actor: string; payload: Record<string, unknown> }> = [];
   private readonly speakCounts = new Map<string, number>();
@@ -742,7 +743,7 @@ export class World {
       case "act":
         return this.act(identity.id, args);
       case "inspect":
-        return this.inspect(args["target"]);
+        return this.inspect(args["target"], identity.id);
       case "propose":
         return this.handlePropose(identity, args);
       case "vote": {
@@ -1644,7 +1645,7 @@ export class World {
     }
   }
 
-  private inspect(target: unknown): Json {
+  private inspect(target: unknown, callerId?: string): Json {
     if (typeof target !== "string") {
       return { target: null, fields: {}, reason: "target required" };
     }
@@ -1743,6 +1744,9 @@ export class World {
     }
     const entity = this.entities.get(target);
     if (entity !== undefined) {
+      if (entity.fields["visibility"] === "private" && entity.fields["owner"] !== callerId) {
+        return { target, fields: {}, ok: false, reason: "artifact is private" };
+      }
       return {
         target,
         fields: {
@@ -2142,7 +2146,12 @@ export class World {
       "speak",
       identityId,
       isPrivateDm
-        ? { textHash: sha256Text(text), hearers, identityId, private: true }
+        ? {
+            textHash: hmacSha256Hex(this.dmHmacKey, `${this.clerk.tick}:${this.log.tip()?.seq ?? 0}:${identityId}:${text}`),
+            hearers,
+            identityId,
+            private: true,
+          }
         : { text, hearers, identityId },
     );
     this.fireTriggers("speak.end", { selfId: identityId });
@@ -2151,8 +2160,8 @@ export class World {
 
   private speakToArtifact(identityId: string, artifact: Entity, text: string): Json {
     const owner = typeof artifact.fields["owner"] === "string" ? artifact.fields["owner"] : undefined;
-    if (artifact.fields["visibility"] === "private" && owner !== identityId) {
-      return { ok: false, reason: "artifact is private" };
+    if (artifact.fields["visibility"] === "private") {
+      return { ok: false, reason: "cannot leave mailbox notes on a private artifact (mailbox notes are stored in public ledger state)" };
     }
     const from = this.bodyOf(identityId);
     const inNexus = this.anchorAt(from)?.class === "nexus";
@@ -2185,14 +2194,7 @@ export class World {
       this.inbox.set(owner, list);
       hearers.push(owner);
     }
-    const isPrivateArt = artifact.fields["visibility"] === "private";
-    this.append(
-      "speak.artifact",
-      identityId,
-      isPrivateArt
-        ? { target: artifact.id, textHash: sha256Text(text), hearers, identityId, private: true }
-        : { target: artifact.id, text, hearers, identityId },
-    );
+    this.append("speak.artifact", identityId, { target: artifact.id, text, hearers, identityId });
     this.witnessEntityInteraction(identityId, artifact);
     this.fireTriggers("speak.end", { selfId: identityId });
     return { ok: true, target: artifact.id, text, hearers, budgetSpent: 0 };
@@ -2665,7 +2667,9 @@ export class World {
       if (e.fields["owner"] !== ownerId || e.fields["visibility"] === "private") continue;
       const raw = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
       const meta = artifactAutomationMeta(raw);
-      if (meta.every !== undefined || meta.atTick !== undefined) count += 1;
+      const activeEvery = meta.every !== undefined;
+      const activeAtTick = meta.atTick !== undefined && meta.atTick >= this.clerk.tick;
+      if (activeEvery || activeAtTick) count += 1;
     }
     return count;
   }
@@ -2700,6 +2704,10 @@ export class World {
       return "visibility must be public or private";
     }
     const meta = artifactAutomationMeta(data);
+    const hasAuto = meta.onEvent !== undefined || meta.every !== undefined || meta.atTick !== undefined;
+    if (vis === "private" && hasAuto) {
+      return "scheduled or reactive automation requires visibility: 'public'";
+    }
     if (vis === "public" && meta.onEvent !== undefined && this.reactiveListenerCount(identityId) >= 4) {
       return "reactive listener limit reached (max 4 public onEvent artifacts per identity)";
     }
@@ -2723,6 +2731,14 @@ export class World {
     const cites = typeof args["cites"] === "string" ? args["cites"] : "";
     if (cites.length > 500) {
       return "cites too long";
+    }
+    for (const rawCite of cites.split(",")) {
+      const cid = rawCite.trim();
+      if (cid.length === 0) continue;
+      const citedEnt = this.entities.get(cid);
+      if (citedEnt !== undefined && citedEnt.fields["visibility"] === "private" && citedEnt.fields["owner"] !== identityId) {
+        return "cannot cite private artifact";
+      }
     }
     const posArg = typeof args["position"] === "string" ? args["position"] : undefined;
     if (posArg !== undefined && posArg.length > 0) {
@@ -2831,6 +2847,10 @@ export class World {
     const nextVis = typeof args["visibility"] === "string" ? args["visibility"] : String(entity.fields["visibility"] ?? "public");
     const nextData = typeof args["data"] === "string" ? args["data"] : String(entity.fields["data"] ?? "");
     const nextMeta = artifactAutomationMeta(nextData);
+    const hasNextAuto = nextMeta.onEvent !== undefined || nextMeta.every !== undefined || nextMeta.atTick !== undefined;
+    if (nextVis === "private" && hasNextAuto) {
+      return "scheduled or reactive automation requires visibility: 'public'";
+    }
     if (nextVis === "public" && nextMeta.onEvent !== undefined && this.reactiveListenerCount(identityId, entity.id) >= 4) {
       return "reactive listener limit reached (max 4 public onEvent artifacts per identity)";
     }
