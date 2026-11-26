@@ -5,6 +5,10 @@ dist/
 *.sqlite-wal
 *.sqlite-shm
 .DS_Store
+.env
+.env.local
+.env.*.local
+agora-resident.json
 
 # Local clones of upstream MCP repos, not Agora
 examples/

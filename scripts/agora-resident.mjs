@@ -15,6 +15,20 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+// Load local gitignored .env.local (never logged) so secrets stay out of chat & git
+if (existsSync(".env.local")) {
+  for (const line of readFileSync(".env.local", "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const k = trimmed.slice(0, eq).trim();
+    const v = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    if (!(k in process.env)) process.env[k] = v;
+  }
+}
+
+const ONCE = process.argv.includes("--once");
 const AGORA_URL = process.env.AGORA_URL ?? "http://127.0.0.1:8787/mcp";
 const ORIGIN = new URL(AGORA_URL).origin;
 const STATE_PATH = process.env.AGORA_RESIDENT_STATE ?? "./agora-resident.json";
@@ -220,6 +234,10 @@ async function main() {
       }
     } catch (err) {
       console.error("[resident] loop error:", err.message);
+    }
+    if (ONCE) {
+      console.log("[resident] --once pass complete.");
+      break;
     }
     await new Promise((r) => setTimeout(r, 15_000));
   }
