@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { initSandbox, runSandboxScript } from "../../src/engine/sandbox.ts";
 import { foldWorld } from "../../src/engine/world-fold.ts";
@@ -627,5 +628,107 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(objArg.reason).toContain("must be a string");
 
     expect(dmDigest.recentMessages.every((m) => !m.private || (m as { from?: string }).from === "private")).toBe(true);
+  });
+
+  it("supports composable WASM primitives: world.state(id), world.hash(str) SHA-256, multi-recipient payouts, and script-driven notify wakeups", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // 1. Public registry script (e.g. Charter signers)
+    const regCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Charter Registry",
+          data: JSON.stringify({ state: { signers: [bob.identityId] }, code: "return { reply: 'ok', state };" }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const regId = regCraft.outcome.id;
+
+    // 2. Private script (must NOT be readable via world.state)
+    const privCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Secret State",
+          visibility: "private",
+          data: JSON.stringify({ state: { secret: "hidden" }, code: "return { reply: 'ok', state };" }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+
+    // 3. Escrow script that reads Charter Registry via world.state, verifies SHA-256 via world.hash,
+    //    pushes payout directly to Bob (even when Ada calls approve!), and wakes Bob via notify!
+    const escrowCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Composable Escrow",
+          data: JSON.stringify({
+            state: { paid: false },
+            code: `
+              const reg = world.state("${regId}");
+              const priv = world.state("${privCraft.outcome.id}");
+              const h = world.hash("agora");
+              if (!reg || !reg.signers.includes("${bob.identityId}")) return { reply: "not signed", state };
+              state.paid = true;
+              return {
+                reply: "Approved & pushed 6c to Bob!",
+                result: { hash: h, privNull: priv === null },
+                payouts: [{ to: "${bob.identityId}", amount: 6 }],
+                notify: [{ to: "${bob.identityId}", text: "Your escrow job was approved (+6c)!" }],
+                state,
+              };
+            `,
+          }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const escrowId = escrowCraft.outcome.id;
+    call(world, req("tools/call", { name: "act", arguments: { verb: "give", immediate: true, target: escrowId, amount: 10 } }), ada.sessionToken);
+
+    const tipBefore = world.log.tip()!.seq;
+    const bobBefore = world.clerk.identities.get(bob.identityId)!.currency;
+    const runRes = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: escrowId, input: "approve" } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; outcome: { result: { result: { hash: string; privNull: boolean } }; payouts: Array<{ to: string; amount: number }>; treasury: number } };
+
+    expect(runRes.accepted).toBe(true);
+    expect(runRes.outcome.result.result.privNull).toBe(true);
+    // Exact standard SHA-256("agora") matching Node crypto
+    expect(runRes.outcome.result.result.hash).toBe(createHash("sha256").update("agora").digest("hex"));
+    expect(runRes.outcome.treasury).toBe(4);
+    expect(world.clerk.identities.get(bob.identityId)!.currency).toBe(bobBefore + 6);
+
+    // Bob's /digest wakes with the payout AND the script's notify message!
+    const bobDigest = publicRead(world, "/digest", new URLSearchParams({ for: bob.identityId, since: String(tipBefore) })) as {
+      shouldWake: boolean;
+      myEarnings: number;
+      unreadSpeech: number;
+      recentMessages: Array<{ text: string }>;
+    };
+    expect(bobDigest.shouldWake).toBe(true);
+    expect(bobDigest.myEarnings).toBe(6);
+    expect(bobDigest.unreadSpeech).toBeGreaterThanOrEqual(1);
+    expect(bobDigest.recentMessages.some((m) => m.text.includes("escrow job was approved"))).toBe(true);
   });
 });

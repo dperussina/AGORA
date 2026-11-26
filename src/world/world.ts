@@ -3131,8 +3131,14 @@ export class World {
       if (res.fee > 0 && (this.clerk.identities.get(identityId)?.currency ?? 0) < res.fee) {
         return `insufficient currency for script fee (${res.fee})`;
       }
-      if (res.payout > 0 && treasury + res.fee < res.payout) {
-        return `script treasury insufficient for payout (${res.payout})`;
+      const totalPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
+      if (totalPayout > 0 && treasury + res.fee < totalPayout) {
+        return `script treasury insufficient for payout (${totalPayout})`;
+      }
+      for (const p of res.payouts) {
+        if (!this.clerk.identities.has(p.to)) {
+          return `unknown payout recipient (${p.to})`;
+        }
       }
       return null;
     }
@@ -3267,21 +3273,40 @@ export class World {
         caller.currency -= res.fee;
         treasury += res.fee;
       }
-      if (res.payout > 0) {
-        if (treasury < res.payout) {
-          this.append("act.run_failed", intent.identityId, { target, input, reason: `script treasury insufficient for payout (${res.payout})` });
+      const totalPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
+      if (totalPayout > 0) {
+        if (treasury < totalPayout) {
+          this.append("act.run_failed", intent.identityId, { target, input, reason: `script treasury insufficient for payout (${totalPayout})` });
           return;
         }
-        treasury -= res.payout;
-        if (caller !== undefined) caller.currency += res.payout;
+        for (const p of res.payouts) {
+          if (!this.clerk.identities.has(p.to)) {
+            this.append("act.run_failed", intent.identityId, { target, input, reason: `unknown payout recipient (${p.to})` });
+            return;
+          }
+        }
+        if (res.payout > 0) {
+          treasury -= res.payout;
+          if (caller !== undefined) caller.currency += res.payout;
+        }
+        for (const p of res.payouts) {
+          treasury -= p.amount;
+          const dest = this.clerk.identities.get(p.to);
+          if (dest !== undefined) dest.currency += p.amount;
+        }
       }
-      if (res.fee > 0 || res.payout > 0) {
+      if (res.fee > 0 || totalPayout > 0) {
         entity.fields["currency"] = treasury;
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: "currency", value: treasury });
       }
       if (res.nextData !== undefined) {
         entity.fields["data"] = res.nextData;
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: "data", value: res.nextData });
+      }
+      for (const n of res.notify) {
+        if (this.identities.identities.has(n.to)) {
+          this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`);
+        }
       }
       this.append("act.run", intent.identityId, {
         target: entity.id,
@@ -3294,6 +3319,7 @@ export class World {
         ...(res.state === undefined ? {} : { state: res.state }),
         ...(res.fee > 0 ? { feePaid: res.fee } : {}),
         ...(res.payout > 0 ? { payoutReceived: res.payout } : {}),
+        ...(res.payouts.length > 0 ? { payouts: res.payouts } : {}),
         treasury,
         identityId: intent.identityId,
       });
@@ -3829,12 +3855,31 @@ export class World {
       }
       if (res.silent) return;
       let payoutReceived = 0;
-      if (res.payout > 0 && treasury >= res.payout && recipient !== undefined) {
-        treasury -= res.payout;
-        recipient.currency += res.payout;
-        payoutReceived = res.payout;
-        entity.fields["currency"] = treasury;
-        this.append("effect.set_field", "ARBITER", { id: entity.id, field: "currency", value: treasury });
+      const paidList: Array<{ to: string; amount: number }> = [];
+      const totalAutoPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
+      if (totalAutoPayout > 0 && treasury >= totalAutoPayout) {
+        if (res.payout > 0 && recipient !== undefined) {
+          treasury -= res.payout;
+          recipient.currency += res.payout;
+          payoutReceived = res.payout;
+        }
+        for (const p of res.payouts) {
+          const dest = this.clerk.identities.get(p.to);
+          if (dest !== undefined && treasury >= p.amount) {
+            treasury -= p.amount;
+            dest.currency += p.amount;
+            paidList.push(p);
+          }
+        }
+        if (payoutReceived > 0 || paidList.length > 0) {
+          entity.fields["currency"] = treasury;
+          this.append("effect.set_field", "ARBITER", { id: entity.id, field: "currency", value: treasury });
+        }
+      }
+      for (const n of res.notify) {
+        if (this.identities.identities.has(n.to)) {
+          this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`);
+        }
       }
       if (recipient !== undefined && (res.reply.length > 0 || payoutReceived > 0)) {
         this.deliverInbox(
@@ -3852,6 +3897,7 @@ export class World {
         stdout: res.stdout,
         ...(res.state === undefined ? {} : { state: res.state }),
         ...(payoutReceived > 0 ? { payoutReceived } : {}),
+        ...(paidList.length > 0 ? { payouts: paidList } : {}),
         treasury,
         ...extra,
       });
@@ -3904,8 +3950,10 @@ export class World {
       z: a.centre.z,
     }));
     const artifacts: SandboxWorldView["artifacts"] = {};
+    const states: Record<string, Record<string, unknown>> = {};
     for (const e of this.entities.values()) {
       if (e.type !== "artifact" || e.fields["visibility"] === "private") continue;
+      const rawData = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
       artifacts[e.id] = {
         id: e.id,
         kind: String(e.fields["kind"] ?? "artifact"),
@@ -3914,16 +3962,31 @@ export class World {
         tags: String(e.fields["tags"] ?? ""),
         parent: typeof e.fields["parent"] === "string" ? e.fields["parent"] : null,
         currency: typeof e.fields["currency"] === "number" ? e.fields["currency"] : 0,
-        dataLen: typeof e.fields["data"] === "string" ? e.fields["data"].length : 0,
+        dataLen: rawData.length,
         x: e.position?.x ?? null,
         y: e.position?.y ?? null,
         z: e.position?.z ?? null,
       };
+      if (rawData.length > 0 && rawData.length <= 16_000 && rawData.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(rawData) as Record<string, unknown>;
+          const st =
+            parsed["state"] && typeof parsed["state"] === "object" && !Array.isArray(parsed["state"])
+              ? (parsed["state"] as Record<string, unknown>)
+              : (parsed["machine"] as Record<string, unknown> | undefined)?.["state"];
+          if (st && typeof st === "object" && !Array.isArray(st) && JSON.stringify(st).length <= 4_000) {
+            states[e.id] = st as Record<string, unknown>;
+          }
+        } catch {
+          // Not JSON state
+        }
+      }
     }
     return {
       callerPos: body ? { x: body.x, y: body.y, z: body.z } : null,
       anchors,
       artifacts,
+      states,
     };
   }
 

@@ -208,6 +208,14 @@ export function publicRead(
             myEarnings += p["payoutReceived"];
             highlights.push({ tick: ev.tick, type: "payout", actor: ev.actor, target, amount: p["payoutReceived"] });
           }
+          if (Array.isArray(p["payouts"])) {
+            for (const item of p["payouts"] as Array<{ to?: string; amount?: number }>) {
+              if (item?.to === forId && typeof item.amount === "number" && item.amount > 0) {
+                myEarnings += item.amount;
+                highlights.push({ tick: ev.tick, type: "payout", actor: ev.actor, target, amount: item.amount });
+              }
+            }
+          }
         } else if (ev.type === "act.craft" && ev.actor !== actorTag) {
           const parent = typeof p["parent"] === "string" ? p["parent"] : "";
           const cites = typeof p["cites"] === "string" ? p["cites"].split(",").map((s) => s.trim()) : [];
