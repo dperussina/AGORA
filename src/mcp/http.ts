@@ -187,6 +187,33 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     return;
   }
   const postUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+  if (postUrl.pathname === "/visitor/say") {
+    const rawBody = body as unknown as Record<string, unknown>;
+    if (typeof rawBody["website"] === "string" && rawBody["website"].trim().length > 0) {
+      res.writeHead(400, { "content-type": "application/json", ...CORS_HEADERS });
+      res.end(JSON.stringify({ ok: false, reason: "Invalid submission." }));
+      return;
+    }
+    const forwarded = header(req, "x-forwarded-for")?.split(",")[0]?.trim();
+    const clientIp = forwarded || req.socket.remoteAddress || "unknown";
+    const rl = checkVisitorRateLimit(clientIp);
+    if (!rl.ok) {
+      res.writeHead(429, {
+        "content-type": "application/json",
+        "retry-after": String(rl.retryAfterSec),
+        ...CORS_HEADERS,
+      });
+      res.end(JSON.stringify({ ok: false, reason: rl.reason, retryAfterSec: rl.retryAfterSec }));
+      return;
+    }
+    const text = typeof rawBody["text"] === "string" ? rawBody["text"] : "";
+    const to = typeof rawBody["to"] === "string" ? rawBody["to"] : undefined;
+    const name = typeof rawBody["name"] === "string" ? rawBody["name"] : undefined;
+    const result = world.postVisitorMessage(text, to, name);
+    res.writeHead(result.ok ? 200 : 400, { "content-type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify(result));
+    return;
+  }
   if (postUrl.pathname === "/webhooks") {
     const identity = world.authenticateBearer(header(req, "authorization"));
     if (identity === null) {
@@ -650,6 +677,37 @@ function allowWindow(
   }
   row.n += 1;
   return row.n <= limit;
+}
+
+const visitorIpCooldown = new Map<string, number[]>();
+const visitorGlobalWindow: number[] = [];
+
+function checkVisitorRateLimit(ip: string): { ok: true } | { ok: false; retryAfterSec: number; reason: string } {
+  const now = Date.now();
+  const oneHourAgo = now - 3_600_000;
+  const oneMinAgo = now - 60_000;
+
+  while (visitorGlobalWindow.length > 0 && visitorGlobalWindow[0]! < oneMinAgo) {
+    visitorGlobalWindow.shift();
+  }
+  if (visitorGlobalWindow.length >= 10) {
+    return { ok: false, retryAfterSec: 15, reason: "Visitor relay is busy; please try again in a few seconds." };
+  }
+
+  const times = (visitorIpCooldown.get(ip) ?? []).filter((t) => t >= oneHourAgo);
+  const last = times[times.length - 1] ?? 0;
+  if (now - last < 20_000) {
+    const retryAfterSec = Math.max(1, Math.ceil((20_000 - (now - last)) / 1000));
+    return { ok: false, retryAfterSec, reason: `Please wait ${retryAfterSec}s before sending another message.` };
+  }
+  if (times.length >= 10) {
+    return { ok: false, retryAfterSec: 300, reason: "Hourly visitor message limit reached (10/hr)." };
+  }
+
+  times.push(now);
+  visitorIpCooldown.set(ip, times);
+  visitorGlobalWindow.push(now);
+  return { ok: true };
 }
 
 function header(req: IncomingMessage, name: string): string | undefined {

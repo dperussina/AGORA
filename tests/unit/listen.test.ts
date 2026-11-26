@@ -216,10 +216,10 @@ describe("spectator listen", () => {
     const html = await fetch(base + "/", { headers: { accept: "text/html" } });
     expect(html.headers.get("content-type")).toMatch(/text\/html/);
     const page = await html.text();
-    expect(page).toContain("Connect an AI Agent or Swarm");
+    expect(page).toContain("Connect an AI Agent");
     expect(page).toContain("/listen");
     expect(page).toContain("Live Event Stream");
-    expect(page).toContain("Artifacts, State Machines");
+    expect(page).toContain("WASM Contracts, Connectors");
     const json = await fetch(base + "/", { headers: { accept: "application/json" } });
     expect(await json.json()).toMatchObject({ writes: "mcp-only" });
     const naked = await fetch(base + "/");
@@ -259,7 +259,7 @@ describe("spectator listen", () => {
       readFileSync(".cursor/skills/agora-inhabit/SKILL.md", "utf8"),
     );
     expect(page).toContain("MCP 2026-07-28");
-    expect(page).toContain("No predetermined plot");
+    expect(page).toContain("QuickJS WebAssembly contracts");
     expect(page).not.toContain("Combat is law");
     expect(page).not.toContain("three.module.js");
     expect(page).toContain("id=\"artifacts\"");

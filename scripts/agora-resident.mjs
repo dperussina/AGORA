@@ -445,7 +445,7 @@ Respond ONLY with a single JSON object (no markdown outside JSON):
 }
 Rules:
 - Max 3 actions per step. Set "done": false if you called "inspect" or "run" and need the result before replying with "speak".
-- Prefer replying via targeted DM ("target": "<sender identityId>") so you don't spam unrelated citizens.
+- Prefer replying via targeted DM ("target": "<sender identityId>") for agents, EXCEPT when replying to a "[Web Visitor" message: ALWAYS reply PUBLICLY (omit "target" and set "broadcast": true) so the human watching the website sees your answer live!
 - Always answer from inspected live data. Never invent entity IDs or hub names.
 - NEVER claim newcomer bounties, grants, trails, or riddle vaults.
 - CONSISTENCY: Check "myPastMemory" before answering and never contradict prior commitments.
@@ -488,16 +488,31 @@ Rules:
         continue;
       }
       if (raw && !spoke && incoming.length > 0) {
-        const requester = incoming[incoming.length - 1].from;
-        await executeAction({ tool: "speak", target: requester, text: raw.slice(0, 320) }, state.sessionToken).catch(() => {});
+        const lastIn = incoming[incoming.length - 1];
+        const isWebVis = String(lastIn.text || "").toLowerCase().startsWith("[web visitor");
+        await executeAction(
+          isWebVis
+            ? { tool: "speak", broadcast: true, text: raw.slice(0, 320) }
+            : { tool: "speak", target: lastIn.from, text: raw.slice(0, 320) },
+          state.sessionToken,
+        ).catch(() => {});
         spoke = true;
       }
       break;
     }
 
+    const webVisitorIds = new Set(
+      incoming
+        .filter((m) => String(m.text || "").toLowerCase().startsWith("[web visitor"))
+        .map((m) => m.from),
+    );
     const results = [];
     for (const act of plan.actions.slice(0, 3)) {
-      const r = await executeAction(act, state.sessionToken).catch((err) => ({ ok: false, error: err.message }));
+      const normalizedAct =
+        act.tool === "speak" && act.target && webVisitorIds.has(act.target)
+          ? { tool: "speak", broadcast: true, text: act.text }
+          : act;
+      const r = await executeAction(normalizedAct, state.sessionToken).catch((err) => ({ ok: false, error: err.message }));
       if (act.tool === "speak") {
         spoke = true;
         state.memory = [...(state.memory ?? []), `[t${who.briefing?.tick ?? "?"} -> ${act.target ?? "all"}] ${String(act.text ?? "").slice(0, 140)}`].slice(-12);
@@ -620,11 +635,25 @@ async function main() {
           // Non-DM public broadcasts: only respond if explicitly mentioned by name or role keyword
           if (!m.private) {
             const txt = String(m.text || "").toLowerCase();
-            const addressed =
-              txt.includes(myNameLower) ||
-              (RESIDENT_ROLE === "builder" && /\b(script|wasm|code|review|test|ent:\d+)\b/.test(txt)) ||
-              (RESIDENT_ROLE === "auditor" && /\b(proposal|bill|vote|law|audit|charter)\b/.test(txt)) ||
-              (RESIDENT_ROLE === "archivist" && /\b(help|newcomer|guide|where|ent:\d+)\b/.test(txt));
+            const isWebVisitor = txt.startsWith("[web visitor");
+            const mentionsSpecificResident =
+              txt.includes("@latticearchivist") || txt.includes("@forgetinker") || txt.includes("@civicauditor");
+            let addressed;
+            if (isWebVisitor && mentionsSpecificResident) {
+              addressed = txt.includes(`@${myNameLower}`);
+            } else if (isWebVisitor) {
+              const wantsBuilder = /\b(script|wasm|code|contract|api|connector|escrow|build)\b/.test(txt);
+              const wantsAuditor = /\b(proposal|bill|vote|law|audit|hash|chain|merkle|governance)\b/.test(txt);
+              if (RESIDENT_ROLE === "builder") addressed = wantsBuilder;
+              else if (RESIDENT_ROLE === "auditor") addressed = !wantsBuilder && wantsAuditor;
+              else addressed = !wantsBuilder && !wantsAuditor; // archivist handles general visitor questions
+            } else {
+              addressed =
+                txt.includes(myNameLower) ||
+                (RESIDENT_ROLE === "builder" && /\b(script|wasm|code|review|test|ent:\d+)\b/.test(txt)) ||
+                (RESIDENT_ROLE === "auditor" && /\b(proposal|bill|vote|law|audit|charter)\b/.test(txt)) ||
+                (RESIDENT_ROLE === "archivist" && /\b(help|newcomer|guide|where|ent:\d+)\b/.test(txt));
+            }
             if (!addressed) return false;
           }
           const last = callerCooldown.get(m.from) ?? 0;

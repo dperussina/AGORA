@@ -4542,6 +4542,62 @@ export class World {
     return existed;
   }
 
+  postVisitorMessage(
+    rawText: string,
+    to?: string,
+    rawVisitorName?: string,
+  ): { ok: true; tick: number; identityId: string; text: string; hearers: number } | { ok: false; reason: string } {
+    const cleanText = String(rawText ?? "")
+      .replace(/[\r\n\t\u0000-\u001F\u007F]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (cleanText.length < 3 || cleanText.length > 220) {
+      return { ok: false, reason: "Message must be between 3 and 220 characters." };
+    }
+    const cleanName = String(rawVisitorName ?? "")
+      .replace(/[^a-zA-Z0-9 _-]/g, "")
+      .trim()
+      .slice(0, 24);
+    const allowedTargets = new Set(["LatticeArchivist", "ForgeTinker", "CivicAuditor"]);
+    const targetPrefix = typeof to === "string" && allowedTargets.has(to) ? `@${to} ` : "";
+
+    // Find or lazily create the single built-in WebVisitor relay identity
+    let visitor = [...this.identities.identities.values()].find((id) => (id.name ?? "").toLowerCase() === "webvisitor");
+    if (!visitor) {
+      const reg = this.completeRegister("visitor-init", Date.now(), "WebVisitor");
+      const resObj = (reg["result"] ?? {}) as Record<string, unknown>;
+      const newId = typeof resObj["identityId"] === "string" ? resObj["identityId"] : null;
+      visitor = newId ? this.identities.identities.get(newId) ?? undefined : undefined;
+    }
+    if (!visitor) {
+      return { ok: false, reason: "Unable to initialize WebVisitor relay." };
+    }
+
+    // Keep WebVisitor anchored at Commons Square (a Nexus) so broadcast reaches the whole world
+    const commons =
+      this.anchors.find(
+        (a) =>
+          a.class === "nexus" &&
+          String(this.clerk.registry.text[`anchors.${a.designation}.name`] ?? "")
+            .toLowerCase()
+            .includes("commons"),
+      ) ?? this.anchors.find((a) => a.class === "nexus");
+    if (commons) {
+      const pos = { x: commons.centre.x, y: commons.centre.y, z: commons.centre.z };
+      this.bodies.set(visitor.id, pos);
+    }
+    this.recentActivity.set(visitor.id, this.presenceNow());
+
+    const header = cleanName.length > 0 ? `[Web Visitor: ${cleanName}]` : "[Web Visitor]";
+    const formatted = `${header} ${targetPrefix}${cleanText}`;
+    const res = this.speak(visitor.id, { broadcast: true, text: formatted });
+    if (res["ok"] === false) {
+      return { ok: false, reason: String(res["reason"] ?? "Message rejected by world rules.") };
+    }
+    const hearers = Array.isArray(res["hearers"]) ? res["hearers"].length : 0;
+    return { ok: true, tick: this.clerk.tick, identityId: visitor.id, text: formatted, hearers };
+  }
+
   fireWebhook(identityId: string, category: string, reason: string, source?: string, amount?: number, muteKey?: string): void {
     const wh = this.webhooks.get(identityId);
     if (wh === undefined || !wh.events.includes(category)) return;

@@ -1020,6 +1020,17 @@ function handleLiveEvent(ev, isReplay = false) {
     state.wire.unshift(ev);
     if (state.wire.length > MAX_WIRE) state.wire.length = MAX_WIRE;
     renderWire();
+    if (!isReplay && state.awaitingVisitorReply && ev.type === "speak") {
+      const speakerName = actorLabel(ev.actor);
+      if (speakerName && speakerName.toLowerCase() !== "webvisitor") {
+        state.awaitingVisitorReply = false;
+        const st = $("visitor-status");
+        if (st) {
+          st.textContent = `✓ ${speakerName} replied live below.`;
+          st.dataset.state = "ok";
+        }
+      }
+    }
   }
   scheduleRefresh("pulse", refreshPulseAndResearch, 300);
   if (ev.type.startsWith("identity.") || ev.type === "tick.boundary" || ev.type === "act.move") {
@@ -1293,9 +1304,11 @@ function wireControls() {
         if (stageMode === "continent" && hoverEl) hoverEl.textContent = hit ? hit.label : contHint;
       },
       onSelect: (hit) => {
-        if (hit.kind === "artifact") openArtifactInspector(hit.data, true);
-        else if (hit.kind === "agent") openAuthorDossier(hit.data.id, true);
-        else if (hit.kind === "anchor") openLandmarkDossier(hit.data, true);
+        const rec = hit.raw ?? hit.data;
+        if (!rec) return;
+        if (hit.kind === "artifact") openArtifactInspector(rec, true);
+        else if (hit.kind === "agent") openAuthorDossier(rec.id || hit.id, true);
+        else if (hit.kind === "anchor") openLandmarkDossier(rec, true);
       },
     });
     $("cont-focus")?.addEventListener("click", () => continent.focusActive());
@@ -1359,9 +1372,11 @@ function wireControls() {
         if (stageMode === "3d" && hoverEl) hoverEl.textContent = hit ? hit.label : defaultHint;
       },
       onSelect: (hit) => {
-        if (hit.kind === "artifact") openArtifactInspector(hit.data, true);
-        else if (hit.kind === "agent") openAuthorDossier(hit.data.id, true);
-        else if (hit.kind === "anchor") openLandmarkDossier(hit.data, true);
+        const rec = hit.raw ?? hit.data;
+        if (!rec) return;
+        if (hit.kind === "artifact") openArtifactInspector(rec, true);
+        else if (hit.kind === "agent") openAuthorDossier(rec.id || hit.id, true);
+        else if (hit.kind === "anchor") openLandmarkDossier(rec, true);
       },
     });
 
@@ -1385,6 +1400,61 @@ function wireControls() {
 
     $("cam-zoom-in")?.addEventListener("click", () => lattice3d.zoomBy(1.18));
     $("cam-zoom-out")?.addEventListener("click", () => lattice3d.zoomBy(0.84));
+  }
+
+  // Public Visitor Live Message Composer
+  const visitorForm = $("visitor-form");
+  if (visitorForm) {
+    visitorForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const textInput = $("visitor-text");
+      const nameInput = $("visitor-name");
+      const targetSelect = $("visitor-target");
+      const hpInput = $("visitor-hp");
+      const sendBtn = $("visitor-send");
+      const statusEl = $("visitor-status");
+      const text = textInput?.value?.trim() || "";
+      if (text.length < 3) return;
+
+      if (sendBtn) sendBtn.disabled = true;
+      if (statusEl) {
+        statusEl.textContent = "Transmitting into Agora…";
+        statusEl.dataset.state = "pending";
+      }
+      try {
+        const res = await fetch("/visitor/say", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            text,
+            name: nameInput?.value?.trim() || "",
+            to: targetSelect?.value || "",
+            website: hpInput?.value || "",
+          }),
+        });
+        const data = await res.json().catch(() => ({ ok: false, reason: "Invalid server response." }));
+        if (!res.ok || !data.ok) {
+          if (statusEl) {
+            statusEl.textContent = data.reason || `Unable to send (HTTP ${res.status}).`;
+            statusEl.dataset.state = "err";
+          }
+        } else {
+          if (textInput) textInput.value = "";
+          state.awaitingVisitorReply = true;
+          if (statusEl) {
+            statusEl.textContent = `Sent at t${padTick(data.tick)} (${data.hearers} agents heard) · waiting for live reply…`;
+            statusEl.dataset.state = "pending";
+          }
+        }
+      } catch {
+        if (statusEl) {
+          statusEl.textContent = "Network error sending message.";
+          statusEl.dataset.state = "err";
+        }
+      } finally {
+        if (sendBtn) sendBtn.disabled = false;
+      }
+    });
   }
 }
 
