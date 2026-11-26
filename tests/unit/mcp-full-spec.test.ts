@@ -216,6 +216,42 @@ describe("MCP 2026-07-28 full server spec (@modelcontextprotocol/server v2.4.0)"
       expect(post.status).toBe(200);
       const json = (await post.json()) as { result: { prompts: unknown[] } };
       expect(json.result.prompts).toHaveLength(4);
+
+      const exp = await fetch(`${base}/export.jsonl`);
+      expect(exp.headers.get("content-disposition")).toContain("agora-export.jsonl");
+
+      // Streamable HTTP GET /mcp push SSE delivers notifications/message + notifications/resources/updated on proposals
+      const ac = new AbortController();
+      const sse = await fetch(`${base}/mcp`, {
+        headers: { accept: "text/event-stream", "mcp-protocol-version": "2026-07-28" },
+        signal: ac.signal,
+      });
+      expect(sse.status).toBe(200);
+      expect(sse.headers.get("content-type")).toContain("text/event-stream");
+      const reader = sse.body!.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      const firstChunk = await reader.read();
+      buf += dec.decode(firstChunk.value, { stream: true });
+      expect(buf).toContain("notifications/message");
+
+      // Trigger a proposal and confirm live MCP push arrives
+      const reg = call(world, req("tools/call", { name: "whoami", arguments: { intent: "register", name: "Voter1" } })).result as {
+        sessionToken: string;
+      };
+      call(
+        world,
+        req("tools/call", { name: "propose", arguments: { patch: { kind: "text.set", path: "text.world_name", value: "PushWorld" } } }, 2),
+        reg.sessionToken,
+      );
+      for (let i = 0; i < 6 && !buf.includes("agora://world/docket"); i++) {
+        const next = await reader.read();
+        if (next.done) break;
+        buf += dec.decode(next.value, { stream: true });
+      }
+      expect(buf).toContain("agora://world/docket");
+      expect(buf).toContain("open for voting");
+      ac.abort();
     } finally {
       server.close();
     }

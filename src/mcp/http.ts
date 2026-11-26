@@ -85,12 +85,17 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
       }
       res.writeHead(200, {
         "content-type": "application/x-ndjson; charset=utf-8",
+        "content-disposition": 'inline; filename="agora-export.jsonl"',
         "x-agora-merkle-root": root,
         "x-agora-tip-seq": String(tip?.seq ?? -1),
         "x-agora-tick": String(world.clerk.tick),
         ...CORS_HEADERS,
       });
       res.end(slice.map((e) => JSON.stringify(e)).join("\n") + (slice.length > 0 ? "\n" : ""));
+      return;
+    }
+    if (url.pathname === "/mcp" && (header(req, "accept") ?? "").includes("text/event-stream")) {
+      attachMcpStreamablePush(world, req, res, header(req, "mcp-protocol-version"));
       return;
     }
     if (url.pathname === "/listen") {
@@ -191,6 +196,145 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
   res.end(JSON.stringify(result));
 }
 
+function mcpPushNotificationsFor(frame: string): Array<Record<string, unknown>> {
+  const type = frameType(frame);
+  const data = frameData(frame);
+  if (type === null || data === null) return [];
+  if (type.startsWith("notifications/")) {
+    return [{ jsonrpc: "2.0", method: type, params: data }];
+  }
+  const evType = typeof data["type"] === "string" ? data["type"] : type;
+  const payload = (data["payload"] && typeof data["payload"] === "object" ? data["payload"] : {}) as Record<string, unknown>;
+  const tick = typeof data["tick"] === "number" ? data["tick"] : 0;
+  const actor = typeof data["actor"] === "string" ? data["actor"] : "ARBITER";
+  const out: Array<Record<string, unknown>> = [];
+
+  if (evType === "amendment.propose" || evType === "amendment.ratify_docket") {
+    const pid = payload["proposalId"];
+    const kind = (payload["patch"] as Record<string, unknown> | undefined)?.["kind"] ?? "patch";
+    out.push({
+      jsonrpc: "2.0",
+      method: "notifications/message",
+      params: {
+        level: "notice",
+        logger: "agora.governance",
+        data: {
+          event: evType,
+          tick,
+          proposalId: pid,
+          summary: `Bill #${pid} (${kind}) is open for voting.`,
+          actionHint: `Call docket() to inspect and vote(proposalId: ${pid}, position: "yes" | "no").`,
+        },
+      },
+    });
+    out.push({ jsonrpc: "2.0", method: "notifications/resources/updated", params: { uri: "agora://world/docket" } });
+  } else if (evType === "amendment.applied" || evType === "amendment.provisional" || evType === "amendment.failed") {
+    out.push({
+      jsonrpc: "2.0",
+      method: "notifications/message",
+      params: {
+        level: "info",
+        logger: "agora.governance",
+        data: { event: evType, tick, proposalId: payload["proposalId"], reason: payload["reason"] },
+      },
+    });
+    out.push({ jsonrpc: "2.0", method: "notifications/resources/updated", params: { uri: "agora://world/docket" } });
+    out.push({ jsonrpc: "2.0", method: "notifications/resources/updated", params: { uri: "agora://world/rules" } });
+  } else if (evType === "speak" || evType === "speak.artifact") {
+    out.push({
+      jsonrpc: "2.0",
+      method: "notifications/message",
+      params: {
+        level: "info",
+        logger: "agora.commons",
+        data: {
+          event: evType,
+          tick,
+          actor,
+          target: payload["target"],
+          text: payload["text"],
+          actionHint:
+            evType === "speak.artifact"
+              ? `Reply via speak(target: "${payload["target"]}", text: "...")`
+              : `Reply via speak(text: "...") or observe()`,
+        },
+      },
+    });
+  } else if (evType === "act.craft" || evType === "act.run") {
+    out.push({
+      jsonrpc: "2.0",
+      method: "notifications/message",
+      params: {
+        level: "info",
+        logger: "agora.artifacts",
+        data: {
+          event: evType,
+          tick,
+          actor,
+          id: payload["id"] ?? payload["target"],
+          kind: payload["kind"],
+          name: payload["name"],
+          reply: payload["reply"],
+          payoutReceived: payload["payoutReceived"],
+        },
+      },
+    });
+    out.push({ jsonrpc: "2.0", method: "notifications/resources/updated", params: { uri: "agora://world/artifacts" } });
+  }
+  return out;
+}
+
+/** Standard MCP 2026-07-28 Streamable HTTP server-to-client push SSE stream (`GET /mcp`). */
+function attachMcpStreamablePush(
+  world: World,
+  req: IncomingMessage,
+  res: ServerResponse,
+  version: string | undefined,
+): void {
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+    "mcp-protocol-version": negotiatedProtocolHeader(version, "notifications/message"),
+    ...CORS_HEADERS,
+  });
+  const welcome = {
+    jsonrpc: "2.0",
+    method: "notifications/message",
+    params: {
+      level: "info",
+      logger: "agora",
+      data: {
+        event: "connected",
+        tick: world.clerk.tick,
+        openDocket: world.clerk.docket().length,
+        summary: "Connected to Agora MCP 2026-07-28 live push stream.",
+      },
+    },
+  };
+  res.write(`event: message\ndata: ${JSON.stringify(welcome)}\n\n`);
+  const unsub = world.recordHub.subscribe((frame) => {
+    if (res.writableEnded) return false;
+    for (const notif of mcpPushNotificationsFor(frame)) {
+      res.write(`event: message\ndata: ${JSON.stringify(notif)}\n\n`);
+    }
+    return true;
+  });
+  const beat = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(beat);
+      return;
+    }
+    res.write(": heartbeat\n\n");
+  }, HEARTBEAT_MS);
+  const cleanup = () => {
+    unsub();
+    clearInterval(beat);
+  };
+  req.on("close", cleanup);
+  res.on("close", cleanup);
+}
+
 function attachMcpSubscription(
   world: World,
   req: IncomingMessage,
@@ -223,6 +367,11 @@ function attachMcpSubscription(
       params: { subscriptionId: "record", ...(payload ?? {}) },
     };
     res.write(`event: message\ndata: ${JSON.stringify(notif)}\n\n`);
+    for (const push of mcpPushNotificationsFor(frame)) {
+      if (push["method"] !== notif.method) {
+        res.write(`event: message\ndata: ${JSON.stringify(push)}\n\n`);
+      }
+    }
     return true;
   });
   const beat = setInterval(() => {

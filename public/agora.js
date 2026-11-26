@@ -921,10 +921,20 @@ function eventKey(ev) {
   return `${ev.tick ?? 0}|${ev.type}|${ev.actor || ""}|${JSON.stringify(ev.payload || {})}`;
 }
 
+function isStreamNoise(type) {
+  return (
+    !type ||
+    type === "tick.boundary" ||
+    type.startsWith("notifications/") ||
+    type.startsWith("effect.") ||
+    type.startsWith("credential.")
+  );
+}
+
 async function backfillEvents() {
-  const res = await fetchJson("/events?limit=80");
+  const res = await fetchJson("/events?limit=120");
   const page = (res.page || []).reverse();
-  state.events = page.filter((e) => e.type !== "tick.boundary");
+  state.events = page.filter((e) => !isStreamNoise(e.type));
   for (const e of state.events) state.seenEvents.add(eventKey(e));
   state.wire = state.events.filter((e) => e.type === "speak" || e.type === "speak.artifact" || e.type === "act.mark");
   if (state.events[0]) {
@@ -963,7 +973,7 @@ function handleLiveEvent(ev, isReplay = false) {
       renderBlueprint();
     }
   }
-  if (ev.type !== "tick.boundary" && !ev.type.startsWith("notifications/")) {
+  if (!isStreamNoise(ev.type)) {
     $("strip-latest").textContent = summarizeEvent(ev);
     state.events.unshift({ ...ev, _fresh: !isReplay });
     if (state.events.length > MAX_STREAM) state.events.length = MAX_STREAM;

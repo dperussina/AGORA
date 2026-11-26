@@ -26,9 +26,10 @@ export function negotiatedProtocolHeader(version: string | undefined, method: st
 export function serverCapabilities(): Json {
   return {
     tools: { listChanged: true },
-    resources: { listChanged: true },
+    resources: { subscribe: true, listChanged: true },
     prompts: { listChanged: false },
     completions: {},
+    logging: {},
     extensions: {
       "io.modelcontextprotocol/tasks": {},
     },
