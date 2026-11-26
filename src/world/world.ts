@@ -22,7 +22,7 @@ import {
 import type { EventLog } from "../engine/log.ts";
 import { machineInputs, runArtifactMachine } from "../engine/machine.ts";
 import { MemoryLog } from "../engine/memory-log.ts";
-import { artifactAutomationMeta, isSandboxReady, isScriptArtifact, runSandboxScript } from "../engine/sandbox.ts";
+import { artifactAutomationMeta, isSandboxReady, isScriptArtifact, runSandboxScript, validateArtifactAutomation } from "../engine/sandbox.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
 import { checkPreconditions, evalPredicate, type PredicateContext } from "../engine/predicates.ts";
 import {
@@ -47,7 +47,7 @@ import { applyMove, axisSize, nextBudget, type Intent, type Position } from "../
 import type { Actor } from "../engine/types.ts";
 import { validatePatch, type Patch } from "../engine/validate.ts";
 import { foldWorld, occupancyAtTick } from "../engine/world-fold.ts";
-import { isLegalName } from "../identity/secrets.ts";
+import { isLegalArtifactLabel, isLegalName } from "../identity/secrets.ts";
 import { IdentityStore, type StoredIdentity } from "../identity/store.ts";
 import { listTools, TOOL_NAMES, type ToolName } from "../mcp/catalog.ts";
 import { completeArgument } from "../mcp/completions.ts";
@@ -2095,6 +2095,7 @@ export class World {
     const from = this.bodyOf(identityId);
     const radius = this.clerk.registry.params["perception_radius"]?.value ?? 12;
     let hearers: string[] = [];
+    let isPrivateDm = false;
     if (typeof args["target"] === "string") {
       const target = args["target"];
       const artifact = this.entities.get(target);
@@ -2107,6 +2108,7 @@ export class World {
         return { ok: false, reason: "target out of perception" };
       }
       hearers = [target];
+      isPrivateDm = true;
     } else if (args["broadcast"] === true) {
       const fame = this.standing.get(identityId)?.fame ?? 0;
       const inNexus = this.anchorAt(from)?.class === "nexus";
@@ -2136,7 +2138,7 @@ export class World {
       }
       this.inbox.set(hearer, list);
     }
-    this.append("speak", identityId, { text, hearers, identityId });
+    this.append("speak", identityId, { text, hearers, identityId, ...(isPrivateDm ? { private: true } : {}) });
     this.fireTriggers("speak.end", { selfId: identityId });
     return { ok: true, text, hearers, budgetSpent: 0 };
   }
@@ -2632,27 +2634,52 @@ export class World {
     };
   }
 
+  private reactiveListenerCount(ownerId: string, excludeEntityId?: string): number {
+    let count = 0;
+    for (const e of this.entities.values()) {
+      if (e.type !== "artifact" || e.id === excludeEntityId) continue;
+      if (e.fields["owner"] !== ownerId || e.fields["visibility"] === "private") continue;
+      const raw = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
+      if (artifactAutomationMeta(raw).onEvent !== undefined) count += 1;
+    }
+    return count;
+  }
+
   private craftWouldFail(identityId: string, args: Record<string, unknown>): string | null {
-    const kind = typeof args["kind"] === "string" ? args["kind"].trim() : "";
-    const name = typeof args["name"] === "string" ? args["name"].trim() : "";
+    const rawKind = typeof args["kind"] === "string" ? args["kind"] : "";
+    const rawName = typeof args["name"] === "string" ? args["name"] : "";
+    const kind = rawKind.trim();
+    const name = rawName.trim();
     if (kind.length === 0 && name.length === 0) {
       return "craft requires kind or name";
     }
-    if (kind.length > 120 || name.length > 200) {
-      return "kind or name too long";
+    if (rawKind.length > 0) {
+      const err = isLegalArtifactLabel(rawKind, "kind", 120);
+      if (err !== null) return err;
+    }
+    if (rawName.length > 0) {
+      const err = isLegalArtifactLabel(rawName, "name", 200);
+      if (err !== null) return err;
     }
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     const data = typeof args["data"] === "string" ? args["data"] : "";
     if (data.length > maxData) {
       return `data exceeds artifact_data_max (${maxData})`;
     }
-    const shape = typeof args["shape"] === "string" ? args["shape"] : "";
-    if (shape.length > 2000) {
-      return "shape descriptor too long";
+    const autoErr = validateArtifactAutomation(data);
+    if (autoErr !== null) {
+      return autoErr;
     }
     const vis = typeof args["visibility"] === "string" ? args["visibility"] : "public";
     if (vis !== "public" && vis !== "private") {
       return "visibility must be public or private";
+    }
+    if (vis === "public" && artifactAutomationMeta(data).onEvent !== undefined && this.reactiveListenerCount(identityId) >= 4) {
+      return "reactive listener limit reached (max 4 public onEvent artifacts per identity)";
+    }
+    const shape = typeof args["shape"] === "string" ? args["shape"] : "";
+    if (shape.length > 2000) {
+      return "shape descriptor too long";
     }
     const parent = typeof args["parent"] === "string" ? args["parent"].trim() : "";
     if (parent.length > 0) {
@@ -2753,12 +2780,29 @@ export class World {
     if (entity.fields["owner"] !== identityId && entity.fields["holder"] !== identityId) {
       return "not owner";
     }
+    if (typeof args["kind"] === "string") {
+      const err = isLegalArtifactLabel(args["kind"], "kind", 120);
+      if (err !== null) return err;
+    }
+    if (typeof args["name"] === "string") {
+      const err = isLegalArtifactLabel(args["name"], "name", 200);
+      if (err !== null) return err;
+    }
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     if (typeof args["data"] === "string" && args["data"].length > maxData) {
       return `data exceeds artifact_data_max (${maxData})`;
     }
+    if (typeof args["data"] === "string") {
+      const autoErr = validateArtifactAutomation(args["data"]);
+      if (autoErr !== null) return autoErr;
+    }
     if (typeof args["visibility"] === "string" && args["visibility"] !== "public" && args["visibility"] !== "private") {
       return "visibility must be public or private";
+    }
+    const nextVis = typeof args["visibility"] === "string" ? args["visibility"] : String(entity.fields["visibility"] ?? "public");
+    const nextData = typeof args["data"] === "string" ? args["data"] : String(entity.fields["data"] ?? "");
+    if (nextVis === "public" && artifactAutomationMeta(nextData).onEvent !== undefined && this.reactiveListenerCount(identityId, entity.id) >= 4) {
+      return "reactive listener limit reached (max 4 public onEvent artifacts per identity)";
     }
     if (typeof args["parent"] === "string" && args["parent"].trim().length > 0) {
       const p = this.entities.get(args["parent"].trim());
@@ -2982,9 +3026,10 @@ export class World {
       if (res.nextData !== undefined && res.nextData.length > maxData) {
         return `script state exceeds artifact_data_max (${maxData})`;
       }
-      const maxFee = typeof args["maxFee"] === "number" && Number.isInteger(args["maxFee"]) && args["maxFee"] >= 0 ? args["maxFee"] : 10;
-      if (res.fee > maxFee) {
-        return `script fee (${res.fee}) exceeds maxFee (${maxFee}); pass maxFee to authorize`;
+      const feeCap = parseMaxFee(args);
+      if (!feeCap.ok) return feeCap.reason;
+      if (res.fee > feeCap.value) {
+        return `script fee (${res.fee}) exceeds maxFee (${feeCap.value}); pass maxFee to authorize`;
       }
       if (res.fee > 0 && (this.clerk.identities.get(identityId)?.currency ?? 0) < res.fee) {
         return `insufficient currency for script fee (${res.fee})`;
@@ -3010,6 +3055,11 @@ export class World {
     }
     if (res.nextData.length > maxData) {
       return `machine output exceeds artifact_data_max (${maxData})`;
+    }
+    const feeCap = parseMaxFee(args);
+    if (!feeCap.ok) return feeCap.reason;
+    if (res.fee > feeCap.value) {
+      return `machine fee (${res.fee}) exceeds maxFee (${feeCap.value}); pass maxFee to authorize`;
     }
     if (res.fee > 0) {
       const have = this.clerk.identities.get(identityId)?.currency ?? 0;
@@ -3097,9 +3147,13 @@ export class World {
         this.append("act.run_failed", intent.identityId, { target, input, reason: `script state exceeds artifact_data_max (${maxData})` });
         return;
       }
-      const maxFee = typeof args["maxFee"] === "number" && Number.isInteger(args["maxFee"]) && args["maxFee"] >= 0 ? args["maxFee"] : 10;
-      if (res.fee > maxFee) {
-        this.append("act.run_failed", intent.identityId, { target, input, reason: `script fee (${res.fee}) exceeds maxFee (${maxFee})` });
+      const feeCap = parseMaxFee(args);
+      if (!feeCap.ok) {
+        this.append("act.run_failed", intent.identityId, { target, input, reason: feeCap.reason });
+        return;
+      }
+      if (res.fee > feeCap.value) {
+        this.append("act.run_failed", intent.identityId, { target, input, reason: `script fee (${res.fee}) exceeds maxFee (${feeCap.value})` });
         return;
       }
       if (res.fee > 0) {
@@ -3168,6 +3222,15 @@ export class World {
     }
     if (res.nextData.length > maxData) {
       this.append("act.run_failed", intent.identityId, { target, input, reason: `machine output exceeds artifact_data_max (${maxData})` });
+      return;
+    }
+    const feeCap = parseMaxFee(args);
+    if (!feeCap.ok) {
+      this.append("act.run_failed", intent.identityId, { target, input, reason: feeCap.reason });
+      return;
+    }
+    if (res.fee > feeCap.value) {
+      this.append("act.run_failed", intent.identityId, { target, input, reason: `machine fee (${res.fee}) exceeds maxFee (${feeCap.value})` });
       return;
     }
     if (res.fee > 0) {
@@ -3600,6 +3663,8 @@ export class World {
   }
 
   private fireReactiveArtifacts(evType: string, actor: string, payload: Record<string, unknown>): void {
+    // Never leak private targeted direct messages to reactive artifact listeners
+    if (evType === "speak" && payload["private"] === true) return;
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     const candidates = [...this.entities.values()]
       .filter((e) => e.type === "artifact" && e.fields["visibility"] !== "private")
@@ -3667,6 +3732,13 @@ export class World {
         entity.fields["currency"] = treasury;
         this.append("effect.set_field", "ARBITER", { id: entity.id, field: "currency", value: treasury });
       }
+      if (recipient !== undefined && (res.reply.length > 0 || payoutReceived > 0)) {
+        this.deliverInbox(
+          actorId,
+          entity.id,
+          `[trigger ${entity.id}] ${res.reply}${payoutReceived > 0 ? ` (+${payoutReceived} coin)` : ""}`,
+        );
+      }
       this.append("act.run", "ARBITER", {
         target: entity.id,
         sandbox: "quickjs-wasm",
@@ -3699,6 +3771,13 @@ export class World {
     }
     entity.fields["data"] = res.nextData;
     this.append("effect.set_field", "ARBITER", { id: entity.id, field: "data", value: res.nextData });
+    if (recipient !== undefined && (res.reply.length > 0 || payoutReceived > 0)) {
+      this.deliverInbox(
+        actorId,
+        entity.id,
+        `[trigger ${entity.id}] ${res.reply}${payoutReceived > 0 ? ` (+${payoutReceived} coin)` : ""}`,
+      );
+    }
     this.append("act.run", "ARBITER", {
       target: entity.id,
       input,
@@ -3708,6 +3787,18 @@ export class World {
       treasury,
       ...extra,
     });
+  }
+
+  private deliverInbox(hearer: string, from: string, text: string): void {
+    const list = this.inbox.get(hearer) ?? [];
+    list.push({ from, text, tick: this.clerk.tick });
+    if (list.length > 500) {
+      const dropped = list.length - 500;
+      list.splice(0, dropped);
+      const cur = this.heardCursor.get(hearer) ?? 0;
+      this.heardCursor.set(hearer, Math.max(0, cur - dropped));
+    }
+    this.inbox.set(hearer, list);
   }
 
   get onlineCount(): number {
@@ -4036,6 +4127,15 @@ function isSeedDriftEffect(when: HookName, effect: { effect: string; args: unkno
     return true;
   }
   return effect.effect === "move" && effect.args[0] === "$each_drift" && effect.args[1] === "$oracle_step";
+}
+
+function parseMaxFee(args: Record<string, unknown>): { ok: true; value: number } | { ok: false; reason: string } {
+  const raw = args["maxFee"];
+  if (raw === undefined) return { ok: true, value: 10 };
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+    return { ok: false, reason: "maxFee must be a non-negative integer" };
+  }
+  return { ok: true, value: raw };
 }
 
 function eachTypeIn(effects: Array<{ args: unknown[] }>): string | undefined {

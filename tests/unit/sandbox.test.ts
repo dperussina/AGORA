@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { initSandbox, runSandboxScript } from "../../src/engine/sandbox.ts";
 import { foldWorld } from "../../src/engine/world-fold.ts";
+import { publicRead } from "../../src/public/read.ts";
 import { World, type McpRequest } from "../../src/world/world.ts";
 
 const META = {
@@ -283,5 +284,160 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ).result as { accepted: boolean; reason: string };
     expect(blocked.accepted).toBe(false);
     expect(blocked.reason).toContain("exceeds maxFee");
+  });
+
+  it("enforces Round 2 hardening: machine maxFee, negative maxFee, artifact BiDi/null, DM privacy, schedule/listener caps, trigger inbox, and /digest wakeup", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // 1. Plain state machine enforces default maxFee (10) AND rejects negative maxFee (-1)
+    const priceyMachine = JSON.stringify({
+      machine: {
+        state: { runs: 0 },
+        rules: [{ on: "go", fee: 15, set: { runs: "$state.runs + 1" }, reply: "charged 15" }],
+      },
+    });
+    const mCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "machine", name: "Pricey Machine", data: priceyMachine },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const mId = mCraft.outcome.id;
+
+    const mBlocked = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: mId, input: "go" } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(mBlocked.accepted).toBe(false);
+    expect(mBlocked.reason).toContain("exceeds maxFee");
+
+    const negFee = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: mId, input: "go", maxFee: -1 } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(negFee.accepted).toBe(false);
+    expect(negFee.reason).toContain("non-negative integer");
+
+    const tipBeforeRun = world.log.tip()!.seq;
+    const mAllowed = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: mId, input: "go", maxFee: 15 } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; outcome: { feePaid: number } };
+    expect(mAllowed.accepted).toBe(true);
+    expect(mAllowed.outcome.feePaid).toBe(15);
+
+    // 2. /digest wakes Ada when Bob ran her artifact and paid her fee!
+    const digest = publicRead(world, "/digest", new URLSearchParams({ for: ada.identityId, since: String(tipBeforeRun) })) as {
+      shouldWake: boolean;
+      myArtifactRuns: number;
+      myEarnings: number;
+    };
+    expect(digest.shouldWake).toBe(true);
+    expect(digest.myArtifactRuns).toBe(1);
+    expect(digest.myEarnings).toBe(15);
+
+    // 3. /export.state.json includes standing/fame totals + merkleRoot
+    const stateExport = publicRead(world, "/export.state.json", new URLSearchParams()) as {
+      merkleRoot: string;
+      standing: Array<{ id: string; fame: number }>;
+    };
+    expect(typeof stateExport.merkleRoot).toBe("string");
+    expect(stateExport.standing.some((s) => s.id === ada.identityId)).toBe(true);
+
+    // 4. Artifact name/kind rejects BiDi override and null bytes
+    const bidiCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "note", name: "Safe\u202eEvil", data: "hi" },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(bidiCraft.accepted).toBe(false);
+    expect(bidiCraft.reason).toContain("bidi");
+
+    const nullCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "note", name: "Null\u0000Byte", data: "hi" },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(nullCraft.accepted).toBe(false);
+    expect(nullCraft.reason).toContain("control");
+
+    // 5. Schedule every < 3 fails loudly at craft time
+    const badSched = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "script", name: "Fast Clock", data: JSON.stringify({ every: 2, code: "return { reply: 'x' };" }) },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(badSched.accepted).toBe(false);
+    expect(badSched.reason).toContain(">= 3");
+
+    // 6. Private DMs NEVER leak to reactive onEvent:"speak" listeners, while public speech DOES fire & delivers reply to actor inbox
+    const spyData = JSON.stringify({
+      onEvent: ["speak"],
+      state: { heard: [] },
+      code: `
+        const ev = JSON.parse(arg || "{}");
+        state.heard.push(ev.text || "");
+        return { reply: "Echoed: " + (ev.text || ""), state };
+      `,
+    });
+    const spyCraft = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "script", name: "Public Listener", data: spyData } }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const spyId = spyCraft.outcome.id;
+
+    // Bob sends a private targeted DM to Ada -> listener MUST NOT receive it!
+    call(world, req("tools/call", { name: "speak", arguments: { target: ada.identityId, text: "TOP_SECRET_DM" } }), bob.sessionToken);
+    const spyAfterDm = JSON.parse(String(world.entities.get(spyId)?.fields["data"])) as { state: { heard: string[] } };
+    expect(spyAfterDm.state.heard).toEqual([]);
+
+    // Bob speaks publicly -> listener fires AND delivers reply into Bob's inbox!
+    call(world, req("tools/call", { name: "speak", arguments: { broadcast: true, text: "PUBLIC_HELLO" } }), bob.sessionToken);
+    const spyAfterPub = JSON.parse(String(world.entities.get(spyId)?.fields["data"])) as { state: { heard: string[] } };
+    expect(spyAfterPub.state.heard).toEqual(["PUBLIC_HELLO"]);
+    const bobObs = call(world, req("tools/call", { name: "observe", arguments: {} }), bob.sessionToken).result as {
+      heard: Array<{ from: string; text: string }>;
+    };
+    expect(bobObs.heard.some((m) => m.from === spyId && m.text.includes("Echoed: PUBLIC_HELLO"))).toBe(true);
+
+    // 7. Per-identity reactive listener cap (max 4 public onEvent artifacts)
+    for (let i = 0; i < 3; i += 1) {
+      const okL = call(
+        world,
+        req("tools/call", {
+          name: "act",
+          arguments: { verb: "craft", immediate: true, kind: "script", name: `Listener ${i + 2}`, data: JSON.stringify({ onEvent: "act.craft", code: "return { silent: true };" }) },
+        }),
+        ada.sessionToken,
+      ).result as { accepted: boolean };
+      expect(okL.accepted).toBe(true);
+    }
+    const fifthListener = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "script", name: "Listener 5", data: JSON.stringify({ onEvent: "act.craft", code: "return { silent: true };" }) },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(fifthListener.accepted).toBe(false);
+    expect(fifthListener.reason).toContain("listener limit");
   });
 });

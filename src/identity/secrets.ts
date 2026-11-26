@@ -96,6 +96,19 @@ export function openRequestState(serverKey: Buffer, token: string, now: number):
   return payload;
 }
 
+export function isLegalArtifactLabel(value: string, field: string, maxLen: number): string | null {
+  if (value.length > maxLen) {
+    return `${field} too long (max ${maxLen})`;
+  }
+  if (/[\u0000-\u001f\u007f]/.test(value)) {
+    return `${field} may not contain control characters`;
+  }
+  if (/[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\u00ad\u034f\ufeff]/.test(value)) {
+    return `${field} may not contain zero-width or bidi characters`;
+  }
+  return null;
+}
+
 export function isLegalName(name: string): string | null {
   if (name.length < 1 || name.length > 32) {
     return "name must be 1–32 characters";

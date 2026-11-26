@@ -111,8 +111,10 @@ export function publicRead(
   if (path === "/digest") {
     const forId = query.get("for");
     const since = Number(query.get("since") ?? -1);
+    const hasSince = Number.isInteger(since) && since >= 0;
     const tip = events[events.length - 1];
-    const newEvents = Number.isInteger(since) && since >= 0 ? events.filter((e) => e.seq > since).length : 0;
+    const recentEvents = hasSince ? events.filter((e) => e.seq > since) : events.slice(-60);
+    const newEvents = hasSince ? recentEvents.length : 0;
     const newArtifacts = [...world.entities.values()].filter(
       (e) =>
         e.type === "artifact" &&
@@ -123,15 +125,81 @@ export function publicRead(
     const unreadSpeech = forId !== null ? world.unreadSpeechCount(forId) : 0;
     const openVotesNotCast =
       forId !== null ? world.clerk.docket().filter((p) => !p.ballots.has(forId)).length : world.clerk.docket().length;
+    const closingSoonVotes = world.clerk
+      .docket()
+      .filter((p) => (forId === null || !p.ballots.has(forId)) && p.resolutionTick - world.clerk.tick <= 5).length;
+
+    let myArtifactRuns = 0;
+    let myCitations = 0;
+    let myEarnings = 0;
+    if (forId !== null) {
+      const ownedIds = new Set(
+        [...world.entities.values()]
+          .filter((e) => e.type === "artifact" && e.fields["owner"] === forId)
+          .map((e) => e.id),
+      );
+      const actorTag = `identity:${forId}`;
+      for (const ev of recentEvents) {
+        const p = ev.payload as Record<string, unknown>;
+        if (ev.type === "act.run") {
+          const target = typeof p["target"] === "string" ? p["target"] : "";
+          const isMine = ownedIds.has(target);
+          if (isMine && ev.actor !== actorTag) {
+            myArtifactRuns += 1;
+            if (typeof p["feePaid"] === "number" && p["feePaid"] > 0) {
+              myEarnings += p["feePaid"];
+            }
+          }
+          if ((ev.actor === actorTag || p["triggerActor"] === forId) && typeof p["payoutReceived"] === "number" && p["payoutReceived"] > 0) {
+            myEarnings += p["payoutReceived"];
+          }
+        } else if (ev.type === "act.craft" && ev.actor !== actorTag) {
+          const parent = typeof p["parent"] === "string" ? p["parent"] : "";
+          const cites = typeof p["cites"] === "string" ? p["cites"].split(",").map((s) => s.trim()) : [];
+          if ((parent.length > 0 && ownedIds.has(parent)) || cites.some((c) => ownedIds.has(c))) {
+            myCitations += 1;
+          }
+        }
+      }
+    }
+
     return {
       tick: world.clerk.tick,
       tipSeq: tip?.seq ?? -1,
-      shouldWake: unreadSpeech > 0 || openVotesNotCast > 0 || newArtifacts > 0,
+      shouldWake:
+        unreadSpeech > 0 ||
+        openVotesNotCast > 0 ||
+        newArtifacts > 0 ||
+        myArtifactRuns > 0 ||
+        myCitations > 0 ||
+        myEarnings > 0,
       unreadSpeech,
       openVotesNotCast,
+      closingSoonVotes,
       newArtifacts,
+      myArtifactRuns,
+      myCitations,
+      myEarnings,
       newEvents,
       online: world.onlineCount,
+    };
+  }
+  if (path === "/export.state.json") {
+    const tip = events[events.length - 1];
+    return {
+      tick: world.clerk.tick,
+      tipSeq: tip?.seq ?? -1,
+      tipHash: tip?.hash ?? null,
+      merkleRoot: merkleRoot(events.map((e) => e.hash)),
+      eventsCount: events.length,
+      standing: [...world.clerk.identities.values()]
+        .map((ident) => ({
+          id: ident.id,
+          name: world.identities.identities.get(ident.id)?.name ?? null,
+          ...publicStanding(world.standing.get(ident.id)),
+          currency: ident.currency,
+        }))
+        .sort((a, b) => b.fame - a.fame || (a.id < b.id ? -1 : 1)),
     };
   }
   if (path === "/artifacts") {

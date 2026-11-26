@@ -31,6 +31,31 @@ export interface ArtifactAutomation {
   onEvent?: string[];
 }
 
+export function validateArtifactAutomation(rawData: string): string | null {
+  if (rawData.trim().length === 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawData);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const obj = parsed as Record<string, unknown>;
+  if (obj["every"] !== undefined) {
+    const ev = obj["every"];
+    if (typeof ev !== "number" || !Number.isInteger(ev) || ev < 3) {
+      return "schedule 'every' must be an integer >= 3 ticks";
+    }
+  }
+  if (obj["atTick"] !== undefined) {
+    const at = obj["atTick"];
+    if (typeof at !== "number" || !Number.isInteger(at) || at < 1) {
+      return "schedule 'atTick' must be an integer >= 1";
+    }
+  }
+  return null;
+}
+
 export function artifactAutomationMeta(rawData: string): ArtifactAutomation {
   try {
     const parsed = JSON.parse(rawData) as Record<string, unknown> | null;
