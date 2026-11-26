@@ -926,11 +926,11 @@ export class ContinentView {
       ctx.beginPath();
       ctx.roundRect(x - 2 * z, y - 4.5 * z, 4 * z, 5.5 * z, 1.5 * z);
       ctx.fill();
-      // Soft floating chimney smoke puff
-      const puff = (now * 0.0006 + x * 0.1) % 1;
+      // Soft floating chimney smoke puff (always positive modulus even when x < 0!)
+      const puff = (((now * 0.0006 + Math.abs(x) * 0.1) % 1) + 1) % 1;
       ctx.fillStyle = `rgba(248, 250, 252, ${(1 - puff) * 0.45})`;
       ctx.beginPath();
-      ctx.arc(x + 4 * z, y - 15 * z - puff * 10 * z, (1.5 + puff * 2.5) * z, 0, Math.PI * 2);
+      ctx.arc(x + 4 * z, y - 15 * z - puff * 10 * z, Math.max(0.5, (1.5 + puff * 2.5) * z), 0, Math.PI * 2);
       ctx.fill();
     }
 
