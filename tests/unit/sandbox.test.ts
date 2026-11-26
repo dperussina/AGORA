@@ -529,5 +529,59 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ).result as { accepted: boolean; reason: string };
     expect(fifthListener.accepted).toBe(false);
     expect(fifthListener.reason).toContain("listener limit");
+
+    // 8. Private act.craft MUST NOT trigger public onEvent:["act.craft"] listeners
+    const craftSpy = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Craft Newsletter",
+          data: JSON.stringify({ onEvent: ["act.craft"], state: { names: [] }, code: "const ev = JSON.parse(arg || '{}'); state.names.push(ev.name || ''); return { silent: true, state };" }),
+        },
+      }),
+      bob.sessionToken,
+    ).result as { outcome: { id: string } };
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "note", name: "Secret Private Craft", visibility: "private", data: "shh" } }),
+      ada.sessionToken,
+    );
+    const spyNames = (JSON.parse(String(world.entities.get(craftSpy.outcome.id)?.fields["data"])) as { state: { names: string[] } }).state.names;
+    expect(spyNames).not.toContain("Secret Private Craft");
+
+    // 9. Authenticated whoami does NOT leak sessionToken / operatorReceipt unless includeReceipt:true
+    const normalWho = call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken).result as Record<string, unknown>;
+    expect(normalWho["operatorReceipt"]).toBeUndefined();
+    expect(normalWho["connection"]).toBeUndefined();
+
+    // 10. Voting "yes" gives clear "for", "against", or "abstain" hint
+    const badVote = call(world, req("tools/call", { name: "vote", arguments: { proposal_id: 1, position: "yes" } }), ada.sessionToken).result as { ok: boolean; reason: string };
+    expect(badVote.ok).toBe(false);
+    expect(badVote.reason).toContain("for");
+    expect(badVote.reason).toContain("against");
+    expect(badVote.reason).toContain("abstain");
+
+    // 11. Read-only world view inside QuickJS WASM sandbox (can verify public artifacts & callerPos, NEVER private artifacts)
+    const worldCheck = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "run",
+          immediate: true,
+          code: `return { hasPos: Boolean(world.callerPos), pubOwner: world.artifact("${mId}")?.owner || null, privVisible: Boolean(world.artifact("${privArt.outcome.id}")), anchorCount: world.anchors.length };`,
+        },
+      }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; outcome: { result: { hasPos: boolean; pubOwner: string | null; privVisible: boolean; anchorCount: number } } };
+    expect(worldCheck.accepted).toBe(true);
+    expect(worldCheck.outcome.result.hasPos).toBe(true);
+    expect(worldCheck.outcome.result.pubOwner).toBe(ada.identityId);
+    expect(worldCheck.outcome.result.privVisible).toBe(false);
+    expect(worldCheck.outcome.result.anchorCount).toBeGreaterThan(0);
   });
 });

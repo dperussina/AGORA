@@ -22,7 +22,14 @@ import {
 import type { EventLog } from "../engine/log.ts";
 import { machineInputs, runArtifactMachine } from "../engine/machine.ts";
 import { MemoryLog } from "../engine/memory-log.ts";
-import { artifactAutomationMeta, isSandboxReady, isScriptArtifact, runSandboxScript, validateArtifactAutomation } from "../engine/sandbox.ts";
+import {
+  artifactAutomationMeta,
+  isSandboxReady,
+  isScriptArtifact,
+  runSandboxScript,
+  validateArtifactAutomation,
+  type SandboxWorldView,
+} from "../engine/sandbox.ts";
 import { GENESIS_SEED, Oracle } from "../engine/oracle.ts";
 import { checkPreconditions, evalPredicate, type PredicateContext } from "../engine/predicates.ts";
 import {
@@ -484,6 +491,7 @@ export class World {
         }
         this.clerk.registry.text[`epithets.${identity.id}`] = null;
         this.append("identity.name", identity.id, { identityId: identity.id, name: identity.name });
+        args = { ...args, includeReceipt: true };
       } else if (directName !== undefined) {
         const reason = this.identities.setName(identity, directName);
         if (reason !== null) {
@@ -491,6 +499,7 @@ export class World {
         }
         this.clerk.registry.text[`epithets.${identity.id}`] = null;
         this.append("identity.name", identity.id, { identityId: identity.id, name: identity.name });
+        args = { ...args, includeReceipt: true };
       } else {
         return ok(id, {
           resultType: "input_required",
@@ -730,7 +739,7 @@ export class World {
           holdings: this.holdingsOf(identity.id),
           queuedIntents: this.queuedIntentsOf(identity.id),
           briefing: this.briefingFor(identity.id),
-          ...this.operatorConnection(identity.id, bearer),
+          ...(args["includeReceipt"] === true ? this.operatorConnection(identity.id, bearer) : {}),
         };
       case "rules":
         return this.rules(typeof args["path"] === "string" ? args["path"] : undefined);
@@ -755,8 +764,11 @@ export class World {
         }
         const proposalId = args["proposal_id"];
         const position = args["position"];
-        if (typeof proposalId !== "number" || (position !== "for" && position !== "against" && position !== "abstain")) {
-          return { ok: false, reason: "proposal_id and position required" };
+        if (typeof proposalId !== "number") {
+          return { ok: false, reason: "proposal_id (integer) required" };
+        }
+        if (position !== "for" && position !== "against" && position !== "abstain") {
+          return { ok: false, reason: 'position must be "for", "against", or "abstain" (not "yes"/"no")' };
         }
         const result = this.clerk.vote(identity.id, proposalId, position as VotePosition);
         if (result.ok) {
@@ -2801,6 +2813,7 @@ export class World {
       name,
       shape,
       tags,
+      ...(visibility === "private" ? { private: true } : {}),
       ...(parent.length > 0 ? { parent } : {}),
       ...(cites.length > 0 ? { cites } : {}),
       ...at,
@@ -3074,6 +3087,7 @@ export class World {
         input,
         arg,
         treasury,
+        world: this.sandboxWorldView(identityId),
       });
       if (!res.ok) return res.reason;
       if (res.nextData !== undefined && res.nextData.length > maxData) {
@@ -3145,6 +3159,7 @@ export class World {
         input,
         arg,
         treasury: 0,
+        world: this.sandboxWorldView(intent.identityId),
       });
       if (!res.ok) {
         this.append("act.run_failed", intent.identityId, { target: "sandbox:ephemeral", input, reason: res.reason });
@@ -3191,6 +3206,7 @@ export class World {
         input,
         arg,
         treasury,
+        world: this.sandboxWorldView(intent.identityId),
       });
       if (!res.ok) {
         this.append("act.run_failed", intent.identityId, { target, input, reason: res.reason });
@@ -3716,8 +3732,8 @@ export class World {
   }
 
   private fireReactiveArtifacts(evType: string, actor: string, payload: Record<string, unknown>): void {
-    // Never leak private targeted direct messages or notes on private artifacts to reactive listeners
-    if ((evType === "speak" || evType === "speak.artifact") && payload["private"] === true) return;
+    // Never leak private targeted DMs, private artifact notes, or private artifact creations to reactive listeners
+    if ((evType === "speak" || evType === "speak.artifact" || evType === "act.craft") && payload["private"] === true) return;
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
     const candidates = [...this.entities.values()]
       .filter((e) => e.type === "artifact" && e.fields["visibility"] !== "private")
@@ -3770,6 +3786,7 @@ export class World {
         input,
         arg,
         treasury,
+        world: this.sandboxWorldView(actorId),
       });
       if (!res.ok) return;
       if (res.nextData !== undefined && res.nextData.length <= maxData && res.nextData !== rawData) {
@@ -3840,6 +3857,40 @@ export class World {
       treasury,
       ...extra,
     });
+  }
+
+  private sandboxWorldView(callerId: string): SandboxWorldView {
+    const body = this.bodies.get(callerId);
+    const anchors = this.anchors.map((a) => ({
+      designation: a.designation,
+      class: a.class,
+      name: this.clerk.registry.text[`anchors.${a.designation}.name`] ?? null,
+      x: a.centre.x,
+      y: a.centre.y,
+      z: a.centre.z,
+    }));
+    const artifacts: SandboxWorldView["artifacts"] = {};
+    for (const e of this.entities.values()) {
+      if (e.type !== "artifact" || e.fields["visibility"] === "private") continue;
+      artifacts[e.id] = {
+        id: e.id,
+        kind: String(e.fields["kind"] ?? "artifact"),
+        name: String(e.fields["name"] ?? e.id),
+        owner: typeof e.fields["owner"] === "string" ? e.fields["owner"] : null,
+        tags: String(e.fields["tags"] ?? ""),
+        parent: typeof e.fields["parent"] === "string" ? e.fields["parent"] : null,
+        currency: typeof e.fields["currency"] === "number" ? e.fields["currency"] : 0,
+        dataLen: typeof e.fields["data"] === "string" ? e.fields["data"].length : 0,
+        x: e.position?.x ?? null,
+        y: e.position?.y ?? null,
+        z: e.position?.z ?? null,
+      };
+    }
+    return {
+      callerPos: body ? { x: body.x, y: body.y, z: body.z } : null,
+      anchors,
+      artifacts,
+    };
   }
 
   private deliverInbox(hearer: string, from: string, text: string): void {

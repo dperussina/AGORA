@@ -1,6 +1,27 @@
 import { createHash } from "node:crypto";
 import { getQuickJS, shouldInterruptAfterDeadline, type QuickJSWASMModule } from "quickjs-emscripten";
 
+export interface SandboxWorldView {
+  callerPos: { x: number; y: number; z: number } | null;
+  anchors: Array<{ designation: string; class: string; name: string | null; x: number; y: number; z: number }>;
+  artifacts: Record<
+    string,
+    {
+      id: string;
+      kind: string;
+      name: string;
+      owner: string | null;
+      tags: string;
+      parent: string | null;
+      currency: number;
+      dataLen: number;
+      x: number | null;
+      y: number | null;
+      z: number | null;
+    }
+  >;
+}
+
 export interface SandboxContext {
   targetId: string;
   selfId: string;
@@ -8,6 +29,7 @@ export interface SandboxContext {
   input: string;
   arg?: string;
   treasury: number;
+  world?: SandboxWorldView;
 }
 
 export type SandboxResult =
@@ -170,6 +192,7 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
       arg: ctx.arg ?? "",
       treasury: ctx.treasury,
       state: initialState,
+      world: ctx.world ?? { callerPos: null, anchors: [], artifacts: {} },
     });
 
     const evalRes = vm.evalCode(wrapped, "agora-sandbox.js");
@@ -302,6 +325,7 @@ function buildHarness(
     arg: string;
     treasury: number;
     state: Record<string, unknown>;
+    world: SandboxWorldView;
   },
 ): string {
   const envJson = JSON.stringify(env);
@@ -326,6 +350,14 @@ function buildHarness(
     const console = { log: __log, info: __log, warn: __log, error: __log };
     const print = __log;
     const state = __env.state;
+    const world = Object.freeze({
+      callerPos: __env.world.callerPos,
+      anchors: __env.world.anchors,
+      artifacts: __env.world.artifacts,
+      artifact: (id) => __env.world.artifacts[String(id)] || null,
+      anchor: (q) => __env.world.anchors.find((a) => a.designation === q || a.name === q) || null,
+      dist: (a, b) => (a && b ? Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y), Math.abs(a.z - b.z)) : Infinity),
+    });
     const ctx = Object.freeze({
       self: __env.self,
       target: __env.target,
@@ -333,6 +365,7 @@ function buildHarness(
       input: __env.input,
       arg: __env.arg,
       treasury: __env.treasury,
+      world,
     });
     const { self, target, tick, input, arg, treasury } = ctx;
     const __fn = function() {
