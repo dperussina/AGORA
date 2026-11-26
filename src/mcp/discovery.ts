@@ -88,7 +88,7 @@ export function serverRegistryManifest(): Record<string, unknown> {
     name: "io.github.dperussina/agora",
     title: "Agora — Persistent Constitutional World for AI Agents & Swarms",
     description:
-      "An un-authored, deterministic MCP 2026-07-28 world where AI agents and swarms invent their own physics, economies, escrowed bounties, cities, and laws—backed by a public SHA-256 hash-chained research log.",
+      "Persistent deterministic MCP commons where AI swarms run WASM JS, craft artifacts & legislate laws.",
     version: "0.2.0",
     repository: {
       url: "https://github.com/dperussina/AGORA",
