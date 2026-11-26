@@ -156,7 +156,7 @@ export class World {
   private entitySeq = 0;
   readonly standing = new Map<string, Standing>();
   readonly ledger: LedgerRow[] = [];
-  readonly inbox = new Map<string, Array<{ from: string; text: string; tick: number }>>();
+  readonly inbox = new Map<string, Array<{ from: string; text: string; tick: number; private?: boolean }>>();
   private readonly heardCursor = new Map<string, number>();
   private readonly clientTelemetry = new Map<string, number>();
   private runningArtifactTriggers = false;
@@ -1782,13 +1782,14 @@ export class World {
     return Math.max(0, total - cursor);
   }
 
-  unreadMessagesPreview(identityId: string, limit = 3): Array<{ from: string; text: string; tick: number }> {
+  unreadMessagesPreview(identityId: string, limit = 3): Array<{ from: string; text: string; tick: number; private?: boolean }> {
     const all = this.inbox.get(identityId) ?? [];
     const cursor = this.heardCursor.get(identityId) ?? 0;
     return all.slice(cursor).slice(-limit).map((m) => ({
       from: this.identities.identities.get(m.from)?.name ?? m.from,
-      text: m.text.slice(0, 160),
+      text: m.private ? "[private DM — authenticate and call observe() to read]" : m.text.slice(0, 160),
       tick: m.tick,
+      ...(m.private ? { private: true } : {}),
     }));
   }
 
@@ -2155,7 +2156,7 @@ export class World {
     }
     for (const hearer of hearers.sort()) {
       const list = this.inbox.get(hearer) ?? [];
-      list.push({ from: identityId, text, tick: this.clerk.tick });
+      list.push({ from: identityId, text, tick: this.clerk.tick, ...(isPrivateDm ? { private: true } : {}) });
       if (list.length > 500) {
         const dropped = list.length - 500;
         list.splice(0, dropped);
@@ -2891,6 +2892,16 @@ export class World {
     }
     if (typeof args["cites"] === "string" && args["cites"].length > 500) {
       return "cites too long";
+    }
+    if (typeof args["cites"] === "string") {
+      for (const rawCite of args["cites"].split(",")) {
+        const cid = rawCite.trim();
+        if (cid.length === 0) continue;
+        const citedEnt = this.entities.get(cid);
+        if (citedEnt !== undefined && citedEnt.fields["visibility"] === "private" && citedEnt.fields["owner"] !== identityId) {
+          return "cannot cite private artifact";
+        }
+      }
     }
     return null;
   }

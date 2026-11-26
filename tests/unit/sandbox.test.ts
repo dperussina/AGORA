@@ -593,5 +593,24 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     };
     expect(selfDigest.newArtifacts).toBe(0);
     expect(Array.isArray(selfDigest.recentMessages)).toBe(true);
+
+    // 13. Public /digest MUST redact private DM text in recentMessages, and act.edit MUST block citing a private artifact
+    call(world, req("tools/call", { name: "speak", arguments: { target: ada.identityId, text: "SUPER_PRIVATE_DIGEST_TEST" } }), bob.sessionToken);
+    const dmDigest = publicRead(world, "/digest", new URLSearchParams({ for: ada.identityId, since: String(tipBeforeSelf) })) as {
+      recentMessages: Array<{ text: string; private?: boolean }>;
+      onlineCollaborators: string[];
+    };
+    expect(JSON.stringify(dmDigest.recentMessages)).not.toContain("SUPER_PRIVATE_DIGEST_TEST");
+    expect(dmDigest.recentMessages.some((m) => m.private === true)).toBe(true);
+    expect(Array.isArray(dmDigest.onlineCollaborators)).toBe(true);
+
+    const bobPub = call(world, req("tools/call", { name: "act", arguments: { verb: "craft", immediate: true, kind: "note", name: "Bob Pub", data: "hi" } }), bob.sessionToken).result as { outcome: { id: string } };
+    const editPrivCite = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "edit", immediate: true, target: bobPub.outcome.id, cites: privArt.outcome.id } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(editPrivCite.accepted).toBe(false);
+    expect(editPrivCite.reason).toContain("private");
   });
 });

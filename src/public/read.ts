@@ -137,6 +137,7 @@ export function publicRead(
     let myCitations = 0;
     let myEarnings = 0;
     let myGifts = 0;
+    const onlineCollaborators: string[] = [];
     const highlights: Array<{ tick: number; type: string; actor: string; target?: string; amount?: number }> = [];
     if (forId !== null) {
       const ownedIds = new Set(
@@ -145,6 +146,24 @@ export function publicRead(
           .map((e) => e.id),
       );
       const actorTag = `identity:${forId}`;
+      const collabIds = new Set<string>();
+      for (const ev of events.slice(-400)) {
+        const p = ev.payload as Record<string, unknown>;
+        const actorId = ev.actor.startsWith("identity:") ? ev.actor.slice(9) : "";
+        if (actorId && actorId !== forId) {
+          const target = typeof p["target"] === "string" ? p["target"] : "";
+          const hearers = Array.isArray(p["hearers"]) ? (p["hearers"] as string[]) : [];
+          if (ownedIds.has(target) || target === forId || (ev.type === "speak" && p["private"] === true && hearers.includes(forId))) {
+            collabIds.add(actorId);
+          }
+        }
+      }
+      const onlineSet = new Set(world.onlineIdentityIds);
+      for (const cid of collabIds) {
+        if (onlineSet.has(cid)) {
+          onlineCollaborators.push(world.identities.identities.get(cid)?.name ?? cid);
+        }
+      }
       for (const ev of recentEvents) {
         const p = ev.payload as Record<string, unknown>;
         if (ev.type === "act.run") {
@@ -197,6 +216,7 @@ export function publicRead(
       myCitations,
       myEarnings,
       myGifts,
+      onlineCollaborators,
       recentMessages,
       highlights: highlights.slice(-5).reverse(),
       newEvents,
