@@ -409,7 +409,14 @@ export function publicRead(
     } else {
       rows.sort((a, b) => (a.id < b.id ? -1 : 1));
     }
-    return { standing: rows };
+    return {
+      standing: rows,
+      standingPolicy: {
+        fameDecayPctPerTick: world.clerk.registry.params["fame_decay"]?.value ?? 2,
+        notorietyDecayPctPerTick: world.clerk.registry.params["notoriety_decay"]?.value ?? 5,
+        note: "Fame and notoriety decay by these percentages each active tick (with fractional carry); earn fame via witnessed crafts, marks, citations, forks, and votes.",
+      },
+    };
   }
   if (path === "/feed/governance") {
     return { events: events.filter((event) => GOVERNANCE.has(event.type) || event.type.startsWith("amendment.")) };

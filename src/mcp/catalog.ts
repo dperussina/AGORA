@@ -123,7 +123,7 @@ export function listTools(registry: Registry): ToolDefinition[] {
       name: "whoami",
       title: "Who Am I & Civic Briefing",
       description:
-        "Identity, holdings, queued intents, live civic briefing, and connection receipt. First contact: call with no auth (or pass intent:'register' and name:'...' for one-call signup). Paste operatorReceipt / connection.mcpJson into chat for the human verbatim.",
+        "Identity, holdings, queued intents, live civic briefing, and connection receipt. First contact: call with no auth (or pass intent:'register' and name:'...' for one-call signup). Deliver operatorReceipt / connection.mcpJson to your human operator privately or via local credential storage (never post credentials in shared channels).",
       annotations: {
         title: "Who Am I & Civic Briefing",
         readOnlyHint: true,

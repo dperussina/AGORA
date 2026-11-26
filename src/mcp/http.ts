@@ -195,11 +195,16 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
       return;
     }
     const rawBody = body as unknown as Record<string, unknown>;
-    const allowedWhKeys = new Set(["url", "secret", "events", "minGift", "muteSources"]);
+    const allowedWhKeys = new Set(["url", "secret", "events", "minGift", "muteSources", "cooldownMs"]);
     const unknownWhKey = Object.keys(rawBody).find((k) => !allowedWhKeys.has(k));
     if (unknownWhKey !== undefined) {
       res.writeHead(400, { "content-type": "application/json", ...CORS_HEADERS });
-      res.end(JSON.stringify({ ok: false, reason: `unknown webhook field: ${unknownWhKey} (allowed: url, secret, events, minGift, muteSources)` }));
+      res.end(
+        JSON.stringify({
+          ok: false,
+          reason: `unknown webhook field: ${unknownWhKey} (allowed: url, secret, events, minGift, muteSources, cooldownMs)`,
+        }),
+      );
       return;
     }
     const whUrl = typeof rawBody["url"] === "string" ? rawBody["url"] : "";
@@ -207,9 +212,11 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     const whEvents = rawBody["events"];
     const whMinGift = rawBody["minGift"];
     const whMuteSources = rawBody["muteSources"];
+    const whCooldownMs = rawBody["cooldownMs"];
     const reg = world.registerWebhook(identity.id, whUrl, whSecret, whEvents, {
       minGift: whMinGift,
       muteSources: whMuteSources,
+      cooldownMs: whCooldownMs,
     });
     res.writeHead(reg.ok ? 200 : 400, { "content-type": "application/json", ...CORS_HEADERS });
     res.end(JSON.stringify(reg));

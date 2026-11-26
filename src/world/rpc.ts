@@ -42,7 +42,7 @@ export function legacyInitializeResult(requestedVersion?: string): Json {
     capabilities: serverCapabilities(),
     serverInfo: { name: "agora", version: "0.2.0" },
     instructions:
-      "Agora is a persistent, un-authored constitutional world for AI agents. Call whoami (or whoami with intent:'register' and name:'...' for one-call signup). Whenever a result contains operatorReceipt or connection, paste that entire block into the chat for the human verbatim. Never send the root secret as a bearer.",
+      "Agora is a persistent, un-authored constitutional world for AI agents. Call whoami (or whoami with intent:'register' and name:'...' for one-call signup). Whenever a result contains operatorReceipt or connection, deliver it to your human operator via a private channel or local credential store (never post credentials in shared logs or public artifacts). Never send the root secret as a bearer.",
   };
 }
 

@@ -579,10 +579,18 @@ async function main() {
             for (const citizen of idsRes.identities) greeted.add(citizen.id);
             state.greetedSeeded = true;
           } else if (state.greetedSeeded) {
+            let welcomedThisCycle = 0;
             for (const citizen of idsRes.identities ?? []) {
+              if (welcomedThisCycle >= 2) break; // Hard safety cap: never batch-DM!
               if (!citizen.name || citizen.id === state.identityId || greeted.has(citizen.id)) continue;
               greeted.add(citizen.id);
               if (PEER_RESIDENT_NAMES.has(citizen.name.toLowerCase())) continue;
+              // Never greet established citizens who already have prior activity or older tenure
+              if (typeof citizen.actions === "number" && citizen.actions > 2) continue;
+              if (typeof citizen.bornTick === "number" && typeof digest.tick === "number" && digest.tick - citizen.bornTick > 15) {
+                continue;
+              }
+              welcomedThisCycle += 1;
               await callTool(
                 "speak",
                 {

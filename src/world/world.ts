@@ -162,7 +162,15 @@ export class World {
   private readonly heardCursor = new Map<string, number>();
   readonly webhooks = new Map<
     string,
-    { url: string; secret?: string; events: string[]; minGift?: number; muteSources?: string[]; createdAt: number }
+    {
+      url: string;
+      secret?: string;
+      events: string[];
+      minGift?: number;
+      muteSources?: string[];
+      cooldownMs?: number;
+      createdAt: number;
+    }
   >();
   private readonly webhookLastSent = new Map<string, number>();
   private readonly webhookPending = new Map<string, Array<{ category: string; reason: string; source?: string }>>();
@@ -435,7 +443,7 @@ export class World {
       supportedVersions: [PROTOCOL_VERSION, ...LEGACY_PROTOCOL_VERSIONS],
       capabilities: serverCapabilities(),
       instructions:
-        `${WORLD_ORIENTATION} Call tools/list, resources/list, prompts/list, or whoami (or whoami with intent:'register' and name:'...' for one-call arrival). Paste operatorReceipt / connection.mcpJson into chat for the human verbatim.`,
+        `${WORLD_ORIENTATION} Call tools/list, resources/list, prompts/list, or whoami (or whoami with intent:'register' and name:'...' for one-call arrival). Deliver operatorReceipt / connection.mcpJson to your human operator privately or via local credential storage (never post credentials in shared logs).`,
       ttlMs: 60_000,
       cacheScope: "public",
     };
@@ -622,7 +630,7 @@ export class World {
         sessionToken: session.token,
         sessionLabel: label,
         ...this.operatorConnection(identity.id, session.token, { sessionLabel: label }),
-        warning: "Paste operatorReceipt into the chat for the human now. That mcp.json is the login on any computer.",
+        warning: "Deliver operatorReceipt to your human operator privately or store it in a local credential file (never post credentials in shared channels). That mcp.json is the login on any computer.",
       });
     }
     if (intent === "revoke_session") {
@@ -713,7 +721,7 @@ export class World {
         sessionLabel: "genesis",
       }),
       warning:
-        "Paste operatorReceipt into the chat for the human now. That mcp.json is the login on any computer.",
+        "Deliver operatorReceipt to your human operator privately or store it in a local credential file (never post credentials in shared channels). That mcp.json is the login on any computer.",
     });
   }
 
@@ -4361,9 +4369,19 @@ export class World {
     url: string,
     secret?: unknown,
     events?: unknown,
-    options?: { minGift?: unknown; muteSources?: unknown },
+    options?: { minGift?: unknown; muteSources?: unknown; cooldownMs?: unknown },
   ):
-    | { ok: true; webhook: { url: string; events: string[]; hasSecret: boolean; minGift?: number; muteSources?: string[] } }
+    | {
+        ok: true;
+        webhook: {
+          url: string;
+          events: string[];
+          hasSecret: boolean;
+          minGift?: number;
+          muteSources?: string[];
+          cooldownMs?: number;
+        };
+      }
     | { ok: false; reason: string } {
     if (url.length === 0 || url.length > 512) {
       return { ok: false, reason: "webhook url must be 1-512 chars" };
@@ -4445,6 +4463,18 @@ export class World {
       }
       if (cleaned.length > 0) muteSources = [...new Set(cleaned)];
     }
+    let cooldownMs: number | undefined;
+    if (options?.cooldownMs !== undefined) {
+      if (
+        typeof options.cooldownMs !== "number" ||
+        !Number.isInteger(options.cooldownMs) ||
+        options.cooldownMs < 0 ||
+        options.cooldownMs > 60_000
+      ) {
+        return { ok: false, reason: "cooldownMs must be an integer between 0 and 60000" };
+      }
+      cooldownMs = options.cooldownMs;
+    }
     let cleanSecret: string | undefined;
     if (secret !== undefined) {
       if (
@@ -4463,6 +4493,7 @@ export class World {
       events: cleanEvents,
       ...(minGift !== undefined ? { minGift } : {}),
       ...(muteSources !== undefined ? { muteSources } : {}),
+      ...(cooldownMs !== undefined ? { cooldownMs } : {}),
       createdAt: Date.now(),
     });
     this.persist();
@@ -4474,11 +4505,19 @@ export class World {
         hasSecret: cleanSecret !== undefined,
         ...(minGift !== undefined ? { minGift } : {}),
         ...(muteSources !== undefined ? { muteSources } : {}),
+        ...(cooldownMs !== undefined ? { cooldownMs } : {}),
       },
     };
   }
 
-  getWebhook(identityId: string): { url: string; events: string[]; hasSecret: boolean; minGift?: number; muteSources?: string[] } | null {
+  getWebhook(identityId: string): {
+    url: string;
+    events: string[];
+    hasSecret: boolean;
+    minGift?: number;
+    muteSources?: string[];
+    cooldownMs?: number;
+  } | null {
     const wh = this.webhooks.get(identityId);
     if (wh === undefined) return null;
     return {
@@ -4487,6 +4526,7 @@ export class World {
       hasSecret: typeof wh.secret === "string" && wh.secret.length > 0,
       ...(wh.minGift !== undefined ? { minGift: wh.minGift } : {}),
       ...(wh.muteSources !== undefined ? { muteSources: wh.muteSources } : {}),
+      ...(wh.cooldownMs !== undefined ? { cooldownMs: wh.cooldownMs } : {}),
     };
   }
 
@@ -4510,13 +4550,15 @@ export class World {
       if (source !== undefined && wh.muteSources.includes(source)) return;
       if (muteKey !== undefined && wh.muteSources.includes(muteKey)) return;
     }
-    const cooldownMs = Number(process.env["AGORA_WEBHOOK_COOLDOWN_MS"] ?? 15_000);
+    const defaultCooldownMs =
+      process.env["AGORA_WEBHOOK_COOLDOWN_MS"] !== undefined ? Number(process.env["AGORA_WEBHOOK_COOLDOWN_MS"]) : 2_000;
+    const cooldownMs = wh.cooldownMs !== undefined ? wh.cooldownMs : defaultCooldownMs;
     const now = Date.now();
     const last = this.webhookLastSent.get(identityId) ?? 0;
     if (cooldownMs > 0 && now - last < cooldownMs) {
       // Coalesce wakes arriving during the cooldown window instead of dropping them!
       const q = this.webhookPending.get(identityId) ?? [];
-      if (q.length < 10) {
+      if (q.length < 50) {
         q.push({ category, reason: reason.slice(0, 180), ...(source ? { source } : {}) });
         this.webhookPending.set(identityId, q);
       }
@@ -4551,7 +4593,15 @@ export class World {
 
   private dispatchWebhookNow(
     identityId: string,
-    wh: { url: string; secret?: string; events: string[]; minGift?: number; muteSources?: string[]; createdAt: number },
+    wh: {
+      url: string;
+      secret?: string;
+      events: string[];
+      minGift?: number;
+      muteSources?: string[];
+      cooldownMs?: number;
+      createdAt: number;
+    },
     category: string,
     reason: string,
     source?: string,
@@ -4562,6 +4612,7 @@ export class World {
     const origin = publicOrigin();
     const deliveryId = randomBytes(12).toString("hex");
     const timestamp = now;
+    const count = batched && batched.length > 1 ? batched.length : 1;
     const body = JSON.stringify({
       event: "wake",
       deliveryId,
@@ -4570,6 +4621,8 @@ export class World {
       tick: this.clerk.tick,
       category,
       reason,
+      count,
+      coalesced: count > 1,
       ...(source ? { source } : {}),
       ...(batched && batched.length > 1 ? { batched } : {}),
       digestUrl: `${origin}/digest?for=${encodeURIComponent(identityId)}`,
@@ -4584,6 +4637,7 @@ export class World {
       headers["x-agora-signature"] = `sha256=${hmacSha256Hex(Buffer.from(wh.secret, "utf8"), body)}`;
     }
     const allowLocal = process.env["AGORA_ALLOW_LOCAL_WEBHOOKS"] === "1";
+    const retryDelaysMs = [0, 1_000, 3_000];
     void (async () => {
       try {
         if (!allowLocal) {
@@ -4595,13 +4649,29 @@ export class World {
             if (addrs.length === 0 || addrs.some((a) => isBlockedWebhookIp(a.address))) return;
           }
         }
-        await fetch(wh.url, {
-          method: "POST",
-          headers,
-          body,
-          redirect: "error",
-          signal: AbortSignal.timeout(5_000),
-        });
+        for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
+          const wait = retryDelaysMs[attempt] ?? 0;
+          if (wait > 0) {
+            await new Promise<void>((resolve) => {
+              const t = setTimeout(resolve, wait);
+              t.unref();
+            });
+          }
+          try {
+            const res = await fetch(wh.url, {
+              method: "POST",
+              headers,
+              body,
+              redirect: "error",
+              signal: AbortSignal.timeout(5_000),
+            });
+            if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
+              return; // Delivered or permanent 4xx client error
+            }
+          } catch {
+            // Retry transient network / timeout error on next attempt
+          }
+        }
       } catch {
         // Best-effort async wake push; never crash or block tick loop
       }
