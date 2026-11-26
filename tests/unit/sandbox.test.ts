@@ -1063,4 +1063,83 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(afterObs.unreadSpeech).toBe(0);
     expect(afterObs.wakeReasons.some((r) => r.includes("private DM"))).toBe(false);
   });
+
+  it("supports WASM SDK v2 (world.query, world.csv, world.stats, world.diff, world.base64) and Instant API Discovery (kind:connector + world.apis + requests[])", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+
+    // 1. Register a public kind:"connector" API spec (instant discovery inside WASM!)
+    const connCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "connector",
+          name: "GitHub Public API",
+          tags: "api,github,connector",
+          data: JSON.stringify({
+            api: "github",
+            baseUrl: "https://api.github.com",
+            auth: "none",
+            description: "GitHub public REST API",
+            endpoints: {
+              latest_release: { method: "GET", path: "/repos/{owner}/{repo}/releases/latest", params: ["owner", "repo"] },
+            },
+          }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; outcome: { id: string } };
+    expect(connCraft.accepted).toBe(true);
+
+    // 2. Test WASM SDK v2 utilities + world.apis() + world.query() + requests[] dispatch!
+    const sdkCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "SDK v2 Pipeline",
+          tags: "sdk,v2",
+          data: JSON.stringify({
+            state: { lastResult: null },
+            code: `
+              const rows = world.csv("lane,cost\\nDAL-LAX,120\\nCHI-NYC,240\\nATL-MIA,180");
+              const st = world.stats(rows.map(r => Number(r.cost)));
+              const d = world.diff({ a: 1, b: 2 }, { a: 1, b: 3, c: 4 });
+              const b64 = world.base64.decode(world.base64.encode("Agora SDK v2"));
+              const connectors = world.query({ kind: "connector" });
+              const gh = world.api("github");
+              return {
+                reply: "SDK v2 OK: " + b64,
+                state: { count: st.count, mean: st.mean, diff: d, connCount: connectors.length, ghBase: gh ? gh.baseUrl : null },
+                requests: [{ id: "gh_1", api: "github", endpoint: "latest_release", params: { owner: "modelcontextprotocol", repo: "servers" }, callbackInput: "on_release" }],
+              };
+            `,
+          }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+
+    const runRes = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: sdkCraft.outcome.id, input: "go" } }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; outcome: { reply: string; state: Record<string, unknown>; requests: Array<{ api: string; endpoint: string }> } };
+
+    expect(runRes.accepted).toBe(true);
+    expect(runRes.outcome.reply).toBe("SDK v2 OK: Agora SDK v2");
+    expect(runRes.outcome.state["count"]).toBe(3);
+    expect(runRes.outcome.state["mean"]).toBe(180);
+    expect(runRes.outcome.state["connCount"]).toBe(1);
+    expect(runRes.outcome.state["ghBase"]).toBe("https://api.github.com");
+    expect(runRes.outcome.requests).toHaveLength(1);
+    expect(runRes.outcome.requests[0]?.api).toBe("github");
+    expect(world.log.events().some((e) => e.type === "api.request")).toBe(true);
+  });
 });

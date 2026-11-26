@@ -3506,6 +3506,23 @@ export class World {
       for (const n of res.notify) {
         this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`, "notify");
       }
+      if (res.requests.length > 0) {
+        this.append("api.request", intent.identityId, { target: entity.id, requests: res.requests });
+        const ownerId = typeof entity.fields["owner"] === "string" ? entity.fields["owner"] : intent.identityId;
+        for (const reqItem of res.requests) {
+          const dest = reqItem.assignee && this.identities.identities.has(reqItem.assignee) && this.canArtifactNotify(entity, reqItem.assignee, intent.identityId)
+            ? reqItem.assignee
+            : ownerId;
+          if (this.identities.identities.has(dest)) {
+            this.deliverInbox(
+              dest,
+              entity.id,
+              `[api.request ${entity.id}] id=${reqItem.id} api=${reqItem.api}.${reqItem.endpoint} params=${JSON.stringify(reqItem.params).slice(0, 120)} callback=${reqItem.callbackInput}`,
+              "notify",
+            );
+          }
+        }
+      }
       this.append("act.run", intent.identityId, {
         target: entity.id,
         sandbox: "quickjs-wasm",
@@ -3518,6 +3535,7 @@ export class World {
         ...(res.fee > 0 ? { feePaid: res.fee } : {}),
         ...(res.payout > 0 ? { payoutReceived: res.payout } : {}),
         ...(res.payouts.length > 0 ? { payouts: res.payouts } : {}),
+        ...(res.requests.length > 0 ? { requests: res.requests } : {}),
         treasury,
         identityId: intent.identityId,
       });
@@ -4145,6 +4163,23 @@ export class World {
           this.deliverInbox(n.to, entity.id, `[${entity.id}] ${n.text}`, "notify");
         }
       }
+      if (res.requests.length > 0) {
+        this.append("api.request", "ARBITER", { target: entity.id, requests: res.requests, ...extra });
+        const ownerId = typeof entity.fields["owner"] === "string" ? entity.fields["owner"] : "";
+        for (const reqItem of res.requests) {
+          const dest = reqItem.assignee && this.identities.identities.has(reqItem.assignee) && this.canArtifactNotify(entity, reqItem.assignee)
+            ? reqItem.assignee
+            : ownerId;
+          if (dest && this.identities.identities.has(dest)) {
+            this.deliverInbox(
+              dest,
+              entity.id,
+              `[api.request ${entity.id}] id=${reqItem.id} api=${reqItem.api}.${reqItem.endpoint} params=${JSON.stringify(reqItem.params).slice(0, 120)} callback=${reqItem.callbackInput}`,
+              "notify",
+            );
+          }
+        }
+      }
       if (recipient !== undefined && (res.reply.length > 0 || payoutReceived > 0)) {
         this.deliverInbox(
           actorId,
@@ -4216,12 +4251,14 @@ export class World {
     }));
     const artifacts: SandboxWorldView["artifacts"] = {};
     const states: Record<string, Record<string, unknown>> = {};
+    const apis: Record<string, { id: string; api: string; baseUrl: string; auth: string; description: string; endpoints: Record<string, unknown> }> = {};
     for (const e of this.entities.values()) {
       if (e.type !== "artifact" || e.fields["visibility"] === "private") continue;
       const rawData = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
+      const kindStr = String(e.fields["kind"] ?? "artifact");
       artifacts[e.id] = {
         id: e.id,
-        kind: String(e.fields["kind"] ?? "artifact"),
+        kind: kindStr,
         name: String(e.fields["name"] ?? e.id),
         owner: typeof e.fields["owner"] === "string" ? e.fields["owner"] : null,
         tags: String(e.fields["tags"] ?? ""),
@@ -4235,6 +4272,19 @@ export class World {
       if (rawData.length > 0 && rawData.length <= 16_000 && rawData.startsWith("{")) {
         try {
           const parsed = JSON.parse(rawData) as Record<string, unknown>;
+          if (kindStr.toLowerCase() === "connector" && typeof parsed["api"] === "string" && typeof parsed["baseUrl"] === "string") {
+            const apiKey = parsed["api"].trim().toLowerCase();
+            if (/^[a-z0-9_-]{1,32}$/.test(apiKey) && parsed["endpoints"] && typeof parsed["endpoints"] === "object" && !Array.isArray(parsed["endpoints"])) {
+              apis[apiKey] = {
+                id: e.id,
+                api: apiKey,
+                baseUrl: String(parsed["baseUrl"]).slice(0, 256),
+                auth: typeof parsed["auth"] === "string" ? parsed["auth"].slice(0, 64) : "none",
+                description: typeof parsed["description"] === "string" ? parsed["description"].slice(0, 240) : "",
+                endpoints: parsed["endpoints"] as Record<string, unknown>,
+              };
+            }
+          }
           const st =
             parsed["state"] && typeof parsed["state"] === "object" && !Array.isArray(parsed["state"])
               ? (parsed["state"] as Record<string, unknown>)
@@ -4252,6 +4302,7 @@ export class World {
       anchors,
       artifacts,
       states,
+      apis,
     };
   }
 

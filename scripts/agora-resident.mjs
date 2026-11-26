@@ -14,7 +14,10 @@
  *   - Multi-$0-model OpenRouter fallback chain (OPENROUTER_MODELS) so each resident has a distinct free model & auto-failover.
  */
 
+import { createHash } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { dirname } from "node:path";
 
 if (existsSync(".env.local")) {
@@ -214,9 +217,112 @@ function parseJsonBlock(raw) {
   }
 }
 
+/** SSRF guard for resident real-world web_fetch / url_verify / call_api tools. */
+function isBlockedIp(ip) {
+  const c = String(ip || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (c.startsWith("::ffff:")) return isBlockedIp(c.slice(7));
+  if (c === "::1" || c === "::" || /^(fc|fd|fe[89ab]|ff|64:ff9b:|2002:|2001:db8:|100::)/.test(c)) return true;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(c);
+  if (m) {
+    const [a, b, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 192 && b === 0 && (d === 0 || d === 2)) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+  }
+  return false;
+}
+
+async function safePublicFetch(rawUrl, options = {}) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || ""));
+  } catch {
+    return { ok: false, reason: "invalid url" };
+  }
+  if (parsed.protocol !== "https:") return { ok: false, reason: "only https:// URLs allowed" };
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  if (!host || host === "localhost" || /\.(localhost|local|internal|localtest\.me|nip\.io|sslip\.io|xip\.io|lvh\.me)$/.test(host)) {
+    return { ok: false, reason: "blocked private/local host" };
+  }
+  if (isIP(host) !== 0) {
+    if (isBlockedIp(host)) return { ok: false, reason: "blocked private IP" };
+  } else {
+    const addrs = await dnsLookup(host, { all: true }).catch(() => []);
+    if (addrs.length === 0 || addrs.some((a) => isBlockedIp(a.address))) {
+      return { ok: false, reason: "DNS resolved to blocked/private IP" };
+    }
+  }
+  const res = await fetch(parsed.toString(), {
+    method: options.method ?? "GET",
+    headers: {
+      "user-agent": `Agora-${RESIDENT_NAME}/1.0`,
+      accept: "application/json, text/plain, text/html;q=0.8",
+      ...(options.headers ?? {}),
+    },
+    ...(options.body ? { body: options.body } : {}),
+    redirect: "follow",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await res.text();
+  const sha256 = createHash("sha256").update(text).digest("hex");
+  const clean = text.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return { ok: res.ok, status: res.status, url: res.url, sha256, preview: clean.slice(0, 2400) };
+}
+
+/** Instant API Connector execution: discovers kind:"connector" artifact in Agora, attaches env credential if present, calls HTTPS API! */
+async function callConnectorApi(apiName, endpointName, params, token) {
+  const key = String(apiName || "").trim().toLowerCase();
+  const res = await callTool("inspect", { target: "kind:connector" }, token).catch(() => null);
+  const list = res?.fields?.artifacts ?? [];
+  let spec = null;
+  for (const item of list) {
+    const full = await callTool("inspect", { target: item.id }, token).catch(() => null);
+    try {
+      const parsed = JSON.parse(String(full?.fields?.data || "{}"));
+      if (String(parsed.api || "").toLowerCase() === key) {
+        spec = parsed;
+        break;
+      }
+    } catch {
+      // ignore non-JSON
+    }
+  }
+  if (!spec) return { ok: false, reason: `no connector artifact found for api '${key}'` };
+  const ep = spec.endpoints?.[String(endpointName || "")];
+  if (!ep || typeof ep.path !== "string") return { ok: false, reason: `unknown endpoint '${endpointName}' on api '${key}'` };
+  let path = ep.path;
+  const pObj = params && typeof params === "object" ? params : {};
+  for (const [k, v] of Object.entries(pObj)) {
+    path = path.replaceAll(`{${k}}`, encodeURIComponent(String(v)));
+  }
+  const url = `${String(spec.baseUrl).replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const headers = {};
+  const envKeyName = `AGORA_API_KEY_${key.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+  const cred = process.env[envKeyName];
+  if (cred) {
+    if (spec.auth === "bearer") headers["authorization"] = `Bearer ${cred}`;
+    else if (spec.auth && spec.auth.startsWith("header:")) headers[spec.auth.slice(7)] = cred;
+  } else if (spec.auth && spec.auth !== "none") {
+    return { ok: false, reason: `missing credential env ${envKeyName} for api '${key}'` };
+  }
+  return safePublicFetch(url, { method: ep.method || "GET", headers });
+}
+
 async function executeAction(action, token) {
   if (!action || typeof action !== "object") return { ok: false, reason: "invalid action" };
   switch (action.tool) {
+    case "web_fetch":
+      return safePublicFetch(action.url, { method: "GET" });
+    case "url_verify": {
+      const r = await safePublicFetch(action.url, { method: "GET" });
+      return { ok: r.ok, status: r.status, url: r.url, sha256: r.sha256, bytes: r.preview?.length ?? 0 };
+    }
+    case "call_api":
+      return callConnectorApi(action.api, action.endpoint, action.params, token);
     case "inspect":
       return callTool("inspect", { target: String(action.target || "") }, token);
     case "move":
@@ -320,12 +426,15 @@ async function runAgenticWakeup(state, who, obs, worldRules, artifacts, docket, 
 Role: ${roleDesc}
 World Lore: ${String(worldRules?.text?.world_lore || "").slice(0, 350)}
 
-You have REAL tools! Use them — never say "I can't inspect" or "I can't run".
+You have REAL Agora AND Real-World tools! Use them — never say "I can't inspect", "I can't fetch the web", or "I can't call APIs".
 Respond ONLY with a single JSON object (no markdown outside JSON):
 {
   "thought": "brief 1-sentence plan",
   "actions": [
     { "tool": "inspect", "target": "ent:137" },
+    { "tool": "web_fetch", "url": "https://api.github.com/repos/modelcontextprotocol/servers/releases/latest" },
+    { "tool": "url_verify", "url": "https://github.com/modelcontextprotocol/servers" },
+    { "tool": "call_api", "api": "github", "endpoint": "latest_release", "params": { "owner": "modelcontextprotocol", "repo": "servers" } },
     { "tool": "move", "target": "Commons Square" },
     { "tool": "run", "target": "ent:96", "input": "status", "arg": "", "maxFee": 5 },${builderToolLine}
     { "tool": "speak", "target": "<prefer identityId DM for direct replies; omit only for rare public notices>", "text": "concise reply" },
