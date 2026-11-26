@@ -258,6 +258,7 @@ export function listTools(registry: Registry): ToolDefinition[] {
         {
           verb: { type: "string", enum: verbs },
           immediate: { type: "boolean" },
+          idempotencyKey: { type: "string", description: "Optional 1-128 char key for safe retries without double-execution." },
           delta: { type: "object" },
           text: { type: "string" },
           ...actParamProperties(registry),

@@ -175,6 +175,11 @@ export class World {
   private readonly webhookLastSent = new Map<string, number>();
   private readonly webhookPending = new Map<string, Array<{ category: string; reason: string; source?: string }>>();
   private readonly webhookTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly webhookStats = new Map<
+    string,
+    { sent: number; failed: number; coalesced: number; lastStatus: number | null; lastError: string | null; lastSentAt: number | null }
+  >();
+  private readonly idempotencyCache = new Map<string, Json>();
   readonly artifactSubscribers = new Map<string, Set<string>>();
   private readonly scheduleFailCounts = new Map<string, number>();
   private readonly clientTelemetry = new Map<string, number>();
@@ -786,11 +791,37 @@ export class World {
       case "observe":
         return this.observe(identity.id, args);
       case "act":
-        return this.act(identity.id, args);
+      case "propose":
+      case "speak": {
+        const rawKey = args["idempotencyKey"];
+        if (rawKey !== undefined) {
+          if (typeof rawKey !== "string" || rawKey.trim().length === 0 || rawKey.length > 128) {
+            return { ok: false, reason: "idempotencyKey must be a non-empty string of 1-128 chars" };
+          }
+          const cacheKey = `${identity.id}:${name}:${rawKey}`;
+          const cached = this.idempotencyCache.get(cacheKey);
+          if (cached !== undefined) {
+            return { ...cached, idempotentReplay: true };
+          }
+          const fresh =
+            name === "act"
+              ? this.act(identity.id, args)
+              : name === "propose"
+                ? this.handlePropose(identity, args)
+                : this.speak(identity.id, args);
+          this.idempotencyCache.set(cacheKey, fresh);
+          if (this.idempotencyCache.size > 2_000) {
+            const oldest = this.idempotencyCache.keys().next().value;
+            if (oldest !== undefined) this.idempotencyCache.delete(oldest);
+          }
+          return fresh;
+        }
+        if (name === "act") return this.act(identity.id, args);
+        if (name === "propose") return this.handlePropose(identity, args);
+        return this.speak(identity.id, args);
+      }
       case "inspect":
         return this.inspect(args["target"], identity.id);
-      case "propose":
-        return this.handlePropose(identity, args);
       case "vote": {
         if (identity.id === this.stewardId) {
           return { ok: false, reason: "Steward cannot vote" };
@@ -812,8 +843,6 @@ export class World {
         }
         return result;
       }
-      case "speak":
-        return this.speak(identity.id, args);
       default:
         return { ok: false, reason: "unknown tool" };
     }
@@ -3006,6 +3035,12 @@ export class World {
     if (entity.fields["owner"] !== identityId && entity.fields["holder"] !== identityId) {
       return "not owner";
     }
+    if (entity.fields["frozen"] === true) {
+      return "artifact is frozen (immutable); edit rejected";
+    }
+    if (args["frozen"] !== undefined && args["frozen"] !== true) {
+      return "frozen can only be set to true (irreversible lock)";
+    }
     if (typeof args["kind"] === "string") {
       const err = isLegalArtifactLabel(args["kind"], "kind", 120);
       if (err !== null) return err;
@@ -3084,6 +3119,11 @@ export class World {
         updated.push(key);
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: key, value: val });
       }
+    }
+    if (args["frozen"] === true) {
+      entity.fields["frozen"] = true;
+      updated.push("frozen");
+      this.append("effect.set_field", intent.identityId, { id: entity.id, field: "frozen", value: true });
     }
     this.scheduleFailCounts.delete(entity.id);
     this.append("act.edit", intent.identityId, { target: entity.id, updated, identityId: intent.identityId });
@@ -3190,6 +3230,9 @@ export class World {
     }
     if (entity.fields["owner"] !== identityId && entity.fields["holder"] !== identityId) {
       return "not owner";
+    }
+    if (entity.fields["frozen"] === true) {
+      return "artifact is frozen (immutable); dismantle rejected";
     }
     return null;
   }
@@ -3446,7 +3489,8 @@ export class World {
         this.append("act.run_failed", intent.identityId, { target, input, reason: res.reason });
         return;
       }
-      if (res.nextData !== undefined && res.nextData.length > maxData) {
+      const currentDataLen = typeof entity.fields["data"] === "string" ? entity.fields["data"].length : 0;
+      if (res.nextData !== undefined && res.nextData.length > maxData && res.nextData.length >= currentDataLen) {
         this.append("act.run_failed", intent.identityId, { target, input, reason: `script state exceeds artifact_data_max (${maxData})` });
         return;
       }
@@ -3533,6 +3577,12 @@ export class World {
           }
         }
       }
+      const finalDataBytes = typeof entity.fields["data"] === "string" ? entity.fields["data"].length : 0;
+      const pctUsed = Math.round((finalDataBytes / maxData) * 100);
+      const storageWarning =
+        finalDataBytes >= Math.floor(maxData * 0.8)
+          ? `artifact data at ${pctUsed}% of limit (${finalDataBytes}/${maxData} bytes); prune state soon`
+          : undefined;
       this.append("act.run", intent.identityId, {
         target: entity.id,
         sandbox: "quickjs-wasm",
@@ -3547,6 +3597,9 @@ export class World {
         ...(res.payouts.length > 0 ? { payouts: res.payouts } : {}),
         ...(res.requests.length > 0 ? { requests: res.requests } : {}),
         treasury,
+        dataBytes: finalDataBytes,
+        dataLimit: maxData,
+        ...(storageWarning === undefined ? {} : { storageWarning }),
         identityId: intent.identityId,
       });
       this.witnessEntityInteraction(intent.identityId, entity);
@@ -4519,9 +4572,18 @@ export class World {
     minGift?: number;
     muteSources?: string[];
     cooldownMs?: number;
+    stats?: {
+      sent: number;
+      failed: number;
+      coalesced: number;
+      lastStatus: number | null;
+      lastError: string | null;
+      lastSentAt: number | null;
+    };
   } | null {
     const wh = this.webhooks.get(identityId);
     if (wh === undefined) return null;
+    const stats = this.webhookStats.get(identityId);
     return {
       url: wh.url,
       events: wh.events,
@@ -4529,6 +4591,7 @@ export class World {
       ...(wh.minGift !== undefined ? { minGift: wh.minGift } : {}),
       ...(wh.muteSources !== undefined ? { muteSources: wh.muteSources } : {}),
       ...(wh.cooldownMs !== undefined ? { cooldownMs: wh.cooldownMs } : {}),
+      ...(stats !== undefined ? { stats } : {}),
     };
   }
 
@@ -4695,18 +4758,37 @@ export class World {
       headers["x-agora-signature"] = `sha256=${hmacSha256Hex(Buffer.from(wh.secret, "utf8"), body)}`;
     }
     const allowLocal = process.env["AGORA_ALLOW_LOCAL_WEBHOOKS"] === "1";
-    const retryDelaysMs = [0, 1_000, 3_000];
+    const retryDelaysMs = [0, 1_500, 5_000, 15_000];
+    const stat = this.webhookStats.get(identityId) ?? {
+      sent: 0,
+      failed: 0,
+      coalesced: 0,
+      lastStatus: null,
+      lastError: null,
+      lastSentAt: null,
+    };
+    if (count > 1) stat.coalesced += count - 1;
+    this.webhookStats.set(identityId, stat);
     void (async () => {
       try {
         if (!allowLocal) {
           const parsed = new URL(wh.url);
           const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
-          if (isBlockedWebhookHost(host)) return;
+          if (isBlockedWebhookHost(host)) {
+            stat.failed += 1;
+            stat.lastError = "blocked_host";
+            return;
+          }
           if (isIP(host) === 0) {
             const addrs = await dnsLookup(host, { all: true });
-            if (addrs.length === 0 || addrs.some((a) => isBlockedWebhookIp(a.address))) return;
+            if (addrs.length === 0 || addrs.some((a) => isBlockedWebhookIp(a.address))) {
+              stat.failed += 1;
+              stat.lastError = "blocked_ip";
+              return;
+            }
           }
         }
+        let lastErr = "delivery_failed";
         for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
           const wait = retryDelaysMs[attempt] ?? 0;
           if (wait > 0) {
@@ -4723,15 +4805,28 @@ export class World {
               redirect: "error",
               signal: AbortSignal.timeout(10_000),
             });
-            if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
-              return; // Delivered or permanent 4xx client error
+            stat.lastStatus = res.status;
+            if (res.ok) {
+              stat.sent += 1;
+              stat.lastError = null;
+              stat.lastSentAt = Date.now();
+              return;
             }
-          } catch {
-            // Retry transient network / timeout error on next attempt
+            lastErr = `http_${res.status}`;
+            if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+              stat.failed += 1;
+              stat.lastError = lastErr;
+              return; // Permanent 4xx client error
+            }
+          } catch (err) {
+            lastErr = err instanceof Error ? err.name || err.message : "network_error";
           }
         }
-      } catch {
-        // Best-effort async wake push; never crash or block tick loop
+        stat.failed += 1;
+        stat.lastError = lastErr;
+      } catch (err) {
+        stat.failed += 1;
+        stat.lastError = err instanceof Error ? err.message : "unknown_error";
       }
     })();
   }
@@ -4770,7 +4865,7 @@ export class World {
     if (this.persistTimer !== null) {
       return;
     }
-    const debounceMs = Math.max(250, Number(process.env["AGORA_PERSIST_DEBOUNCE_MS"] ?? 2_000));
+    const debounceMs = Math.max(250, Number(process.env["AGORA_PERSIST_DEBOUNCE_MS"] ?? 5_000));
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
       if (this.persistDirty) {
