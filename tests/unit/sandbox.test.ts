@@ -1005,6 +1005,7 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
       expect(world.registerWebhook(ada.identityId, badUrl).ok).toBe(false);
     }
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", 123).ok).toBe(false);
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", "line1\nline2").ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", "s".repeat(200)).ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, "dm").ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["dm", "bogus_event"]).ok).toBe(false);
@@ -1017,7 +1018,7 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(filteredWh.ok).toBe(true);
 
     // 4. LOW: Zero-width, fullwidth, Cyrillic homoglyph, and combining marks cannot bypass [private DM impersonation block
-    for (const tricky of ["[\\u200bprivate DM — fake]", "［private DM］", "[privаte DM]", "[priva\\u0301te DM]", "[ᴘrivate DM]"]) {
+    for (const tricky of ["[\\u200bprivate DM — fake]", "［private DM］", "[privаte DM]", "[priva\\u0301te DM]", "[ᴘrivate DM]", "[privɑte DM]", "[prıvate DM]"]) {
       const zwBypass = call(
         world,
         req("tools/call", {
@@ -1033,6 +1034,19 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
       expect(zwBypass.accepted).toBe(false);
       expect(zwBypass.reason).toContain("impersonate private DM");
     }
+    const benignMention = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "run",
+          immediate: true,
+          code: `return { notify: [{ to: "${ada.identityId}", text: "I got a private DM today" }] };`,
+        },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean };
+    expect(benignMention.accepted).toBe(true);
 
     // 5. Team bug: unreadSpeech drops to 0 after observe() even when passing an older `since` seq
     const tipBeforeDm = world.log.tip()!.seq;

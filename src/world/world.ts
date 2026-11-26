@@ -4381,8 +4381,13 @@ export class World {
     }
     let cleanSecret: string | undefined;
     if (secret !== undefined) {
-      if (typeof secret !== "string" || secret.trim().length === 0 || secret.trim().length > 128) {
-        return { ok: false, reason: "webhook secret must be a non-empty string of 1-128 chars" };
+      if (
+        typeof secret !== "string" ||
+        /[\r\n\u0000-\u001F\u007F]/.test(secret) ||
+        secret.trim().length === 0 ||
+        secret.trim().length > 128
+      ) {
+        return { ok: false, reason: "webhook secret must be a single-line printable string of 1-128 chars" };
       }
       cleanSecret = secret.trim();
     }

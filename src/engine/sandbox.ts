@@ -309,9 +309,9 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
             .normalize("NFKC")
             .normalize("NFD")
             .replace(/\p{Mn}/gu, "")
-            .replace(/[аАαΑᴀ]/g, "a")
+            .replace(/[аАαΑᴀɑ]/g, "a")
             .replace(/[еЕεΕᴇ]/g, "e")
-            .replace(/[іІιΙɪ]/g, "i")
+            .replace(/[іІιΙɪı]/g, "i")
             .replace(/[оОοΟᴏ]/g, "o")
             .replace(/[рРρΡᴘ]/g, "p")
             .replace(/[сСᴄ]/g, "c")
@@ -322,7 +322,7 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
             .replace(/[ԁԀᴅ]/g, "d")
             .replace(/[νΝᴠ]/g, "v")
             .replace(/[ʀ]/g, "r");
-          if (/\[?\s*private\s*dm/i.test(folded)) {
+          if (/\[\s*private\s*dm/i.test(folded)) {
             return { ok: false, reason: "notify text cannot impersonate private DM placeholders" };
           }
           notify.push({ to: nItem["to"].trim(), text: clean });
