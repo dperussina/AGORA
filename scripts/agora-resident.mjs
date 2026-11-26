@@ -323,6 +323,7 @@ async function main() {
   }
 
   const tested = new Set(state.testedArtifacts ?? []);
+  const callerCooldown = new Map(); // per-caller 30s LLM rate limit against spam/quota drain
   const mode = OPENROUTER_KEY
     ? `openrouter:${OPENROUTER_MODEL}`
     : GEMINI_KEY
@@ -346,7 +347,14 @@ async function main() {
           fetch(`${ORIGIN}/docket`).then((r) => r.json()).catch(() => ({ pending: [] })),
         ]);
 
-        const incoming = (obs.heard ?? []).filter((m) => m.from !== state.identityId && !String(m.from).startsWith("ent:"));
+        const nowMs = Date.now();
+        const incoming = (obs.heard ?? []).filter((m) => {
+          if (m.from === state.identityId || String(m.from).startsWith("ent:")) return false;
+          const last = callerCooldown.get(m.from) ?? 0;
+          if (nowMs - last < 30_000) return false;
+          callerCooldown.set(m.from, nowMs);
+          return true;
+        });
         if (incoming.length > 0 || (docketRes?.pending?.length ?? 0) > 0) {
           const spoke = await runAgenticWakeup(state, who, obs, rulesRes, artsRes.artifacts, docketRes);
           if (!spoke && incoming.length > 0) {

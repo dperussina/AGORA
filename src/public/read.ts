@@ -138,6 +138,7 @@ export function publicRead(
     let myEarnings = 0;
     let myGifts = 0;
     const onlineCollaborators: string[] = [];
+    const pendingDeadlines: Array<{ id: string; name: string; atTick: number; ticksLeft: number }> = [];
     const highlights: Array<{ tick: number; type: string; actor: string; target?: string; amount?: number }> = [];
     if (forId !== null) {
       const ownedIds = new Set(
@@ -150,12 +151,18 @@ export function publicRead(
       for (const ev of events.slice(-400)) {
         const p = ev.payload as Record<string, unknown>;
         const actorId = ev.actor.startsWith("identity:") ? ev.actor.slice(9) : "";
+        const target = typeof p["target"] === "string" ? p["target"] : "";
         if (actorId && actorId !== forId) {
-          const target = typeof p["target"] === "string" ? p["target"] : "";
           const hearers = Array.isArray(p["hearers"]) ? (p["hearers"] as string[]) : [];
           if (ownedIds.has(target) || target === forId || (ev.type === "speak" && p["private"] === true && hearers.includes(forId))) {
             collabIds.add(actorId);
           }
+        } else if (actorId === forId && target.length > 0) {
+          // Bi-directional: also include online owners of artifacts YOU interacted with or gifted!
+          const targetEnt = world.entities.get(target);
+          const owner = typeof targetEnt?.fields["owner"] === "string" ? targetEnt.fields["owner"] : "";
+          if (owner && owner !== forId) collabIds.add(owner);
+          else if (world.identities.identities.has(target) && target !== forId) collabIds.add(target);
         }
       }
       const onlineSet = new Set(world.onlineIdentityIds);
@@ -164,12 +171,34 @@ export function publicRead(
           onlineCollaborators.push(world.identities.identities.get(cid)?.name ?? cid);
         }
       }
+      // Track upcoming atTick deadlines (auctions, commitments) within 15 ticks on owned or collaborator artifacts
+      for (const e of world.entities.values()) {
+        if (e.type !== "artifact" || e.fields["visibility"] === "private") continue;
+        const owner = typeof e.fields["owner"] === "string" ? e.fields["owner"] : "";
+        if (owner !== forId && !collabIds.has(owner)) continue;
+        const raw = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
+        try {
+          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          const at = parsed?.["atTick"];
+          if (typeof at === "number" && Number.isInteger(at) && at >= world.clerk.tick && at - world.clerk.tick <= 15) {
+            pendingDeadlines.push({
+              id: e.id,
+              name: String(e.fields["name"] ?? e.id),
+              atTick: at,
+              ticksLeft: at - world.clerk.tick,
+            });
+          }
+        } catch {
+          // Not JSON
+        }
+      }
       for (const ev of recentEvents) {
         const p = ev.payload as Record<string, unknown>;
         if (ev.type === "act.run") {
           const target = typeof p["target"] === "string" ? p["target"] : "";
           const isMine = ownedIds.has(target);
-          if (isMine && ev.actor !== actorTag) {
+          // Skip wake-ups caused by your own scheduled/self-triggered runs!
+          if (isMine && ev.actor !== actorTag && !(ev.actor === "ARBITER" && p["scheduled"] === true)) {
             myArtifactRuns += 1;
             const fee = typeof p["feePaid"] === "number" && p["feePaid"] > 0 ? p["feePaid"] : 0;
             myEarnings += fee;
@@ -207,10 +236,12 @@ export function publicRead(
         myArtifactRuns > 0 ||
         myCitations > 0 ||
         myEarnings > 0 ||
-        myGifts > 0,
+        myGifts > 0 ||
+        pendingDeadlines.length > 0,
       unreadSpeech,
       openVotesNotCast,
       closingSoonVotes,
+      pendingDeadlines,
       newArtifacts,
       myArtifactRuns,
       myCitations,

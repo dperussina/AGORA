@@ -1786,7 +1786,7 @@ export class World {
     const all = this.inbox.get(identityId) ?? [];
     const cursor = this.heardCursor.get(identityId) ?? 0;
     return all.slice(cursor).slice(-limit).map((m) => ({
-      from: this.identities.identities.get(m.from)?.name ?? m.from,
+      from: m.private ? "private" : (this.identities.identities.get(m.from)?.name ?? m.from),
       text: m.private ? "[private DM — authenticate and call observe() to read]" : m.text.slice(0, 160),
       tick: m.tick,
       ...(m.private ? { private: true } : {}),
@@ -2105,6 +2105,9 @@ export class World {
     }
     if (args["channel"] !== undefined) {
       return { ok: false, reason: "channel physics does not exist" };
+    }
+    if (args["to"] !== undefined && args["target"] === undefined) {
+      return { ok: false, reason: 'use "target" (not "to") to send a direct message or artifact note' };
     }
     const text = typeof args["text"] === "string" ? args["text"] : "";
     if (typeof args["target"] === "string" && args["target"].startsWith("warden:")) {
@@ -2862,7 +2865,10 @@ export class World {
       return `data exceeds artifact_data_max (${maxData})`;
     }
     if (typeof args["data"] === "string") {
-      const autoErr = validateArtifactAutomation(args["data"], this.clerk.tick);
+      const prevMeta = artifactAutomationMeta(String(entity.fields["data"] ?? ""));
+      const nextMetaCheck = artifactAutomationMeta(args["data"]);
+      const unchangedAtTick = prevMeta.atTick !== undefined && nextMetaCheck.atTick === prevMeta.atTick;
+      const autoErr = validateArtifactAutomation(args["data"], unchangedAtTick ? undefined : this.clerk.tick);
       if (autoErr !== null) return autoErr;
     }
     if (typeof args["visibility"] === "string" && args["visibility"] !== "public" && args["visibility"] !== "private") {
@@ -3071,6 +3077,9 @@ export class World {
     const inlineCode = typeof args["code"] === "string" ? args["code"] : "";
     const target = typeof args["target"] === "string" ? args["target"] : "";
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
+    if (args["arg"] !== undefined && typeof args["arg"] !== "string") {
+      return "arg must be a string (use JSON.stringify for structured arguments)";
+    }
     const arg = typeof args["arg"] === "string" ? args["arg"] : undefined;
 
     if (inlineCode.trim().length > 0 && target.length === 0) {
@@ -3167,6 +3176,10 @@ export class World {
     const args: Record<string, unknown> = { ...(intent.params ?? {}), ...(intent.target === undefined ? {} : { target: intent.target }) };
     const inlineCode = typeof args["code"] === "string" ? args["code"] : "";
     const target = typeof args["target"] === "string" ? args["target"] : "";
+    if (args["arg"] !== undefined && typeof args["arg"] !== "string") {
+      this.append("act.run_failed", intent.identityId, { target: target || "sandbox:ephemeral", reason: "arg must be a string (use JSON.stringify for structured arguments)" });
+      return;
+    }
     const arg = typeof args["arg"] === "string" ? args["arg"] : undefined;
     const maxData = this.clerk.registry.params["artifact_data_max"]?.value ?? 16_000;
 

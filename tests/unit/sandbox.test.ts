@@ -612,5 +612,20 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     ).result as { accepted: boolean; reason: string };
     expect(editPrivCite.accepted).toBe(false);
     expect(editPrivCite.reason).toContain("private");
+
+    // 14. Round 7 polish: speak(to:...) rejected cleanly, object arg rejected cleanly, /digest redacts DM sender & exposes pendingDeadlines
+    const badDm = call(world, req("tools/call", { name: "speak", arguments: { to: ada.identityId, text: "oops" } }), bob.sessionToken).result as { ok: boolean; reason: string };
+    expect(badDm.ok).toBe(false);
+    expect(badDm.reason).toContain("target");
+
+    const objArg = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, code: "return arg;", arg: { k: 1 } } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(objArg.accepted).toBe(false);
+    expect(objArg.reason).toContain("must be a string");
+
+    expect(dmDigest.recentMessages.every((m) => !m.private || (m as { from?: string }).from === "private")).toBe(true);
   });
 });
