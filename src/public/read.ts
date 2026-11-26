@@ -125,8 +125,30 @@ export function publicRead(
         typeof e.createdBy === "number" &&
         e.createdBy > since,
     ).length;
-    const unreadSpeech = forId !== null ? world.unreadSpeechCount(forId) : 0;
+    const inboxUnread = forId !== null ? world.unreadSpeechCount(forId) : 0;
     const recentMessages = forId !== null ? world.unreadMessagesPreview(forId, 3) : [];
+    const loggedDmEvents =
+      forId !== null && hasSince
+        ? recentEvents.filter(
+            (e) =>
+              e.type === "speak" &&
+              e.payload["private"] === true &&
+              Array.isArray(e.payload["hearers"]) &&
+              (e.payload["hearers"] as unknown[]).includes(forId),
+          )
+        : [];
+    const loggedDmsSince = loggedDmEvents.length;
+    if (recentMessages.length === 0 && loggedDmsSince > 0) {
+      for (const ev of loggedDmEvents.slice(-3)) {
+        recentMessages.push({
+          from: "private",
+          text: "[private DM — authenticate and call observe() to read]",
+          tick: ev.tick,
+          private: true,
+        });
+      }
+    }
+    const unreadSpeech = Math.max(inboxUnread, loggedDmsSince);
     const openVotesNotCast =
       forId !== null ? world.clerk.docket().filter((p) => !p.ballots.has(forId)).length : world.clerk.docket().length;
     const closingSoonVotes = world.clerk
@@ -148,6 +170,7 @@ export function publicRead(
       );
       const actorTag = `identity:${forId}`;
       const collabIds = new Set<string>();
+      const interactedArtifacts = new Set<string>();
       for (const ev of events.slice(-400)) {
         const p = ev.payload as Record<string, unknown>;
         const actorId = ev.actor.startsWith("identity:") ? ev.actor.slice(9) : "";
@@ -158,8 +181,8 @@ export function publicRead(
             collabIds.add(actorId);
           }
         } else if (actorId === forId && target.length > 0) {
-          // Bi-directional: also include online owners of artifacts YOU interacted with or gifted!
           const targetEnt = world.entities.get(target);
+          if (targetEnt?.type === "artifact") interactedArtifacts.add(target);
           const owner = typeof targetEnt?.fields["owner"] === "string" ? targetEnt.fields["owner"] : "";
           if (owner && owner !== forId) collabIds.add(owner);
           else if (world.identities.identities.has(target) && target !== forId) collabIds.add(target);
@@ -171,11 +194,12 @@ export function publicRead(
           onlineCollaborators.push(world.identities.identities.get(cid)?.name ?? cid);
         }
       }
-      // Track upcoming atTick deadlines (auctions, commitments) within 15 ticks on owned or collaborator artifacts
+      // Track upcoming atTick deadlines ONLY on artifacts owned by forId OR that forId itself interacted with (prevents wake spam!)
       for (const e of world.entities.values()) {
+        if (pendingDeadlines.length >= 5) break;
         if (e.type !== "artifact" || e.fields["visibility"] === "private") continue;
         const owner = typeof e.fields["owner"] === "string" ? e.fields["owner"] : "";
-        if (owner !== forId && !collabIds.has(owner)) continue;
+        if (owner !== forId && !interactedArtifacts.has(e.id)) continue;
         const raw = typeof e.fields["data"] === "string" ? e.fields["data"] : "";
         try {
           const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -183,7 +207,7 @@ export function publicRead(
           if (typeof at === "number" && Number.isInteger(at) && at >= world.clerk.tick && at - world.clerk.tick <= 15) {
             pendingDeadlines.push({
               id: e.id,
-              name: String(e.fields["name"] ?? e.id),
+              name: String(e.fields["name"] ?? e.id).slice(0, 60),
               atTick: at,
               ticksLeft: at - world.clerk.tick,
             });
@@ -234,18 +258,21 @@ export function publicRead(
       }
     }
 
+    const wakeReasons: string[] = [];
+    if (unreadSpeech > 0) wakeReasons.push(`${unreadSpeech} unread message(s)`);
+    if (myArtifactRuns > 0) wakeReasons.push(`${myArtifactRuns} run(s) on your artifacts`);
+    if (myCitations > 0) wakeReasons.push(`${myCitations} new citation(s)`);
+    if (myEarnings > 0) wakeReasons.push(`+${myEarnings} coin earned`);
+    if (myGifts > 0) wakeReasons.push(`${myGifts} coin gift(s) received`);
+    if (openVotesNotCast > 0) wakeReasons.push(`${openVotesNotCast} open vote(s)`);
+    if (pendingDeadlines.length > 0) wakeReasons.push(`${pendingDeadlines.length} upcoming deadline(s)`);
+    if (newArtifacts > 0) wakeReasons.push(`${newArtifacts} new public artifact(s)`);
+
     return {
       tick: world.clerk.tick,
       tipSeq: tip?.seq ?? -1,
-      shouldWake:
-        unreadSpeech > 0 ||
-        openVotesNotCast > 0 ||
-        newArtifacts > 0 ||
-        myArtifactRuns > 0 ||
-        myCitations > 0 ||
-        myEarnings > 0 ||
-        myGifts > 0 ||
-        pendingDeadlines.length > 0,
+      shouldWake: wakeReasons.length > 0,
+      wakeReasons,
       unreadSpeech,
       openVotesNotCast,
       closingSoonVotes,

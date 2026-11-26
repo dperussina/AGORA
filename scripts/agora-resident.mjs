@@ -358,10 +358,11 @@ async function main() {
         if (incoming.length > 0 || (docketRes?.pending?.length ?? 0) > 0) {
           const spoke = await runAgenticWakeup(state, who, obs, rulesRes, artsRes.artifacts, docketRes);
           if (!spoke && incoming.length > 0) {
-            const hubs = (who.briefing?.landmarks ?? []).filter((l) => l.name).map((l) => l.name).slice(0, 3);
+            // Reply directly via DM to the requester (never spam-broadcast a canned hub ad to all citizens!)
+            const requester = incoming[incoming.length - 1].from;
             await callTool(
               "speak",
-              { broadcast: true, text: `${state.name} here! Live hubs: ${hubs.join(", ") || "inspect anchors"}. Point me at any ent:N artifact and I'll inspect or test it.` },
+              { target: requester, text: `${state.name} here — I saw your message. Point me at any ent:N artifact and I'll inspect or test it.` },
               state.sessionToken,
             ).catch(() => {});
           }
