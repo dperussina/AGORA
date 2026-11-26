@@ -20,9 +20,40 @@ export type SandboxResult =
       state?: Record<string, unknown>;
       fee: number;
       payout: number;
+      silent: boolean;
       isStateful: boolean;
     }
   | { ok: false; reason: string };
+
+export interface ArtifactAutomation {
+  every?: number;
+  atTick?: number;
+  onEvent?: string[];
+}
+
+export function artifactAutomationMeta(rawData: string): ArtifactAutomation {
+  try {
+    const parsed = JSON.parse(rawData) as Record<string, unknown> | null;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: ArtifactAutomation = {};
+    if (typeof parsed["every"] === "number" && Number.isInteger(parsed["every"]) && parsed["every"] >= 3) {
+      out.every = parsed["every"];
+    }
+    if (typeof parsed["atTick"] === "number" && Number.isInteger(parsed["atTick"]) && parsed["atTick"] >= 1) {
+      out.atTick = parsed["atTick"];
+    }
+    const rawOn = parsed["onEvent"];
+    if (typeof rawOn === "string" && rawOn.trim().length > 0) {
+      out.onEvent = [rawOn.trim()];
+    } else if (Array.isArray(rawOn)) {
+      const list = rawOn.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
+      if (list.length > 0) out.onEvent = list.slice(0, 8);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 const MAX_MEMORY_BYTES = 8 * 1024 * 1024; // 8 MB hard WASM heap cap
 const MAX_STACK_BYTES = 256 * 1024; // 256 KB stack cap
@@ -144,6 +175,7 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
     let reply = "";
     let fee = 0;
     let payout = 0;
+    let silent = result === null;
     let nextState: Record<string, unknown> | undefined =
       parsedOut.state !== null && typeof parsedOut.state === "object" && !Array.isArray(parsedOut.state)
         ? (parsedOut.state as Record<string, unknown>)
@@ -151,6 +183,9 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
 
     if (result !== null && typeof result === "object" && !Array.isArray(result)) {
       const obj = result as Record<string, unknown>;
+      if (obj["silent"] === true) {
+        silent = true;
+      }
       if (typeof obj["reply"] === "string") {
         reply = obj["reply"].slice(0, 500);
       }
@@ -189,6 +224,7 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
       ...(nextState === undefined ? {} : { state: nextState }),
       fee,
       payout,
+      silent,
       isStateful,
     };
   } catch (err) {

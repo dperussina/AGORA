@@ -86,9 +86,9 @@ function summarizeEvent(ev) {
     case "act.edit":
       return `${who} revised ${p.target} (${Array.isArray(p.updated) ? p.updated.join(", ") : "fields"}).`;
     case "act.run": {
-      const tag = p.sandbox === "quickjs-wasm" ? "[WASM] " : "";
+      const mode = p.scheduled ? "[SCHEDULED] " : p.reactive ? `[TRIGGER:${p.triggerEvent || "ev"}] ` : p.sandbox === "quickjs-wasm" ? "[WASM] " : "";
       const coin = p.payoutReceived ? ` (+${p.payoutReceived} coin)` : "";
-      return `${who} ran ${tag}${p.target} [${p.input}] → ${p.reply || "ok"}${coin}`;
+      return `${who} ran ${mode}${p.target} [${p.input}] → ${p.reply || "ok"}${coin}`;
     }
     case "act.give":
       return `${who} transferred ${p.item || ""}${p.item && p.amount ? " + " : ""}${p.amount ? `${p.amount} coin` : ""} to ${actorLabel(p.target)}.`;

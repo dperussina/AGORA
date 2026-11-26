@@ -158,4 +158,86 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(folded.entities[scriptId]?.fields["data"]).toBe(world.entities.get(scriptId)?.fields["data"]);
     expect(folded.entities[scriptId]?.fields["currency"]).toBe(17);
   });
+
+  it("supports time-based scheduled artifacts (every/atTick seasons) and reactive onEvent if/else triggers", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // 1. Time-based seasonal clock (fires every 3 ticks)
+    const seasonData = JSON.stringify({
+      every: 3,
+      state: { season: "Spring", cycle: 0 },
+      code: `
+        const seasons = ["Spring", "Summer", "Autumn", "Winter"];
+        state.cycle += 1;
+        state.season = seasons[state.cycle % 4];
+        return { reply: "Season shifted to " + state.season, state };
+      `,
+    });
+    const seasonCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "script", name: "World Seasons", data: seasonData },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const seasonId = seasonCraft.outcome.id;
+
+    // 2. Reactive onEvent if/else trigger (if someone speaks "open sesame", pay 5 coin; else stay silent)
+    const gateData = JSON.stringify({
+      onEvent: ["speak"],
+      state: { opens: 0 },
+      code: `
+        const ev = JSON.parse(arg || "{}");
+        if (typeof ev.text === "string" && ev.text.toLowerCase().includes("open sesame")) {
+          state.opens += 1;
+          return { reply: "The Vault Gate opens for " + self + "!", payout: 5, state };
+        } else {
+          return { silent: true, state };
+        }
+      `,
+    });
+    const gateCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: { verb: "craft", immediate: true, kind: "script", name: "Sesame Gate", data: gateData },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const gateId = gateCraft.outcome.id;
+    call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "give", immediate: true, target: gateId, amount: 15 } }),
+      ada.sessionToken,
+    );
+
+    // Advance 3 ticks (keeping Ada present each tick) -> tick 3 triggers World Seasons!
+    for (let i = 0; i < 3; i += 1) {
+      call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken);
+      world.advanceTick(2_000 + i * 1_000);
+    }
+    const seasonAfter = JSON.parse(String(world.entities.get(seasonId)?.fields["data"])) as {
+      state: { season: string; cycle: number };
+    };
+    expect(seasonAfter.state).toEqual({ season: "Summer", cycle: 1 });
+    expect(world.log.events().some((e) => e.type === "act.run" && e.payload["scheduled"] === true)).toBe(true);
+
+    // Bob speaks unrelated phrase -> gate stays silent, no payout
+    const bobBefore = world.clerk.identities.get(bob.identityId)!.currency;
+    call(world, req("tools/call", { name: "speak", arguments: { broadcast: true, text: "hello world" } }), bob.sessionToken);
+    expect(world.clerk.identities.get(bob.identityId)!.currency).toBe(bobBefore);
+
+    // Bob speaks "open sesame" -> reactive if/else trigger fires and pays Bob 5 coin!
+    call(world, req("tools/call", { name: "speak", arguments: { broadcast: true, text: "Please open sesame!" } }), bob.sessionToken);
+    expect(world.clerk.identities.get(bob.identityId)!.currency).toBe(bobBefore + 5);
+    expect(world.log.events().some((e) => e.type === "act.run" && e.payload["reactive"] === true)).toBe(true);
+
+    // Deterministic replay equivalence via foldWorld
+    const folded = foldWorld(world.log.events());
+    expect(folded.entities[seasonId]?.fields["data"]).toBe(world.entities.get(seasonId)?.fields["data"]);
+    expect(folded.entities[gateId]?.fields["currency"]).toBe(10);
+  });
 });
