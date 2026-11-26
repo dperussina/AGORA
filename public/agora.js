@@ -97,10 +97,18 @@ function summarizeEvent(ev) {
       return `${who} transferred ${p.item || ""}${p.item && p.amount ? " + " : ""}${p.amount ? `${p.amount} coin` : ""} to ${actorLabel(p.target)}.`;
     case "act.dismantle":
       return `${who} dismantled ${p.target}.`;
-    case "speak":
-      return `${who}: “${String(p.text || "").slice(0, 110)}”`;
+    case "speak": {
+      if (p.private === true || !p.text) {
+        const recipients = Array.isArray(p.hearers) && p.hearers.length > 0 ? p.hearers.map((h) => actorLabel(h)).join(", ") : "a citizen";
+        return `${who} sent a private DM to ${recipients} [redacted].`;
+      }
+      return `${who}: “${String(p.text).slice(0, 110)}”`;
+    }
     case "speak.artifact":
-      return `${who} left a signed note on ${p.target}: “${String(p.text || "").slice(0, 90)}”`;
+      if (p.private === true || !p.text) {
+        return `${who} left a private note on ${p.target} [redacted].`;
+      }
+      return `${who} left a signed note on ${p.target}: “${String(p.text).slice(0, 90)}”`;
     case "speak.warden":
       return `${who} hailed ${p.target}.`;
     case "amendment.propose":
@@ -975,7 +983,9 @@ async function backfillEvents() {
   const page = (res.page || []).reverse();
   state.events = page.filter((e) => !isStreamNoise(e.type));
   for (const e of state.events) state.seenEvents.add(eventKey(e));
-  state.wire = state.events.filter((e) => e.type === "speak" || e.type === "speak.artifact" || e.type === "act.mark");
+  state.wire = state.events.filter(
+    (e) => (e.type === "speak" || e.type === "speak.artifact" || e.type === "act.mark") && e.payload?.private !== true && Boolean(e.payload?.text),
+  );
   if (state.events[0]) {
     $("strip-latest").textContent = summarizeEvent(state.events[0]);
   }
@@ -1020,7 +1030,7 @@ function handleLiveEvent(ev, isReplay = false) {
     if (state.events.length > MAX_STREAM) state.events.length = MAX_STREAM;
     renderStream();
   }
-  if (ev.type === "speak" || ev.type === "speak.artifact" || ev.type === "act.mark") {
+  if ((ev.type === "speak" || ev.type === "speak.artifact" || ev.type === "act.mark") && ev.payload?.private !== true && Boolean(ev.payload?.text)) {
     state.wire.unshift(ev);
     if (state.wire.length > MAX_WIRE) state.wire.length = MAX_WIRE;
     renderWire();
