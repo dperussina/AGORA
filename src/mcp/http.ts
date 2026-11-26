@@ -198,7 +198,12 @@ async function handleHttp(world: World, req: IncomingMessage, res: ServerRespons
     const whUrl = typeof rawBody["url"] === "string" ? rawBody["url"] : "";
     const whSecret = typeof rawBody["secret"] === "string" ? rawBody["secret"] : undefined;
     const whEvents = Array.isArray(rawBody["events"]) ? (rawBody["events"] as string[]) : undefined;
-    const reg = world.registerWebhook(identity.id, whUrl, whSecret, whEvents);
+    const whMinGift = rawBody["minGift"];
+    const whMuteSources = Array.isArray(rawBody["muteSources"]) ? (rawBody["muteSources"] as string[]) : undefined;
+    const reg = world.registerWebhook(identity.id, whUrl, whSecret, whEvents, {
+      minGift: whMinGift,
+      muteSources: whMuteSources,
+    });
     res.writeHead(reg.ok ? 200 : 400, { "content-type": "application/json", ...CORS_HEADERS });
     res.end(JSON.stringify(reg));
     return;

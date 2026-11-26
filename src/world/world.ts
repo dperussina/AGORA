@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { applyPatch } from "../engine/apply.ts";
 import { formatCell, parseCellString, scalarArg, signStep } from "../engine/cell.ts";
 import { Clerk, type VotePosition } from "../engine/clerk.ts";
@@ -158,7 +160,10 @@ export class World {
   readonly ledger: LedgerRow[] = [];
   readonly inbox = new Map<string, Array<{ from: string; text: string; tick: number; private?: boolean; kind?: string }>>();
   private readonly heardCursor = new Map<string, number>();
-  readonly webhooks = new Map<string, { url: string; secret?: string; events: string[]; createdAt: number }>();
+  readonly webhooks = new Map<
+    string,
+    { url: string; secret?: string; events: string[]; minGift?: number; muteSources?: string[]; createdAt: number }
+  >();
   private readonly webhookLastSent = new Map<string, number>();
   readonly artifactSubscribers = new Map<string, Set<string>>();
   private readonly clientTelemetry = new Map<string, number>();
@@ -822,6 +827,20 @@ export class World {
         currency: this.clerk.identities.get(identity.id)?.currency ?? 0,
         identityId: identity.id,
       });
+      const patchKind =
+        args["patch"] !== null && typeof args["patch"] === "object" && typeof (args["patch"] as Record<string, unknown>)["kind"] === "string"
+          ? String((args["patch"] as Record<string, unknown>)["kind"])
+          : "patch";
+      for (const whIdentityId of this.webhooks.keys()) {
+        if (whIdentityId !== identity.id) {
+          this.fireWebhook(
+            whIdentityId,
+            "vote",
+            `Proposal #${result.proposalId} (${patchKind}) opened for voting by ${identity.name ?? identity.id}`,
+            identity.id,
+          );
+        }
+      }
       if (this.clerk.identities.size < (this.clerk.registry.meta.quorumFloor ?? 4)) {
         const applied = this.clerk.applyImmediately(result.proposalId);
         if (applied !== undefined) {
@@ -2265,6 +2284,20 @@ export class World {
     if (artifact.fields["visibility"] === "private") {
       return { ok: false, reason: "cannot leave mailbox notes on a private artifact (mailbox notes are stored in public ledger state)" };
     }
+    const existingData = typeof artifact.fields["data"] === "string" ? artifact.fields["data"] : "";
+    if (isScriptArtifact(artifact.fields["kind"], existingData)) {
+      return { ok: false, reason: "cannot leave mailbox notes on a script artifact (use act.run instead)" };
+    }
+    if (existingData.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(existingData) as Record<string, unknown>;
+        if (parsed !== null && typeof parsed === "object" && ("machine" in parsed || "code" in parsed)) {
+          return { ok: false, reason: "cannot leave mailbox notes on a programmable machine or script artifact (use act.run instead)" };
+        }
+      } catch {
+        // Non-JSON text artifact; mailbox note allowed
+      }
+    }
     const from = this.bodyOf(identityId);
     const inNexus = this.anchorAt(from)?.class === "nexus";
     const kind = String(artifact.fields["kind"] ?? "").toLowerCase();
@@ -3078,7 +3111,7 @@ export class World {
     if (amount !== undefined) {
       if (this.clerk.identities.has(target)) {
         this.moveCurrency(intent.identityId, target, amount);
-        this.fireWebhook(target, "gift", `Received +${amount} coin from ${intent.identityId}`, intent.identityId);
+        this.fireWebhook(target, "gift", `Received +${amount} coin from ${intent.identityId}`, intent.identityId, amount);
       } else {
         const ent = this.entities.get(target)!;
         const sender = this.clerk.identities.get(intent.identityId)!;
@@ -3992,14 +4025,47 @@ export class World {
         treasury,
         world: this.sandboxWorldView(actorId),
       });
-      if (!res.ok) return;
-      if (res.nextData !== undefined && res.nextData.length > maxData) return;
-      // Atomic check: validate payouts BEFORE committing any state change!
+      if (!res.ok) {
+        if (extra["scheduled"] === true) {
+          this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: res.reason, ...extra });
+        }
+        return;
+      }
+      if (res.nextData !== undefined && res.nextData.length > maxData) {
+        if (extra["scheduled"] === true) {
+          this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: `script state exceeds artifact_data_max (${maxData})`, ...extra });
+        }
+        return;
+      }
+      // Atomic check: validate payouts & notify BEFORE committing any state change!
       const totalAutoPayout = res.payout + res.payouts.reduce((s, p) => s + p.amount, 0);
       if (totalAutoPayout > 0) {
-        if (treasury < totalAutoPayout) return;
+        if (treasury < totalAutoPayout) {
+          if (extra["scheduled"] === true) {
+            this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: `script treasury insufficient for payout (${totalAutoPayout})`, ...extra });
+          }
+          return;
+        }
         for (const p of res.payouts) {
-          if (!this.clerk.identities.has(p.to)) return;
+          if (!this.clerk.identities.has(p.to)) {
+            if (extra["scheduled"] === true) {
+              this.append("act.run_failed", "ARBITER", { target: entity.id, input, reason: `unknown payout recipient (${p.to})`, ...extra });
+            }
+            return;
+          }
+        }
+      }
+      for (const n of res.notify) {
+        if (!this.identities.identities.has(n.to) || !this.canArtifactNotify(entity, n.to)) {
+          if (extra["scheduled"] === true) {
+            this.append("act.run_failed", "ARBITER", {
+              target: entity.id,
+              input,
+              reason: `notify recipient (${n.to}) has not subscribed or interacted with ${entity.id}`,
+              ...extra,
+            });
+          }
+          return;
         }
       }
       if (res.nextData !== undefined && res.nextData !== rawData) {
@@ -4173,9 +4239,9 @@ export class World {
     if (callerId !== undefined && callerId === to) return true;
     const subs = this.artifactSubscribers.get(entity.id);
     if (subs?.has(to)) return true;
-    // Also honor historical interactions from the log (for artifacts interacted with before upgrade)
+    // Scan full event log so interactions from before deploys always count for opt-in!
     const actorTag = `identity:${to}`;
-    for (const ev of this.log.events().slice(-600)) {
+    for (const ev of this.log.events()) {
       if (ev.actor === actorTag) {
         const p = ev.payload as Record<string, unknown>;
         if (p["target"] === entity.id || p["parent"] === entity.id) {
@@ -4198,7 +4264,13 @@ export class World {
     url: string,
     secret?: string,
     events?: string[],
-  ): { ok: true; webhook: { url: string; events: string[]; hasSecret: boolean } } | { ok: false; reason: string } {
+    options?: { minGift?: unknown; muteSources?: string[] },
+  ):
+    | { ok: true; webhook: { url: string; events: string[]; hasSecret: boolean; minGift?: number; muteSources?: string[] } }
+    | { ok: false; reason: string } {
+    if (url.length === 0 || url.length > 512) {
+      return { ok: false, reason: "webhook url must be 1-512 chars" };
+    }
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -4209,47 +4281,86 @@ export class World {
     if (parsed.protocol !== "https:" && !(allowLocal && parsed.protocol === "http:")) {
       return { ok: false, reason: "webhook url must use https://" };
     }
-    const host = parsed.hostname.toLowerCase();
+    if (parsed.username.length > 0 || parsed.password.length > 0) {
+      return { ok: false, reason: "webhook url cannot include userinfo credentials" };
+    }
+    const rawHost = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
     if (!allowLocal) {
-      if (
-        host === "localhost" ||
-        host === "::1" ||
-        host.endsWith(".local") ||
-        host.endsWith(".internal") ||
-        /^127\./.test(host) ||
-        /^10\./.test(host) ||
-        /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) ||
-        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
-        /^0\./.test(host) ||
-        /^(fc|fd|fe80)/i.test(host)
-      ) {
-        return { ok: false, reason: "webhook url cannot target localhost or private network addresses" };
+      let ownHost = "";
+      try {
+        ownHost = new URL(publicOrigin()).hostname.toLowerCase().replace(/\.+$/, "");
+      } catch {
+        ownHost = "";
+      }
+      if (rawHost === ownHost || rawHost === "agora.perussina.com") {
+        return { ok: false, reason: "webhook url cannot target Agora itself" };
+      }
+      if (isBlockedWebhookHost(rawHost)) {
+        return { ok: false, reason: "webhook url cannot target localhost, private, or reserved network addresses" };
       }
     }
     const allowedCategories = new Set(["dm", "notify", "deadline", "vote", "gift"]);
-    const cleanEvents =
-      Array.isArray(events) && events.length > 0
-        ? events.filter((e): e is string => typeof e === "string" && allowedCategories.has(e))
-        : ["dm", "notify", "deadline", "vote", "gift"];
-    if (cleanEvents.length === 0) {
-      return { ok: false, reason: "events must include at least one of: dm, notify, deadline, vote, gift" };
+    let cleanEvents: string[];
+    if (events !== undefined) {
+      if (!Array.isArray(events) || events.length === 0) {
+        return { ok: false, reason: "events must be a non-empty array of: dm, notify, deadline, vote, gift" };
+      }
+      for (const e of events) {
+        if (typeof e !== "string" || !allowedCategories.has(e)) {
+          return { ok: false, reason: `unknown webhook event category: ${String(e)} (valid: dm, notify, deadline, vote, gift)` };
+        }
+      }
+      cleanEvents = [...new Set(events)];
+    } else {
+      cleanEvents = ["dm", "notify", "deadline", "vote", "gift"];
+    }
+    let minGift: number | undefined;
+    if (options?.minGift !== undefined) {
+      if (typeof options.minGift !== "number" || !Number.isInteger(options.minGift) || options.minGift < 1) {
+        return { ok: false, reason: "minGift must be a positive integer (>= 1)" };
+      }
+      minGift = options.minGift;
+    }
+    let muteSources: string[] | undefined;
+    if (options?.muteSources !== undefined) {
+      const cleaned = options.muteSources
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .map((s) => s.trim().slice(0, 64))
+        .slice(0, 20);
+      if (cleaned.length > 0) muteSources = [...new Set(cleaned)];
     }
     const cleanSecret = typeof secret === "string" && secret.trim().length > 0 ? secret.trim().slice(0, 128) : undefined;
     this.webhooks.set(identityId, {
       url: parsed.toString(),
       ...(cleanSecret ? { secret: cleanSecret } : {}),
-      events: [...new Set(cleanEvents)],
+      events: cleanEvents,
+      ...(minGift !== undefined ? { minGift } : {}),
+      ...(muteSources !== undefined ? { muteSources } : {}),
       createdAt: Date.now(),
     });
     this.persist();
-    return { ok: true, webhook: { url: parsed.toString(), events: [...new Set(cleanEvents)], hasSecret: cleanSecret !== undefined } };
+    return {
+      ok: true,
+      webhook: {
+        url: parsed.toString(),
+        events: cleanEvents,
+        hasSecret: cleanSecret !== undefined,
+        ...(minGift !== undefined ? { minGift } : {}),
+        ...(muteSources !== undefined ? { muteSources } : {}),
+      },
+    };
   }
 
-  getWebhook(identityId: string): { url: string; events: string[]; hasSecret: boolean } | null {
+  getWebhook(identityId: string): { url: string; events: string[]; hasSecret: boolean; minGift?: number; muteSources?: string[] } | null {
     const wh = this.webhooks.get(identityId);
     if (wh === undefined) return null;
-    return { url: wh.url, events: wh.events, hasSecret: typeof wh.secret === "string" && wh.secret.length > 0 };
+    return {
+      url: wh.url,
+      events: wh.events,
+      hasSecret: typeof wh.secret === "string" && wh.secret.length > 0,
+      ...(wh.minGift !== undefined ? { minGift: wh.minGift } : {}),
+      ...(wh.muteSources !== undefined ? { muteSources: wh.muteSources } : {}),
+    };
   }
 
   deleteWebhook(identityId: string): boolean {
@@ -4258,17 +4369,23 @@ export class World {
     return existed;
   }
 
-  fireWebhook(identityId: string, category: string, reason: string, source?: string): void {
+  fireWebhook(identityId: string, category: string, reason: string, source?: string, amount?: number): void {
     const wh = this.webhooks.get(identityId);
     if (wh === undefined || !wh.events.includes(category)) return;
+    if (category === "gift" && wh.minGift !== undefined && (amount ?? 0) < wh.minGift) return;
+    if (source !== undefined && wh.muteSources !== undefined && wh.muteSources.includes(source)) return;
     const cooldownMs = Number(process.env["AGORA_WEBHOOK_COOLDOWN_MS"] ?? 15_000);
     const now = Date.now();
     const last = this.webhookLastSent.get(identityId) ?? 0;
     if (cooldownMs > 0 && now - last < cooldownMs) return;
     this.webhookLastSent.set(identityId, now);
     const origin = publicOrigin();
+    const deliveryId = randomBytes(12).toString("hex");
+    const timestamp = now;
     const body = JSON.stringify({
       event: "wake",
+      deliveryId,
+      timestamp,
       identityId,
       tick: this.clerk.tick,
       category,
@@ -4279,18 +4396,35 @@ export class World {
     const headers: Record<string, string> = {
       "content-type": "application/json",
       "user-agent": "Agora-WakePush/1.0",
+      "x-agora-delivery-id": deliveryId,
+      "x-agora-timestamp": String(timestamp),
     };
     if (wh.secret) {
       headers["x-agora-signature"] = `sha256=${hmacSha256Hex(Buffer.from(wh.secret, "utf8"), body)}`;
     }
-    void fetch(wh.url, {
-      method: "POST",
-      headers,
-      body,
-      signal: AbortSignal.timeout(5_000),
-    }).catch(() => {
-      // Best-effort async wake push; never crash or block tick loop
-    });
+    const allowLocal = process.env["AGORA_ALLOW_LOCAL_WEBHOOKS"] === "1";
+    void (async () => {
+      try {
+        if (!allowLocal) {
+          const parsed = new URL(wh.url);
+          const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+          if (isBlockedWebhookHost(host)) return;
+          if (isIP(host) === 0) {
+            const addrs = await dnsLookup(host, { all: true });
+            if (addrs.length === 0 || addrs.some((a) => isBlockedWebhookIp(a.address))) return;
+          }
+        }
+        await fetch(wh.url, {
+          method: "POST",
+          headers,
+          body,
+          redirect: "error",
+          signal: AbortSignal.timeout(5_000),
+        });
+      } catch {
+        // Best-effort async wake push; never crash or block tick loop
+      }
+    })();
   }
 
   get onlineCount(): number {
@@ -4712,4 +4846,48 @@ function rewriteEachValue(value: unknown, subjectId: string): unknown {
     return out;
   }
   return value;
+}
+
+function isBlockedWebhookIp(ip: string): boolean {
+  const clean = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1 or ::ffff:7f00:1)
+  if (clean.startsWith("::ffff:")) {
+    const rest = clean.slice(7);
+    if (rest.includes(".")) return isBlockedWebhookIp(rest);
+    return true;
+  }
+  if (clean === "::1" || clean === "::" || clean.startsWith("fc") || clean.startsWith("fd") || clean.startsWith("fe8") || clean.startsWith("fe9") || clean.startsWith("fea") || clean.startsWith("feb")) {
+    return true;
+  }
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(clean);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64.0.0/10
+    if (a >= 224) return true; // multicast / reserved
+  }
+  return false;
+}
+
+function isBlockedWebhookHost(rawHost: string): boolean {
+  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  if (
+    host.length === 0 ||
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "localtest.me" ||
+    host.endsWith(".localtest.me")
+  ) {
+    return true;
+  }
+  if (isIP(host) !== 0) {
+    return isBlockedWebhookIp(host);
+  }
+  return false;
 }

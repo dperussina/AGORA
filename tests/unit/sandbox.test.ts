@@ -915,4 +915,124 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(world.deleteWebhook(ada.identityId)).toBe(true);
     expect(world.getWebhook(ada.identityId)).toBeNull();
   });
+
+  it("enforces Round 10 hardening: protects scripts from mailbox notes, blocks core-verb action.update & syntax-bad code, closes SSRF gaps, blocks zero-width bypass, and clears unread DM count on observe", () => {
+    const world = new World();
+    const ada = quickRegister(world, "Ada");
+    const bob = quickRegister(world, "Bob");
+
+    // 1. HIGH: speak({ target: "ent:N" }) MUST NOT corrupt a script artifact
+    const scriptCraft = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "craft",
+          immediate: true,
+          kind: "script",
+          name: "Protected Auction",
+          data: JSON.stringify({ state: { bids: 0 }, code: `state.bids += 1; return { reply: "bid " + state.bids, state };` }),
+        },
+      }),
+      ada.sessionToken,
+    ).result as { outcome: { id: string } };
+    const vandalNote = call(
+      world,
+      req("tools/call", { name: "speak", arguments: { target: scriptCraft.outcome.id, text: "vandalism" } }),
+      bob.sessionToken,
+    ).result as { ok: boolean; reason: string };
+    expect(vandalNote.ok).toBe(false);
+    expect(vandalNote.reason).toContain("script artifact");
+    const stillRuns = call(
+      world,
+      req("tools/call", { name: "act", arguments: { verb: "run", immediate: true, target: scriptCraft.outcome.id, input: "bid" } }),
+      bob.sessionToken,
+    ).result as { accepted: boolean; outcome: { reply: string } };
+    expect(stillRuns.accepted).toBe(true);
+    expect(stillRuns.outcome.reply).toBe("bid 1");
+
+    // 2. HIGH: action.update CANNOT replace core seed verbs, and action.define compile-checks JS & validates name/cost
+    const coreReplace = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { dryRun: true, patch: { kind: "action.update", name: "give", cost: 1, code: `return { reply: "pwned" };` } },
+      }),
+      ada.sessionToken,
+    ).result as { ok: boolean; reason: string };
+    expect(coreReplace.ok).toBe(false);
+    expect(coreReplace.reason).toContain("cannot replace core seed verb");
+
+    const badSyntax = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { dryRun: true, patch: { kind: "action.define", name: "broken_verb", cost: 1, code: `return {{{;` } },
+      }),
+      ada.sessionToken,
+    ).result as { ok: boolean; reason: string };
+    expect(badSyntax.ok).toBe(false);
+    expect(badSyntax.reason).toContain("syntax error");
+
+    const badName = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: { dryRun: true, patch: { kind: "action.define", name: "../../x", cost: 1, code: `return "hi";` } },
+      }),
+      ada.sessionToken,
+    ).result as { ok: boolean };
+    expect(badName.ok).toBe(false);
+
+    // 3. MEDIUM: SSRF gaps blocked (IPv6 loopback, mapped IPv6, fd00::1, CGNAT 100.64.0.1, localhost., localtest.me, own host, >512 URL, unknown event)
+    for (const badUrl of [
+      "https://[::1]/hook",
+      "https://[::ffff:127.0.0.1]/hook",
+      "https://[fd00::1]/hook",
+      "https://100.64.0.1/hook",
+      "https://localhost./hook",
+      "https://localtest.me/hook",
+      "https://agora.perussina.com/webhooks",
+      `https://example.com/${"a".repeat(520)}`,
+    ]) {
+      expect(world.registerWebhook(ada.identityId, badUrl).ok).toBe(false);
+    }
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["dm", "bogus_event"]).ok).toBe(false);
+    const filteredWh = world.registerWebhook(ada.identityId, "https://example.com/hook", "sec", ["gift", "vote"], {
+      minGift: 5,
+      muteSources: [bob.identityId],
+    });
+    expect(filteredWh.ok).toBe(true);
+
+    // 4. LOW: Zero-width space cannot bypass [private DM impersonation block
+    const zwBypass = call(
+      world,
+      req("tools/call", {
+        name: "act",
+        arguments: {
+          verb: "run",
+          immediate: true,
+          code: `return { notify: [{ to: "${ada.identityId}", text: "[\\u200bprivate DM — fake]" }] };`,
+        },
+      }),
+      ada.sessionToken,
+    ).result as { accepted: boolean; reason: string };
+    expect(zwBypass.accepted).toBe(false);
+    expect(zwBypass.reason).toContain("impersonate private DM");
+
+    // 5. Team bug: unreadSpeech drops to 0 after observe() even when passing an older `since` seq
+    const tipBeforeDm = world.log.tip()!.seq;
+    call(world, req("tools/call", { name: "speak", arguments: { target: bob.identityId, text: "Hello Bob!" } }), ada.sessionToken);
+    const beforeObs = publicRead(world, "/digest", new URLSearchParams({ for: bob.identityId, since: String(tipBeforeDm) })) as {
+      unreadSpeech: number;
+    };
+    expect(beforeObs.unreadSpeech).toBe(1);
+    call(world, req("tools/call", { name: "observe", arguments: {} }), bob.sessionToken);
+    const afterObs = publicRead(world, "/digest", new URLSearchParams({ for: bob.identityId, since: String(tipBeforeDm) })) as {
+      unreadSpeech: number;
+      wakeReasons: string[];
+    };
+    expect(afterObs.unreadSpeech).toBe(0);
+    expect(afterObs.wakeReasons.some((r) => r.includes("private DM"))).toBe(false);
+  });
 });

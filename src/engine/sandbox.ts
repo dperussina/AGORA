@@ -298,7 +298,7 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
           }
           const clean = nItem["text"]
             .replace(/[\r\n\t]+/g, " ")
-            .replace(/[\u0000-\u001F\u007F\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "")
+            .replace(/[\u0000-\u001F\u007F\u00AD\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, "")
             .trim()
             .slice(0, 240);
           if (clean.length === 0) {

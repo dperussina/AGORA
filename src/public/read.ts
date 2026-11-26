@@ -125,30 +125,8 @@ export function publicRead(
         typeof e.createdBy === "number" &&
         e.createdBy > since,
     ).length;
-    const inboxUnread = forId !== null ? world.unreadSpeechCount(forId) : 0;
+    const unreadSpeech = forId !== null ? world.unreadSpeechCount(forId) : 0;
     const recentMessages = forId !== null ? world.unreadMessagesPreview(forId, 3) : [];
-    const loggedDmEvents =
-      forId !== null && hasSince
-        ? recentEvents.filter(
-            (e) =>
-              e.type === "speak" &&
-              e.payload["private"] === true &&
-              Array.isArray(e.payload["hearers"]) &&
-              (e.payload["hearers"] as unknown[]).includes(forId),
-          )
-        : [];
-    const loggedDmsSince = loggedDmEvents.length;
-    if (recentMessages.length === 0 && loggedDmsSince > 0) {
-      for (const ev of loggedDmEvents.slice(-3)) {
-        recentMessages.push({
-          from: "private",
-          text: "[private DM — authenticate and call observe() to read]",
-          tick: ev.tick,
-          private: true,
-        });
-      }
-    }
-    const unreadSpeech = Math.max(inboxUnread, loggedDmsSince);
     const openVotesNotCast =
       forId !== null ? world.clerk.docket().filter((p) => !p.ballots.has(forId)).length : world.clerk.docket().length;
     const closingSoonVotes = world.clerk
@@ -267,7 +245,7 @@ export function publicRead(
       for (const n of notifyItems.slice(-3)) {
         wakeReasons.push(`notify from ${n.from}: ${n.text.replace(/^\[[^\]]+\]\s*/, "").slice(0, 120)}`);
       }
-      const dmCount = Math.max(dmItems.length, loggedDmsSince);
+      const dmCount = dmItems.length;
       if (dmCount > 0) wakeReasons.push(`${dmCount} unread private DM(s)`);
       if (otherSpeech > 0) wakeReasons.push(`${otherSpeech} unread message(s)`);
     } else if (unreadSpeech > 0) {

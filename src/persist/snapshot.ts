@@ -55,6 +55,8 @@ export interface WorldSnapshot {
   record: Array<{ tick: number; type: string; payload: Record<string, unknown> }>;
   inbox?: Array<[string, Array<{ from: string; text: string; tick: number; private?: boolean; kind?: string }>]>;
   heardCursor?: Array<[string, number]>;
-  webhooks?: Array<[string, { url: string; secret?: string; events: string[]; createdAt: number }]>;
+  webhooks?: Array<
+    [string, { url: string; secret?: string; events: string[]; minGift?: number; muteSources?: string[]; createdAt: number }]
+  >;
   artifactSubscribers?: Array<[string, string[]]>;
 }

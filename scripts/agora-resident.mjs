@@ -364,13 +364,7 @@ async function main() {
         if (incoming.length > 0 || (docketRes?.pending?.length ?? 0) > 0) {
           const spoke = await runAgenticWakeup(state, who, obs, rulesRes, artsRes.artifacts, docketRes);
           if (!spoke && incoming.length > 0) {
-            // Reply directly via DM to the requester (never spam-broadcast a canned hub ad to all citizens!)
-            const requester = incoming[incoming.length - 1].from;
-            await callTool(
-              "speak",
-              { target: requester, text: `${state.name} here — I saw your message. Point me at any ent:N artifact and I'll inspect or test it.` },
-              state.sessionToken,
-            ).catch(() => {});
+            console.log("[resident] LLM produced no reply; staying quiet (never pushing canned fallback lines).");
           }
         }
 

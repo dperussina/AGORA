@@ -394,12 +394,36 @@ function validateTriggerRemove(registry: Registry, body: Extract<Patch, { kind: 
   return { ok: true, tier: 1 };
 }
 
+const LEGAL_VERB_NAME_RE = /^[a-z][a-z0-9_-]{1,31}$/;
+
+function validateActionCode(code: unknown): Validation | null {
+  if (typeof code !== "string" || code.trim().length === 0) {
+    return fail("schema", "action code must be a non-empty JavaScript string");
+  }
+  if (code.length > 16_000) {
+    return fail("bounds", "action code exceeds 16,000 chars");
+  }
+  try {
+    // Compile-check JS syntax at propose/dryRun time (never executed here)
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    new Function(`"use strict";\n${code}`);
+  } catch (err) {
+    return fail("schema", `action code syntax error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return null;
+}
+
 function validateActionDefine(
   registry: Registry,
   body: Extract<Patch, { kind: "action.define" }>,
 ): Validation {
-  if (typeof body.name !== "string" || body.name.length === 0) {
-    return fail("schema", "action.define requires a name", undefined, PATCH_EXAMPLES["action.define"]);
+  if (typeof body.name !== "string" || !LEGAL_VERB_NAME_RE.test(body.name)) {
+    return fail(
+      "schema",
+      "action.define requires a lowercase name matching /^[a-z][a-z0-9_-]{1,31}$/",
+      undefined,
+      PATCH_EXAMPLES["action.define"],
+    );
   }
   if (registry.verbs[body.name] !== undefined) {
     return fail("conflict", `verb ${body.name} exists`, "Use action.update to modify an existing verb.", PATCH_EXAMPLES["action.update"]);
@@ -407,10 +431,12 @@ function validateActionDefine(
   if (!Number.isInteger(body.cost) || body.cost < 0) {
     return fail("schema", "cost must be a non-negative integer", undefined, PATCH_EXAMPLES["action.define"]);
   }
-  if (typeof body.code === "string" && body.code.trim().length > 0) {
-    if (body.code.length > 16_000) {
-      return fail("bounds", "action code exceeds 16,000 chars");
+  if (body.code !== undefined) {
+    if (body.cost < 1) {
+      return fail("schema", "code-defined verbs require cost >= 1", undefined, PATCH_EXAMPLES["action.define"]);
     }
+    const codeErr = validateActionCode(body.code);
+    if (codeErr !== null) return codeErr;
     return { ok: true, tier: 2 };
   }
   return validateEffects(body.effects ?? []);
@@ -423,23 +449,28 @@ function validateActionUpdate(
   if (typeof body.name !== "string" || body.name.length === 0) {
     return fail("schema", "action.update requires a name", undefined, PATCH_EXAMPLES["action.update"]);
   }
+  if (SEED_VERBS.has(body.name)) {
+    return fail("layer0", `cannot replace core seed verb ${body.name}`);
+  }
   if (registry.verbs[body.name] === undefined) {
     return fail("missing_path", `unknown verb ${body.name}`, "Use action.define to create a new verb.");
   }
   if (!Number.isInteger(body.cost) || body.cost < 0) {
     return fail("schema", "cost must be a non-negative integer");
   }
-  if (typeof body.code === "string" && body.code.trim().length > 0) {
-    if (body.code.length > 16_000) {
-      return fail("bounds", "action code exceeds 16,000 chars");
+  if (body.code !== undefined) {
+    if (body.cost < 1) {
+      return fail("schema", "code-defined verbs require cost >= 1");
     }
-    return { ok: true, tier: SEED_VERBS.has(body.name) ? 1 : 2 };
+    const codeErr = validateActionCode(body.code);
+    if (codeErr !== null) return codeErr;
+    return { ok: true, tier: 2 };
   }
   const checked = validateEffects(body.effects ?? []);
   if (!checked.ok) {
     return checked;
   }
-  return { ok: true, tier: SEED_VERBS.has(body.name) ? 1 : 2 };
+  return { ok: true, tier: 2 };
 }
 
 function validateActionRemove(
