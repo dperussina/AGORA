@@ -842,6 +842,7 @@ async function refreshCitizens() {
   for (const row of list) {
     if (row.name) state.names.set(row.id, row.name);
   }
+  if (timeline) timeline.setOnlineIds(list.filter((c) => c.online).map((c) => c.id));
   $("citizens-count").textContent = String(list.length);
   const el = $("citizen-list");
   if (list.length === 0) {
@@ -873,6 +874,7 @@ async function refreshCitizens() {
 async function refreshArtifacts() {
   const res = await fetchJson("/artifacts?limit=100");
   state.artifacts = res.artifacts || [];
+  if (timeline) timeline.artifactsById = new Map(state.artifacts.map((a) => [a.id, a]));
   renderArtifacts();
   renderBlueprint();
 }
@@ -1288,7 +1290,10 @@ function wireControls() {
   const tlCanvas = $("timeline-canvas");
   if (tlCanvas) {
     const hoverEl = $("lattice-hover");
-    const tlHint = "Drag horizontally to scrub history · Click any event marker to inspect · Click any lane to open Author Dossier";
+    const replayBtn = $("tl-replay");
+    const speedBtn = $("tl-speed");
+    const liveBtn = $("tl-live");
+    const tlHint = "Drag horizontally to scrub history · Click ▶ Replay to watch animated playback · Click any node to inspect";
     timeline = new ExperimentTimeline(tlCanvas, {
       actorLabel,
       onHover: (hit) => {
@@ -1296,8 +1301,28 @@ function wireControls() {
       },
       onSelectEvent: (ev) => openInspector("LEDGER EVENT", `${ev.type} · t${padTick(ev.tick)}`, ev, true),
       onSelectActor: (id) => openAuthorDossier(id, true),
+      onStateChange: (st) => {
+        if (replayBtn) {
+          replayBtn.textContent = st.replaying ? "■ Stop" : "▶ Replay";
+          replayBtn.classList.toggle("is-active", st.replaying);
+        }
+        if (speedBtn) {
+          speedBtn.textContent = `${st.speed}×`;
+          speedBtn.classList.toggle("is-active", st.replaying);
+        }
+        if (liveBtn) {
+          liveBtn.classList.toggle("is-active", !st.replaying && st.followLive);
+        }
+        if (st.replaying && st.currentEvent && stageMode === "timeline" && hoverEl) {
+          hoverEl.textContent = `REPLAY (${st.replayCount}/${st.total}) · t${padTick(st.currentEvent.tick)} · ${summarizeEvent(st.currentEvent)}`;
+        } else if (!st.replaying && stageMode === "timeline" && hoverEl) {
+          hoverEl.textContent = tlHint;
+        }
+      },
     });
-    $("tl-live")?.addEventListener("click", () => timeline.snapLive());
+    replayBtn?.addEventListener("click", () => timeline.toggleReplay());
+    speedBtn?.addEventListener("click", () => timeline.cycleSpeed());
+    liveBtn?.addEventListener("click", () => timeline.snapLive());
     $("tl-zoom-in")?.addEventListener("click", () => timeline.zoomBy(1.22));
     $("tl-zoom-out")?.addEventListener("click", () => timeline.zoomBy(0.82));
   }
