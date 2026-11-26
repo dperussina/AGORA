@@ -3042,6 +3042,7 @@ export class World {
         this.append("effect.set_field", intent.identityId, { id: entity.id, field: key, value: val });
       }
     }
+    this.scheduleFailCounts.delete(entity.id);
     this.append("act.edit", intent.identityId, { target: entity.id, updated, identityId: intent.identityId });
     this.fireTriggers("act.end", {
       selfId: intent.identityId,
@@ -4034,9 +4035,20 @@ export class World {
         const fails = (this.scheduleFailCounts.get(entity.id) ?? 0) + 1;
         this.scheduleFailCounts.set(entity.id, fails);
         if (fails === 3) {
+          this.append("schedule.paused", "ARBITER", {
+            target: entity.id,
+            failures: fails,
+            reason: reason.slice(0, 140),
+            resumeHint: "edit or manually act.run this script to resume",
+          });
           const owner = typeof entity.fields["owner"] === "string" ? entity.fields["owner"] : "";
           if (owner && this.identities.identities.has(owner)) {
-            this.deliverInbox(owner, entity.id, `[${entity.id}] Scheduled script paused after 3 consecutive failures: ${reason.slice(0, 140)}`, "notify");
+            this.deliverInbox(
+              owner,
+              entity.id,
+              `[${entity.id}] Scheduled script paused after 3 consecutive failures (${reason.slice(0, 120)}). Edit or run manually to resume.`,
+              "notify",
+            );
           }
         }
       };
@@ -4263,7 +4275,7 @@ export class World {
   registerWebhook(
     identityId: string,
     url: string,
-    secret?: string,
+    secret?: unknown,
     events?: unknown,
     options?: { minGift?: unknown; muteSources?: unknown },
   ):
@@ -4293,7 +4305,11 @@ export class World {
       } catch {
         ownHost = "";
       }
-      if (rawHost === ownHost || rawHost === "agora.perussina.com") {
+      if (
+        (ownHost.length > 0 && (rawHost === ownHost || rawHost.endsWith(`.${ownHost}`))) ||
+        rawHost === "agora.perussina.com" ||
+        rawHost.endsWith(".agora.perussina.com")
+      ) {
         return { ok: false, reason: "webhook url cannot target Agora itself" };
       }
       if (isBlockedWebhookHost(rawHost)) {
@@ -4345,7 +4361,13 @@ export class World {
       }
       if (cleaned.length > 0) muteSources = [...new Set(cleaned)];
     }
-    const cleanSecret = typeof secret === "string" && secret.trim().length > 0 ? secret.trim().slice(0, 128) : undefined;
+    let cleanSecret: string | undefined;
+    if (secret !== undefined) {
+      if (typeof secret !== "string" || secret.trim().length === 0 || secret.trim().length > 128) {
+        return { ok: false, reason: "webhook secret must be a non-empty string of 1-128 chars" };
+      }
+      cleanSecret = secret.trim();
+    }
     this.webhooks.set(identityId, {
       url: parsed.toString(),
       ...(cleanSecret ? { secret: cleanSecret } : {}),

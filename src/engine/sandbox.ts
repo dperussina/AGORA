@@ -309,18 +309,19 @@ export function runSandboxScript(rawData: string, ctx: SandboxContext): SandboxR
             .normalize("NFKC")
             .normalize("NFD")
             .replace(/\p{Mn}/gu, "")
-            .replace(/[аАαΑ]/g, "a")
-            .replace(/[еЕεΕ]/g, "e")
-            .replace(/[іІιΙ]/g, "i")
-            .replace(/[оОοΟ]/g, "o")
-            .replace(/[рРρΡ]/g, "p")
-            .replace(/[сС]/g, "c")
-            .replace(/[тТτΤ]/g, "t")
-            .replace(/[уУ]/g, "y")
+            .replace(/[аАαΑᴀ]/g, "a")
+            .replace(/[еЕεΕᴇ]/g, "e")
+            .replace(/[іІιΙɪ]/g, "i")
+            .replace(/[оОοΟᴏ]/g, "o")
+            .replace(/[рРρΡᴘ]/g, "p")
+            .replace(/[сСᴄ]/g, "c")
+            .replace(/[тТτΤᴛ]/g, "t")
+            .replace(/[уУʏ]/g, "y")
             .replace(/[хХ]/g, "x")
-            .replace(/[мМ]/g, "m")
-            .replace(/[ԁԀ]/g, "d")
-            .replace(/[νΝ]/g, "v");
+            .replace(/[мМᴍ]/g, "m")
+            .replace(/[ԁԀᴅ]/g, "d")
+            .replace(/[νΝᴠ]/g, "v")
+            .replace(/[ʀ]/g, "r");
           if (/\[?\s*private\s*dm/i.test(folded)) {
             return { ok: false, reason: "notify text cannot impersonate private DM placeholders" };
           }

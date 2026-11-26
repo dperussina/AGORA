@@ -999,10 +999,13 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
       "https://localhost./hook",
       "https://localtest.me/hook",
       "https://agora.perussina.com/webhooks",
+      "https://www.agora.perussina.com/webhooks",
       `https://example.com/${"a".repeat(520)}`,
     ]) {
       expect(world.registerWebhook(ada.identityId, badUrl).ok).toBe(false);
     }
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", 123).ok).toBe(false);
+    expect(world.registerWebhook(ada.identityId, "https://example.com/hook", "s".repeat(200)).ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, "dm").ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["dm", "bogus_event"]).ok).toBe(false);
     expect(world.registerWebhook(ada.identityId, "https://example.com/hook", undefined, ["gift"], { minGift: 1_000_000_000 }).ok).toBe(false);
@@ -1014,7 +1017,7 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(filteredWh.ok).toBe(true);
 
     // 4. LOW: Zero-width, fullwidth, Cyrillic homoglyph, and combining marks cannot bypass [private DM impersonation block
-    for (const tricky of ["[\\u200bprivate DM — fake]", "［private DM］", "[privаte DM]", "[priva\\u0301te DM]"]) {
+    for (const tricky of ["[\\u200bprivate DM — fake]", "［private DM］", "[privаte DM]", "[priva\\u0301te DM]", "[ᴘrivate DM]"]) {
       const zwBypass = call(
         world,
         req("tools/call", {
