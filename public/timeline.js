@@ -42,6 +42,7 @@ export class ExperimentTimeline {
     this.onStateChange = opts.onStateChange || (() => {});
 
     this.events = []; // oldest -> newest
+    this.pinnedLanes = []; // stable lane order so agents never jump rows when replying
     this.artifactsById = new Map();
     this.onlineIds = new Set();
     this.hitTargets = [];
@@ -90,6 +91,25 @@ export class ExperimentTimeline {
       .filter((e) => e && e.type && !e.type.startsWith("effect.") && !e.type.startsWith("credential.") && e.type !== "tick.boundary")
       .reverse();
     this.artifactsById = new Map(artifacts.map((a) => [a.id, a]));
+    // Lock initial swimlanes in stable order (ARBITER first, then alphabetical by label) so agents never jump rows
+    const seen = new Set(this.pinnedLanes);
+    const newlyFound = [];
+    for (const ev of this.events) {
+      const id = this._actorIdOf(ev.actor);
+      if (!seen.has(id)) {
+        seen.add(id);
+        newlyFound.push(id);
+      }
+    }
+    newlyFound.sort((a, b) => {
+      if (a === "ARBITER") return -1;
+      if (b === "ARBITER") return 1;
+      return String(this.actorLabel(a)).localeCompare(String(this.actorLabel(b)));
+    });
+    for (const id of newlyFound) {
+      if (id === "ARBITER") this.pinnedLanes.unshift(id);
+      else this.pinnedLanes.push(id);
+    }
     if (!this.replaying && this.followLive) this.scrollOffset = 0;
     if (this.replaying && this.replayCount > this.events.length) {
       this.replayCount = this.events.length;
@@ -99,6 +119,11 @@ export class ExperimentTimeline {
   pushLiveEvent(ev) {
     if (!ev || !ev.type || ev.type.startsWith("effect.") || ev.type.startsWith("credential.") || ev.type === "tick.boundary") {
       return;
+    }
+    const actorId = this._actorIdOf(ev.actor);
+    if (!this.pinnedLanes.includes(actorId)) {
+      if (actorId === "ARBITER") this.pinnedLanes.unshift(actorId);
+      else this.pinnedLanes.push(actorId);
     }
     const now = performance.now();
     const stamped = { ...ev, _born: now };
@@ -440,16 +465,9 @@ export class ExperimentTimeline {
 
     const visibleEvents = this.replaying ? this.events.slice(0, this.replayCount) : this.events;
 
-    // Build stable swimlane ordering from full dataset so lanes never jump during replay
-    const laneOrder = [];
-    const seen = new Set();
-    for (let i = this.events.length - 1; i >= 0; i--) {
-      const id = this._actorIdOf(this.events[i].actor);
-      if (!seen.has(id)) {
-        seen.add(id);
-        laneOrder.push(id);
-      }
-    }
+    // Use locked swimlane order so agents stay anchored in their row as they act & reply
+    const activeSet = new Set(this.events.map((e) => this._actorIdOf(e.actor)));
+    const laneOrder = this.pinnedLanes.filter((id) => activeSet.has(id));
     if (laneOrder.length === 0) {
       ctx.font = "500 12px 'IBM Plex Mono', monospace";
       ctx.fillStyle = "rgba(148, 163, 184, 0.72)";
@@ -457,13 +475,7 @@ export class ExperimentTimeline {
       ctx.restore();
       return;
     }
-
-    const arbiterIdx = laneOrder.indexOf("ARBITER");
-    if (arbiterIdx > 0) {
-      laneOrder.splice(arbiterIdx, 1);
-      laneOrder.unshift("ARBITER");
-    }
-    const lanes = laneOrder.slice(0, 12);
+    const lanes = laneOrder.slice(0, 14);
     const plotW = Math.max(120, this.width - LANE_LEFT - 32);
     const plotH = Math.max(80, this.height - TOP_PAD - BOT_PAD);
     const laneH = plotH / lanes.length;
