@@ -1,10 +1,13 @@
 import { Lattice3D } from "/lattice3d.js";
+import { ExperimentTimeline } from "/timeline.js";
 
 const MAX_STREAM = 100;
 const MAX_WIRE = 60;
 const SEED_VERBS = new Set(["craft", "depict", "dismantle", "edit", "give", "mark", "move", "run", "wait"]);
 
 let lattice3d = null;
+let timeline = null;
+let stageMode = "timeline";
 
 const state = {
   filter: "all",
@@ -495,9 +498,43 @@ function pushDrawer(fn) {
   if ($("drawer-back")) $("drawer-back").hidden = state.drawerHistory.length <= 1;
 }
 
+function setStageMode(mode) {
+  stageMode = mode === "3d" ? "3d" : "timeline";
+  const is3d = stageMode === "3d";
+  document.querySelectorAll("[data-stage-mode]").forEach((b) => {
+    b.classList.toggle("is-active", b.dataset.stageMode === stageMode);
+  });
+  if ($("timeline-canvas")) $("timeline-canvas").hidden = is3d;
+  if ($("lattice-canvas")) $("lattice-canvas").hidden = !is3d;
+  if ($("timeline-controls")) $("timeline-controls").hidden = is3d;
+  if ($("lattice-controls")) $("lattice-controls").hidden = !is3d;
+  if ($("sec-3d")) $("sec-3d").textContent = is3d ? "Live 3D Lattice" : "Live Experiment Timeline";
+  if ($("stage-kicker")) {
+    $("stage-kicker").textContent = is3d
+      ? "00 / SPATIAL OBSERVATORY · 64 × 64 × 64"
+      : "00 / EXPERIMENT TIMELINE · MULTI-AGENT TELEMETRY";
+  }
+  if ($("lattice-hover")) {
+    $("lattice-hover").textContent = is3d
+      ? "Drag to orbit · Scroll to zoom · Click any inhabitant, artifact, or landmark to inspect"
+      : "Drag horizontally to scrub history · Click any event marker to inspect · Click any lane to open Author Dossier";
+  }
+  if (is3d && lattice3d) {
+    lattice3d._resize();
+    lattice3d.start();
+    timeline?.stop();
+  } else if (timeline) {
+    timeline._resize();
+    timeline.dirty = true;
+    timeline.start();
+    lattice3d?.stop();
+  }
+}
+
 function locateIn3D(pos) {
   if (!pos) return;
   $("inspector")?.close();
+  setStageMode("3d");
   $("lattice-3d")?.scrollIntoView({ behavior: "smooth", block: "center" });
   if (lattice3d) lattice3d.focusPoint(pos.x, pos.y, pos.z);
 }
@@ -942,6 +979,7 @@ async function backfillEvents() {
   }
   renderStream();
   renderWire();
+  if (timeline) timeline.setData(state.events, state.artifacts);
 }
 
 function handleLiveEvent(ev, isReplay = false) {
@@ -953,6 +991,7 @@ function handleLiveEvent(ev, isReplay = false) {
   if (!isReplay) {
     pulseHeartbeat();
     if (lattice3d) lattice3d.triggerEvent(ev);
+    if (timeline) timeline.pushLiveEvent(ev);
   }
   if (typeof ev.tick === "number") {
     $("stat-tick").textContent = padTick(ev.tick);
@@ -1241,6 +1280,28 @@ function wireControls() {
     if (e.target === dialog) dialog.close();
   });
 
+  // Stage Mode Switcher (Experiment Timeline <-> 3D Lattice)
+  document.querySelectorAll("[data-stage-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => setStageMode(btn.dataset.stageMode));
+  });
+
+  const tlCanvas = $("timeline-canvas");
+  if (tlCanvas) {
+    const hoverEl = $("lattice-hover");
+    const tlHint = "Drag horizontally to scrub history · Click any event marker to inspect · Click any lane to open Author Dossier";
+    timeline = new ExperimentTimeline(tlCanvas, {
+      actorLabel,
+      onHover: (hit) => {
+        if (stageMode === "timeline" && hoverEl) hoverEl.textContent = hit ? hit.label : tlHint;
+      },
+      onSelectEvent: (ev) => openInspector("LEDGER EVENT", `${ev.type} · t${padTick(ev.tick)}`, ev, true),
+      onSelectActor: (id) => openAuthorDossier(id, true),
+    });
+    $("tl-live")?.addEventListener("click", () => timeline.snapLive());
+    $("tl-zoom-in")?.addEventListener("click", () => timeline.zoomBy(1.22));
+    $("tl-zoom-out")?.addEventListener("click", () => timeline.zoomBy(0.82));
+  }
+
   // 3D Architectural Lattice Controls
   const canvas = $("lattice-canvas");
   if (canvas) {
@@ -1249,7 +1310,7 @@ function wireControls() {
     lattice3d = new Lattice3D(canvas, {
       actorLabel,
       onHover: (hit) => {
-        if (hoverEl) hoverEl.textContent = hit ? hit.label : defaultHint;
+        if (stageMode === "3d" && hoverEl) hoverEl.textContent = hit ? hit.label : defaultHint;
       },
       onSelect: (hit) => {
         if (hit.kind === "artifact") openArtifactInspector(hit.data, true);
@@ -1283,6 +1344,7 @@ function wireControls() {
 
 async function boot() {
   wireControls();
+  setStageMode("timeline");
   await Promise.all([
     refreshCitizens(),
     refreshPulseAndResearch(),

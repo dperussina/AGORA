@@ -944,7 +944,25 @@ pre,
 .lattice-controls {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mode-switch,
+.mode-controls {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.mode-switch {
+  padding-inline-end: 0.55rem;
+  border-inline-end: 1px solid var(--rule-strong);
+}
+
+.lattice-canvas[hidden],
+.mode-controls[hidden] {
+  display: none;
 }
 
 .lattice-viewport-wrap {
