@@ -28,17 +28,19 @@ export type Patch =
       kind: "action.define";
       name: string;
       cost: number;
-      params: Record<string, string>;
-      preconditions: unknown[];
-      effects: Array<{ effect: string; args: unknown[] }>;
+      params?: Record<string, string>;
+      preconditions?: unknown[];
+      effects?: Array<{ effect: string; args: unknown[] }>;
+      code?: string;
     }
   | {
       kind: "action.update";
       name: string;
       cost: number;
-      params: Record<string, string>;
-      preconditions: unknown[];
-      effects: Array<{ effect: string; args: unknown[] }>;
+      params?: Record<string, string>;
+      preconditions?: unknown[];
+      effects?: Array<{ effect: string; args: unknown[] }>;
+      code?: string;
     }
   | { kind: "action.remove"; name: string }
   | { kind: "rule.define_trigger"; id: string; when: string; condition: unknown; effects: Array<{ effect: string; args: unknown[] }> }
@@ -405,7 +407,13 @@ function validateActionDefine(
   if (!Number.isInteger(body.cost) || body.cost < 0) {
     return fail("schema", "cost must be a non-negative integer", undefined, PATCH_EXAMPLES["action.define"]);
   }
-  return validateEffects(body.effects);
+  if (typeof body.code === "string" && body.code.trim().length > 0) {
+    if (body.code.length > 16_000) {
+      return fail("bounds", "action code exceeds 16,000 chars");
+    }
+    return { ok: true, tier: 2 };
+  }
+  return validateEffects(body.effects ?? []);
 }
 
 function validateActionUpdate(
@@ -421,7 +429,13 @@ function validateActionUpdate(
   if (!Number.isInteger(body.cost) || body.cost < 0) {
     return fail("schema", "cost must be a non-negative integer");
   }
-  const checked = validateEffects(body.effects);
+  if (typeof body.code === "string" && body.code.trim().length > 0) {
+    if (body.code.length > 16_000) {
+      return fail("bounds", "action code exceeds 16,000 chars");
+    }
+    return { ok: true, tier: SEED_VERBS.has(body.name) ? 1 : 2 };
+  }
+  const checked = validateEffects(body.effects ?? []);
   if (!checked.ok) {
     return checked;
   }

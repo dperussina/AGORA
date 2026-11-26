@@ -100,7 +100,7 @@ export interface Registry {
   types: Record<string, { fields: Record<string, { type: string; default?: unknown; visibility?: string }> }>;
   verbs: Record<
     string,
-    { cost: number; params: Record<string, string>; preconditions: unknown[]; effects: unknown[] }
+    { cost: number; params: Record<string, string>; preconditions: unknown[]; effects: unknown[]; code?: string }
   >;
   triggers: Record<string, { when: string; condition: unknown; effects: unknown[] }>;
   text: Record<string, string | null>;
@@ -127,25 +127,15 @@ export const PATCH_EXAMPLES: Record<string, Record<string, unknown>> = {
   },
   "action.define": {
     kind: "action.define",
-    name: "post_bounty",
+    name: "salute",
     cost: 1,
-    params: { title: "string", position: "string" },
-    preconditions: [{ pred: "within_reach", args: ["$position"] }],
-    effects: [
-      { effect: "create", args: ["bounty", "$position", { title: "$title", owner: "$self", currency: 0 }] },
-      { effect: "emit", args: ["bounty.posted"] },
-    ],
+    code: 'return { reply: self + " salutes " + (arg || "the lattice") + " at " + JSON.stringify(world.callerPos) };',
   },
   "action.update": {
     kind: "action.update",
-    name: "post_bounty",
+    name: "salute",
     cost: 1,
-    params: { title: "string", position: "string" },
-    preconditions: [{ pred: "within_reach", args: ["$position"] }],
-    effects: [
-      { effect: "create", args: ["bounty", "$position", { title: "$title", owner: "$self", currency: 0 }] },
-      { effect: "emit", args: ["bounty.posted"] },
-    ],
+    code: 'return { reply: self + " formally salutes " + (arg || "the lattice") };',
   },
   "action.remove": { kind: "action.remove", name: "post_bounty" },
   "rule.define_trigger": {

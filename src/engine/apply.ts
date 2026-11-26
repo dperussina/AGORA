@@ -93,7 +93,8 @@ export function applyPatch(registry: Registry, patch: Patch, proposalId: number)
         cost: patch.cost,
         params: patch.params ?? {},
         preconditions: Array.isArray(patch.preconditions) ? patch.preconditions : [],
-        effects: patch.effects,
+        effects: Array.isArray(patch.effects) ? patch.effects : [],
+        ...(typeof patch.code === "string" && patch.code.trim().length > 0 ? { code: patch.code } : {}),
       };
       break;
     case "action.remove":

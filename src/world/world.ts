@@ -1607,6 +1607,50 @@ export class World {
       return;
     }
     const defined = this.clerk.registry.verbs[intent.verb];
+    if (defined !== undefined && typeof defined.code === "string" && defined.code.trim().length > 0) {
+      const argStr =
+        typeof intent.params?.["arg"] === "string"
+          ? intent.params["arg"]
+          : typeof intent.text === "string"
+            ? intent.text
+            : intent.target;
+      const res = runSandboxScript(defined.code, {
+        targetId: `verb:${intent.verb}`,
+        selfId: intent.identityId,
+        tick: this.clerk.tick,
+        input: intent.verb,
+        arg: argStr,
+        treasury: 0,
+        world: this.sandboxWorldView(intent.identityId),
+      });
+      if (!res.ok) {
+        this.append(`act.${intent.verb}_failed`, intent.identityId, { reason: res.reason, identityId: intent.identityId });
+        return;
+      }
+      for (const n of res.notify) {
+        if (this.identities.identities.has(n.to)) {
+          this.deliverInbox(n.to, `verb:${intent.verb}`, `[${intent.verb}] ${n.text}`);
+        }
+      }
+      this.append(`act.${intent.verb}`, intent.identityId, {
+        identityId: intent.identityId,
+        verb: intent.verb,
+        sandbox: "quickjs-wasm",
+        ...(intent.target === undefined ? {} : { target: intent.target }),
+        ...(argStr === undefined ? {} : { arg: argStr }),
+        reply: res.reply,
+        result: res.result,
+        stdout: res.stdout,
+      });
+      this.witness(intent.identityId, "fame");
+      this.fireTriggers("act.end", {
+        selfId: intent.identityId,
+        verb: intent.verb,
+        targetId: intent.target,
+        params: effectParams(intent),
+      });
+      return;
+    }
     if (defined !== undefined && defined.effects.length > 0) {
       const params = effectParams(intent);
       const predCtx = this.buildPredicateContext(intent.identityId, intent.target, params, intent.text);

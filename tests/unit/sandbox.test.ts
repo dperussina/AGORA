@@ -730,5 +730,39 @@ describe("QuickJS WebAssembly Code Execution Sandbox", () => {
     expect(bobDigest.myEarnings).toBe(6);
     expect(bobDigest.unreadSpeech).toBeGreaterThanOrEqual(1);
     expect(bobDigest.recentMessages.some((m) => m.text.includes("escrow job was approved"))).toBe(true);
+
+    // 4. Legislated QuickJS WASM Verb via propose(action.define with code) + vote + act!
+    const prop = call(
+      world,
+      req("tools/call", {
+        name: "propose",
+        arguments: {
+          patch: {
+            kind: "action.define",
+            name: "salute",
+            cost: 1,
+            code: `return { reply: self + " salutes " + (arg || "the commons") + "!", notify: [{ to: "${bob.identityId}", text: "Saluted by " + self }] };`,
+          },
+        },
+      }),
+      ada.sessionToken,
+    ).result as { ok: boolean; proposalId?: number; applied?: boolean };
+    expect(prop.ok).toBe(true);
+    if (prop.proposalId !== undefined && !prop.applied) {
+      call(world, req("tools/call", { name: "vote", arguments: { proposal_id: prop.proposalId, position: "for" } }), ada.sessionToken);
+      call(world, req("tools/call", { name: "vote", arguments: { proposal_id: prop.proposalId, position: "for" } }), bob.sessionToken);
+      for (let i = 0; i < 12; i += 1) {
+        call(world, req("tools/call", { name: "whoami", arguments: {} }), ada.sessionToken);
+        world.advanceTick(50_000 + i * 1_000);
+        if (world.clerk.registry.verbs["salute"] !== undefined) break;
+      }
+    }
+    expect(world.clerk.registry.verbs["salute"]?.code).toContain("salutes");
+
+    call(world, req("tools/call", { name: "act", arguments: { verb: "salute", text: "The Open Lattice" } }), ada.sessionToken);
+    world.advanceTick(90_000);
+    const saluteEv = world.log.events().find((e) => e.type === "act.salute");
+    expect(saluteEv).toBeDefined();
+    expect(saluteEv?.payload["reply"]).toContain("salutes The Open Lattice!");
   });
 });
