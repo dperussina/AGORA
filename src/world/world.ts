@@ -2329,6 +2329,15 @@ export class World {
       }
       this.inbox.set(owner, list);
       hearers.push(owner);
+      this.fireWebhook(
+        owner,
+        "notify",
+        `Note on ${artifact.id} from ${speakerName}: ${text.slice(0, 160)}`,
+        artifact.id,
+        undefined,
+        identityId,
+      );
+      this.persist();
     }
     this.recordArtifactSubscriber(artifact.id, identityId);
     this.append("speak.artifact", identityId, { target: artifact.id, text, hearers, identityId });
